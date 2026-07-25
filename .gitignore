@@ -11,6 +11,11 @@ out/
 coverage/
 *.tsbuildinfo
 
+# Accidental emit next to Prisma CLI config (IDE / single-file tsc)
+apps/api/prisma.config.js
+apps/api/prisma.config.d.ts
+apps/api/prisma.config.js.map
+
 # Env / secrets
 .env
 .env.*

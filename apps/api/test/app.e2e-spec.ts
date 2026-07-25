@@ -4,9 +4,10 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 
 import { AppModule } from './../src/app.module';
+import { configureApp } from './../src/bootstrap/configure-app';
 import { HealthResponseDto } from './../src/health/dto/health-response.dto';
 
-describe('HealthController (e2e)', () => {
+describe('App (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeEach(async () => {
@@ -15,6 +16,7 @@ describe('HealthController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    configureApp(app);
     await app.init();
   });
 
@@ -22,7 +24,7 @@ describe('HealthController (e2e)', () => {
     await app.close();
   });
 
-  it('/health (GET)', () => {
+  it('/health (GET) remains unversioned and unwrapped', () => {
     return request(app.getHttpServer())
       .get('/health')
       .expect(200)
@@ -32,6 +34,22 @@ describe('HealthController (e2e)', () => {
         expect(body.status).toBe('ok');
         expect(body.service).toBe('clinexa-api');
         expect(typeof body.timestamp).toBe('string');
+        expect(body).not.toHaveProperty('data');
+        expect(body).not.toHaveProperty('meta');
       });
+  });
+
+  it('/health applies Helmet headers and hides X-Powered-By', () => {
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect((res) => {
+        expect(res.headers['x-content-type-options']).toBe('nosniff');
+        expect(res.headers['x-powered-by']).toBeUndefined();
+      });
+  });
+
+  it('/v1/health is not registered (version-neutral only)', () => {
+    return request(app.getHttpServer()).get('/v1/health').expect(404);
   });
 });

@@ -4,6 +4,10 @@ import { defineConfig } from 'prisma/config';
 /**
  * Prisma CLI configuration (Prisma 7+).
  *
+ * Intentional exception: this file reads `process.env.DATABASE_URL` because the
+ * Prisma CLI runs outside NestJS DI. Application runtime config is Zod-validated
+ * via ConfigModule (`src/config/`); do not read process.env from Nest app code.
+ *
  * Use `process.env.DATABASE_URL` (not `env('DATABASE_URL')`) so commands that
  * do not need a live database — especially `prisma generate` during
  * `postinstall` / CI — can run when DATABASE_URL is unset.

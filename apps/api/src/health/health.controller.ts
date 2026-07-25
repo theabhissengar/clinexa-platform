@@ -1,11 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, VERSION_NEUTRAL } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { SkipTransform } from '../common/decorators/skip-transform.decorator';
 import { HealthService } from './health.service';
 import { HealthResponseDto } from './dto/health-response.dto';
 
 @ApiTags('health')
-@Controller('health')
+@SkipTransform()
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 

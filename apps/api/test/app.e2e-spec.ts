@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 
 import { AppModule } from './../src/app.module';
+import { HealthResponseDto } from './../src/health/dto/health-response.dto';
 
 describe('HealthController (e2e)', () => {
   let app: INestApplication<App>;
@@ -26,8 +27,11 @@ describe('HealthController (e2e)', () => {
       .get('/health')
       .expect(200)
       .expect((res) => {
-        expect(res.body.status).toBe('ok');
-        expect(res.body.service).toBe('clinexa-api');
+        const body = res.body as unknown as HealthResponseDto;
+
+        expect(body.status).toBe('ok');
+        expect(body.service).toBe('clinexa-api');
+        expect(typeof body.timestamp).toBe('string');
       });
   });
 });

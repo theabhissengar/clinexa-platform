@@ -112,6 +112,30 @@ npm run format
 3. Run `npm run dev` from the repository root.
 4. Confirm `/health` and the admin default page load.
 
+## Branching strategy
+
+```text
+feature/* | bugfix/* | hotfix/* | release/*
+                 ↓
+                dev
+                 ↓
+             staging
+                 ↓
+               main
+```
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Production-ready code; releases and version tags |
+| `staging` | Pre-production QA and deployment validation |
+| `dev` | Integration branch for ongoing development |
+| `feature/<name>` | Feature work (merges into `dev` first) |
+| `bugfix/<name>` | Bug fixes |
+| `hotfix/<name>` | Urgent production fixes |
+| `release/<version>` | Release preparation |
+
+Day-to-day coding happens on `feature/*` → `dev`. Promote to `staging`, then `main`, after validation.
+
 ## Future expansion strategy
 
 Without restructuring this repo, we can later add:

@@ -354,11 +354,13 @@ Source control follows a predictable branching strategy that supports parallel d
 
 | Branch | Purpose |
 |---------|---------|
-| Main | Production-ready code |
-| Development | Integration branch |
-| Feature | Individual feature work |
-| Release | Release preparation |
-| Hotfix | Production fixes |
+| `main` | Production-ready code; releases and version tags |
+| `staging` | Pre-production QA and deployment validation |
+| `dev` | Main integration branch for ongoing development |
+| `feature/*` | Individual feature work |
+| `bugfix/*` | Bug fixes |
+| `release/*` | Release preparation |
+| `hotfix/*` | Production fixes |
 
 ---
 
@@ -369,7 +371,7 @@ Source control follows a predictable branching strategy that supports parallel d
 | DEV-060 | Small focused branches |
 | DEV-061 | Frequent synchronization |
 | DEV-062 | Pull Request required |
-| DEV-063 | Protected production branch |
+| DEV-063 | Protected production branch (`main`) |
 | DEV-064 | Clear branch naming |
 
 ---
@@ -379,20 +381,17 @@ Source control follows a predictable branching strategy that supports parallel d
 ```mermaid
 flowchart LR
 
-Feature
+  feature[feature_bugfix_hotfix_release]
+  dev[dev]
+  staging[staging]
+  main[main]
 
-Feature --> Development
-
-Development --> Release
-
-Release --> Main
-
-Main --> Hotfix
-
-Hotfix --> Main
-
-Hotfix --> Development
+  feature --> dev
+  dev --> staging
+  staging --> main
 ```
+
+Promotion path: validate on `dev` → `staging` → `main`.
 
 ---
 

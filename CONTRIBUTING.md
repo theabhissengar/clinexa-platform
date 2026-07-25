@@ -11,20 +11,37 @@ This monorepo contains:
 
 Public Store, Patient Portal, and Mobile apps are **out of scope** for this repository.
 
-## Branching
+## Branching strategy
 
-- `develop` — integration branch
-- `main` — production-ready releases
-- `feature/<name>` — feature work
-- `fix/<name>` / `hotfix/<name>` — fixes
+```text
+feature/* | bugfix/* | hotfix/* | release/*
+                 ↓
+                dev          ← integration / ongoing development
+                 ↓
+             staging         ← QA, release validation, pre-production
+                 ↓
+               main          ← production-ready; tags & releases
+```
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | Production. Protected. Releases and version tags originate here. |
+| `staging` | Pre-production. QA and deployment testing after validation on `dev`. |
+| `dev` | Main integration branch. Feature work merges here first. |
+| `feature/<name>` | New features |
+| `bugfix/<name>` | Bug fixes |
+| `hotfix/<name>` | Urgent production fixes |
+| `release/<version>` | Release preparation |
 
 ## Workflow
 
-1. Create a focused feature branch from `develop`.
+1. Create a focused branch from `dev` (e.g. `feature/<name>`).
 2. Keep changes small and reviewable.
 3. Run `npm run lint`, `npm run typecheck`, and relevant tests locally.
-4. Open a pull request into `develop`.
-5. Do not implement multiple large features in one PR.
+4. Open a pull request into `dev`.
+5. After validation on `dev`, promote to `staging`, then to `main`.
+6. Do not implement multiple large features in one PR.
+7. Do not commit feature work directly to `main` or `staging`.
 
 ## Coding standards
 

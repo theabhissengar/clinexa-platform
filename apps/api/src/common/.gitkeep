@@ -1,3 +1,0 @@
-# Common cross-cutting concerns (filters, guards, interceptors, pipes, decorators).
-# Add shared API-layer utilities here as features are implemented.
-# Do not place domain business rules in this folder.

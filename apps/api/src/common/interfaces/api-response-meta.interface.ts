@@ -1,5 +1,9 @@
 /**
- * Success response metadata.
- * Empty for Phase 3A; pagination and correlationId arrive in later phases.
+ * Success response metadata (docs/11 §8.1).
+ *
+ * Intentionally extensible for later fields (pagination, requestId, executionTime, etc.).
+ * Phase 3B exposes only `correlationId`.
  */
-export type ApiResponseMeta = Record<string, never>;
+export interface ApiResponseMeta {
+  correlationId: string;
+}

@@ -1,5 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
+import { defaultLogLevel, isAppLogLevel } from './log-level.util';
+
 /**
  * Parses CORS_ORIGINS: split, trim, drop empties/duplicates, keep well-formed origins only.
  */
@@ -39,6 +41,10 @@ export function parseCorsOrigins(raw: string): string[] {
   return origins;
 }
 
+function parseLogHealthRequests(raw: string | undefined): boolean {
+  return raw === 'true' || raw === '1';
+}
+
 export default registerAs('app', () => {
   const corsOrigins = parseCorsOrigins(
     process.env.CORS_ORIGINS ?? 'http://localhost:3000',
@@ -50,10 +56,19 @@ export default registerAs('app', () => {
     );
   }
 
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
+  const configuredLogLevel = process.env.LOG_LEVEL;
+  const logLevel =
+    configuredLogLevel && isAppLogLevel(configuredLogLevel)
+      ? configuredLogLevel
+      : defaultLogLevel(nodeEnv);
+
   return {
-    nodeEnv: process.env.NODE_ENV ?? 'development',
+    nodeEnv,
     port: parseInt(process.env.PORT ?? '3001', 10),
     apiPrefix: (process.env.API_PREFIX ?? '').replace(/^\/+|\/+$/g, ''),
     corsOrigins,
+    logLevel,
+    logHealthRequests: parseLogHealthRequests(process.env.LOG_HEALTH_REQUESTS),
   };
 });

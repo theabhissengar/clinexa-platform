@@ -6,16 +6,20 @@ import { SKIP_TRANSFORM_KEY } from '../decorators/skip-transform.decorator';
 import { TransformResponseInterceptor } from './transform-response.interceptor';
 
 describe('TransformResponseInterceptor', () => {
-  const createContext = (statusCode = HttpStatus.OK): ExecutionContext =>
+  const createContext = (
+    statusCode = HttpStatus.OK,
+    correlationId = 'corr-test-1',
+  ): ExecutionContext =>
     ({
       getHandler: () => Function,
       getClass: () => class TestController {},
       switchToHttp: () => ({
+        getRequest: () => ({ correlationId }),
         getResponse: () => ({ statusCode }),
       }),
     }) as unknown as ExecutionContext;
 
-  it('wraps successful payloads in { data, meta }', async () => {
+  it('wraps successful payloads in { data, meta.correlationId }', async () => {
     const getAllAndOverride = jest.fn().mockReturnValue(false);
     const reflector = { getAllAndOverride } as unknown as Reflector;
     const interceptor = new TransformResponseInterceptor(reflector);
@@ -29,7 +33,10 @@ describe('TransformResponseInterceptor', () => {
       SKIP_TRANSFORM_KEY,
       expect.any(Array),
     );
-    expect(result).toEqual({ data: { ok: true }, meta: {} });
+    expect(result).toEqual({
+      data: { ok: true },
+      meta: { correlationId: 'corr-test-1' },
+    });
   });
 
   it('skips transform when SkipTransform metadata is set', async () => {

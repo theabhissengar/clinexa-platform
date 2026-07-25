@@ -10,6 +10,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 
 import { AllExceptionsFilter } from '../common/filters/all-exceptions.filter';
+import { HttpLoggingInterceptor } from '../common/interceptors/http-logging.interceptor';
 import { TransformResponseInterceptor } from '../common/interceptors/transform-response.interceptor';
 
 /**
@@ -49,7 +50,10 @@ export function configureApp(app: INestApplication): void {
   );
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useGlobalInterceptors(new TransformResponseInterceptor(reflector));
+  app.useGlobalInterceptors(
+    new HttpLoggingInterceptor(configService),
+    new TransformResponseInterceptor(reflector),
+  );
 
   const swaggerPath = configService.getOrThrow<string>('swagger.path');
   const swaggerTitle = configService.getOrThrow<string>('swagger.title');

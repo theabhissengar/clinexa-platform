@@ -15,6 +15,11 @@ const envSchema = z.object({
   SWAGGER_PATH: z.string().min(1).default('api/docs'),
   /** Optional override for OpenAPI document version (set by CI/CD). */
   SWAGGER_VERSION: z.string().min(1).optional(),
+  LOG_LEVEL: z.enum(['error', 'warn', 'log', 'debug', 'verbose']).optional(),
+  LOG_HEALTH_REQUESTS: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((val) => val === true || val === 'true' || val === '1'),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

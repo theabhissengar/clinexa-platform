@@ -6,11 +6,12 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { ValidationError } from 'class-validator';
 
 import type { ApiErrorResponse } from '../interfaces/api-error-response.interface';
 import { ErrorCodes } from '../constants/error-codes';
+import { getCorrelationId } from '../utils/correlation-id.util';
 import {
   isValidationExceptionResponse,
   mapValidationErrors,
@@ -23,18 +24,42 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+    const correlationId = getCorrelationId(request);
 
-    const body = this.toErrorResponse(exception);
+    const body: ApiErrorResponse = {
+      ...this.toErrorResponse(exception),
+      correlationId,
+    };
     const status = this.resolveStatus(exception, body);
+
+    this.logException(status, body, exception);
+
+    response.status(status).json(body);
+  }
+
+  private logException(
+    status: number,
+    body: ApiErrorResponse,
+    exception: unknown,
+  ): void {
+    const payload = {
+      type: 'error' as const,
+      code: body.code,
+      status,
+      correlationId: body.correlationId,
+      message: body.message,
+    };
 
     if (status >= 500) {
       this.logger.error(
-        body.message,
+        payload,
         exception instanceof Error ? exception.stack : undefined,
       );
+      return;
     }
 
-    response.status(status).json(body);
+    this.logger.warn(payload);
   }
 
   private resolveStatus(exception: unknown, body: ApiErrorResponse): number {
@@ -49,7 +74,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     return HttpStatus.INTERNAL_SERVER_ERROR;
   }
 
-  private toErrorResponse(exception: unknown): ApiErrorResponse {
+  private toErrorResponse(
+    exception: unknown,
+  ): Omit<ApiErrorResponse, 'correlationId'> {
     if (exception instanceof HttpException) {
       return this.fromHttpException(exception);
     }
@@ -60,7 +87,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
   }
 
-  private fromHttpException(exception: HttpException): ApiErrorResponse {
+  private fromHttpException(
+    exception: HttpException,
+  ): Omit<ApiErrorResponse, 'correlationId'> {
     const status = exception.getStatus();
     const exceptionResponse = exception.getResponse();
 
@@ -84,7 +113,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const message = this.extractMessage(payload, exception.message);
       const details = payload.details;
 
-      const body: ApiErrorResponse = { code, message };
+      const body: Omit<ApiErrorResponse, 'correlationId'> = { code, message };
       if (details !== undefined) {
         body.details = details;
       }
@@ -99,7 +128,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private fromValidationResponse(
     message: ValidationError[] | string[] | string,
-  ): ApiErrorResponse {
+  ): Omit<ApiErrorResponse, 'correlationId'> {
     if (Array.isArray(message) && message.length > 0) {
       if (typeof message[0] === 'object') {
         return mapValidationErrors(message as ValidationError[]);

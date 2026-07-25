@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Builds / caches
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs / OS / IDE
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Prisma generated client
+apps/api/generated/
+
+# Turbo / misc
+.turbo/
+.cache/
+tmp/
+*.pem

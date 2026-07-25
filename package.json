@@ -1,0 +1,33 @@
+{
+  "name": "clinexa-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Clinexa Platform — NestJS backend and Next.js internal management application",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,admin -c blue,magenta \"npm run dev:api\" \"npm run dev:admin\"",
+    "dev:api": "npm run start:dev -w @clinexa/api",
+    "dev:admin": "npm run dev -w @clinexa/admin",
+    "build": "npm run build:api && npm run build:admin",
+    "build:api": "npm run build -w @clinexa/api",
+    "build:admin": "npm run build -w @clinexa/admin",
+    "lint": "npm run lint:api && npm run lint:admin",
+    "lint:api": "npm run lint -w @clinexa/api",
+    "lint:admin": "npm run lint -w @clinexa/admin",
+    "test": "npm run test:api",
+    "test:api": "npm run test -w @clinexa/api",
+    "typecheck": "npm run typecheck -w @clinexa/api && npm run typecheck -w @clinexa/admin",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  },
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=10"
+  }
+}

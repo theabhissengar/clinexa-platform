@@ -1,0 +1,7 @@
+apps/**/dist
+apps/**/.next
+apps/**/coverage
+apps/**/node_modules
+node_modules
+package-lock.json
+*.md

@@ -1,15 +1,13 @@
 import axios from "axios";
 
-const baseURL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ??
-  "http://localhost:3001";
+import { publicEnv } from "@/config/env";
 
 /**
  * Shared Axios instance for Backend API calls.
  * Auth interceptors will be added with the Authentication feature.
  */
 export const apiClient = axios.create({
-  baseURL,
+  baseURL: publicEnv.apiBaseUrl,
   headers: {
     "Content-Type": "application/json",
   },

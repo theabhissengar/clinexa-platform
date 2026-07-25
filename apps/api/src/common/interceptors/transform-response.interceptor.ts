@@ -6,10 +6,12 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { Request } from 'express';
 import { Observable, map } from 'rxjs';
 
 import { SKIP_TRANSFORM_KEY } from '../decorators/skip-transform.decorator';
 import type { ApiSuccessResponse } from '../interfaces/api-success-response.interface';
+import { getCorrelationId } from '../utils/correlation-id.util';
 
 @Injectable()
 export class TransformResponseInterceptor<T> implements NestInterceptor<
@@ -32,7 +34,9 @@ export class TransformResponseInterceptor<T> implements NestInterceptor<
     }
 
     const http = context.switchToHttp();
+    const request = http.getRequest<Request>();
     const response = http.getResponse<{ statusCode?: number }>();
+    const correlationId = getCorrelationId(request);
 
     return next.handle().pipe(
       map((data) => {
@@ -45,7 +49,7 @@ export class TransformResponseInterceptor<T> implements NestInterceptor<
 
         return {
           data,
-          meta: {},
+          meta: { correlationId },
         };
       }),
     );

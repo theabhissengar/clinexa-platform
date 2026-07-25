@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
+import { configurations, validateEnv } from './config';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
-import configuration from './config/configuration';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [configuration],
+      cache: true,
+      validate: validateEnv,
+      load: configurations,
       envFilePath: ['.env', '.env.local'],
     }),
     PrismaModule,

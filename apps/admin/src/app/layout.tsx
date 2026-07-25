@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { publicEnv } from "@/config/env";
 import { AppProviders } from "@/providers/app-providers";
 
 import "./globals.css";
@@ -16,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Clinexa Internal Management",
+  title: publicEnv.appName,
   description:
     "Staff CRM and operational control plane for the Clinexa healthcare platform.",
 };

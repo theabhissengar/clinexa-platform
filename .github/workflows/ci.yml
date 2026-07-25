@@ -14,6 +14,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://clinexa:clinexa@127.0.0.1:5432/clinexa_ci?schema=public
       NEXT_PUBLIC_API_BASE_URL: http://localhost:3001
+      NEXT_PUBLIC_APP_NAME: Clinexa Internal Management
     steps:
       - uses: actions/checkout@v4
 

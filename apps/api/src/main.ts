@@ -9,11 +9,16 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
-  const corsOrigins = configService.get<string[]>('corsOrigins') ?? ['http://localhost:3000'];
+  const corsOrigins = configService.getOrThrow<string[]>('app.corsOrigins');
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
   });
+
+  const apiPrefix = configService.getOrThrow<string>('app.apiPrefix');
+  if (apiPrefix) {
+    app.setGlobalPrefix(apiPrefix);
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -23,22 +28,27 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerPath = configService.get<string>('swaggerPath') ?? 'api/docs';
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Clinexa Platform API')
-    .setDescription('Backend API for the Clinexa healthcare platform')
-    .setVersion('0.1.0')
+  const swaggerPath = configService.getOrThrow<string>('swagger.path');
+  const swaggerTitle = configService.getOrThrow<string>('swagger.title');
+  const swaggerDescription = configService.getOrThrow<string>(
+    'swagger.description',
+  );
+  const swaggerVersion = configService.getOrThrow<string>('swagger.version');
+
+  const swaggerDocumentConfig = new DocumentBuilder()
+    .setTitle(swaggerTitle)
+    .setDescription(swaggerDescription)
+    .setVersion(swaggerVersion)
     .build();
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = SwaggerModule.createDocument(app, swaggerDocumentConfig);
   SwaggerModule.setup(swaggerPath, app, document);
 
-  const port = configService.get<number>('port') ?? 3001;
+  const port = configService.getOrThrow<number>('app.port');
   await app.listen(port);
 
-  // eslint-disable-next-line no-console
   console.log(`Clinexa API listening on http://localhost:${port}`);
-  // eslint-disable-next-line no-console
+
   console.log(`Swagger docs at http://localhost:${port}/${swaggerPath}`);
 }
 

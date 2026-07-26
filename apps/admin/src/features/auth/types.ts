@@ -1,6 +1,8 @@
 export type AuthUser = {
   id: string;
   email: string;
+  roles: string[];
+  permissions: string[];
 };
 
 export type AuthTokensResponse = {
@@ -14,6 +16,8 @@ export type SessionResponse = {
   id: string;
   email: string;
   sessionId: string;
+  roles: string[];
+  permissions: string[];
 };
 
 export type LoginCredentials = {

@@ -77,7 +77,11 @@ export class AuthController {
 
   @Get('session')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Return the current authenticated identity' })
+  @ApiOperation({
+    summary: 'Return the current authenticated identity',
+    description:
+      'Returns identity plus roles and permissions resolved server-side. No permission decorator — authenticated access only.',
+  })
   session(@CurrentUser() user: AuthenticatedUser): SessionUserDto {
     return this.authService.getSession(user);
   }

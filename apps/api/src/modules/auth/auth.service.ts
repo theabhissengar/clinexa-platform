@@ -10,6 +10,7 @@ import type { Response } from 'express';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { UserStatus } from '../../../generated/prisma';
+import { AuthorizationService } from '../rbac/authorization.service';
 import type { AuthTokensDto } from './dto/auth-tokens.dto';
 import type { SessionUserDto } from './dto/session-user.dto';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly passwordHasher: PasswordHasher,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   async login(
@@ -85,13 +87,21 @@ export class AuthService {
 
     this.setRefreshCookie(res, refreshToken, absoluteExpiresAt);
 
+    const authorization =
+      await this.authorizationService.loadPrincipalAuthorization(user.id);
+
     return {
       accessToken,
       tokenType: 'Bearer',
       expiresIn: this.configService.getOrThrow<number>(
         'auth.jwtAccessTtlSeconds',
       ),
-      user: { id: user.id, email: user.email },
+      user: {
+        id: user.id,
+        email: user.email,
+        roles: authorization.roles,
+        permissions: authorization.permissions,
+      },
     };
   }
 
@@ -158,13 +168,23 @@ export class AuthService {
 
     this.setRefreshCookie(res, newRefreshToken, session.absoluteExpiresAt);
 
+    const authorization =
+      await this.authorizationService.loadPrincipalAuthorization(
+        session.user.id,
+      );
+
     return {
       accessToken,
       tokenType: 'Bearer',
       expiresIn: this.configService.getOrThrow<number>(
         'auth.jwtAccessTtlSeconds',
       ),
-      user: { id: session.user.id, email: session.user.email },
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        roles: authorization.roles,
+        permissions: authorization.permissions,
+      },
     };
   }
 
@@ -178,11 +198,14 @@ export class AuthService {
       id: user.id,
       email: user.email,
       sessionId: user.sessionId,
+      roles: user.roles,
+      permissions: user.permissions,
     };
   }
 
   /**
    * Validates JWT payload against the Session table (revocation authority).
+   * Authorization is loaded via AuthorizationService — not AuthN queries.
    */
   async validateAccessTokenPayload(
     payload: JwtPayload,
@@ -219,11 +242,18 @@ export class AuthService {
       data: { lastSeenAt: new Date() },
     });
 
+    const authorization =
+      await this.authorizationService.loadPrincipalAuthorization(
+        session.user.id,
+      );
+
     return {
       id: session.user.id,
       email: session.user.email,
       sessionId: session.id,
       tokenVersion: session.user.tokenVersion,
+      roles: authorization.roles,
+      permissions: authorization.permissions,
     };
   }
 

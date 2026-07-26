@@ -6,6 +6,18 @@ export class AuthUserDto {
 
   @ApiProperty()
   email!: string;
+
+  @ApiProperty({
+    type: [String],
+    description: 'Active ROLE-* codes resolved server-side',
+  })
+  roles!: string[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'Aggregated PERM-* codes resolved server-side (advisory for UI)',
+  })
+  permissions!: string[];
 }
 
 export class AuthTokensDto {

@@ -186,6 +186,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private codeForStatus(status: number): string {
     switch (status) {
+      case 401:
+        return ErrorCodes.AUTH_UNAUTHENTICATED;
       case 404:
         return ErrorCodes.RES_NOT_FOUND;
       case 400:

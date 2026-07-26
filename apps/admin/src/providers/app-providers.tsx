@@ -4,13 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState, type ReactNode } from "react";
 
+import { AuthProvider } from "@/providers/auth-provider";
+
 type AppProvidersProps = {
   children: ReactNode;
 };
 
 /**
  * Root client providers for the Internal Management application.
- * Authentication and other cross-cutting providers will be composed here later.
  */
 export function AppProviders({ children }: AppProvidersProps) {
   const [queryClient] = useState(
@@ -28,7 +29,9 @@ export function AppProviders({ children }: AppProvidersProps) {
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
     </ThemeProvider>
   );
 }

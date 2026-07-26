@@ -5,6 +5,7 @@ import { ThemeProvider } from "next-themes";
 import { useState, type ReactNode } from "react";
 
 import { AuthProvider } from "@/providers/auth-provider";
+import { PermissionProvider } from "@/providers/permission-provider";
 
 type AppProvidersProps = {
   children: ReactNode;
@@ -30,7 +31,9 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <PermissionProvider>{children}</PermissionProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

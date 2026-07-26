@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 
 import { AllExceptionsFilter } from '../common/filters/all-exceptions.filter';
@@ -23,6 +24,7 @@ export function configureApp(app: INestApplication): void {
 
   httpApp.use(helmet());
   httpApp.disable('x-powered-by');
+  httpApp.use(cookieParser());
 
   const corsOrigins = configService.getOrThrow<string[]>('app.corsOrigins');
   app.enableCors({
@@ -67,11 +69,13 @@ export function configureApp(app: INestApplication): void {
     .setDescription(
       `${swaggerDescription}\n\nVersioned REST surface is rooted at \`/v1\`. ` +
         `Operational health checks remain unversioned at \`/health\`. ` +
-        `Success responses use \`{ data, meta }\`; errors use \`{ code, message, details? }\`. ` +
-        `Request correlation IDs are deferred to a later phase.`,
+        `Success responses use \`{ data, meta }\`; errors use \`{ code, message, details?, correlationId }\`. ` +
+        `Authenticated requests use the \`Authorization: Bearer\` scheme. ` +
+        `Request correlation IDs are accepted or generated via \`X-Correlation-Id\`.`,
     )
     .setVersion(swaggerVersion)
     .addServer('/v1', 'Versioned API')
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, swaggerDocumentConfig);

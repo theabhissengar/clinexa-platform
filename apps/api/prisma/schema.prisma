@@ -7,5 +7,42 @@ datasource db {
   provider = "postgresql"
 }
 
-// Domain models will be added in future features.
-// Do not invent schema here during foundation.
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Unified identity for patients and staff (DB-001 subset — AuthN only).
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  status       UserStatus @default(ACTIVE)
+  tokenVersion Int        @default(0) @map("token_version")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions Session[]
+
+  @@map("users")
+}
+
+/// Server-side session for revocation, idle timeout, and JWT sessionId (DB-006).
+model Session {
+  id                 String    @id @default(uuid()) @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  refreshTokenHash   String    @map("refresh_token_hash")
+  absoluteExpiresAt  DateTime  @map("absolute_expires_at") @db.Timestamptz(3)
+  lastSeenAt         DateTime  @map("last_seen_at") @db.Timestamptz(3)
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userAgent          String?   @map("user_agent")
+  ip                 String?
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([absoluteExpiresAt])
+  @@map("sessions")
+}

@@ -188,6 +188,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     switch (status) {
       case 401:
         return ErrorCodes.AUTH_UNAUTHENTICATED;
+      case 403:
+        return ErrorCodes.AUTHZ_MISSING_PERMISSION;
       case 404:
         return ErrorCodes.RES_NOT_FOUND;
       case 400:

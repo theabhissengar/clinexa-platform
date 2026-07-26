@@ -76,6 +76,16 @@ apiClient.interceptors.response.use(
     const isAuthEntry =
       url.includes("/v1/auth/login") || url.includes("/v1/auth/refresh");
 
+    if (status === 403) {
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/forbidden")
+      ) {
+        window.location.assign("/forbidden");
+      }
+      return Promise.reject(error);
+    }
+
     if (status !== 401 || !original || original._retry || isAuthEntry) {
       return Promise.reject(error);
     }

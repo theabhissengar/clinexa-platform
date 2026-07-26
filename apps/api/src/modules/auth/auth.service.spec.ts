@@ -6,6 +6,9 @@ import { Response } from 'express';
 import { UserStatus } from '../../../generated/prisma';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { AuthorizationService } from '../rbac/authorization.service';
+import { Permissions } from '../rbac/constants/permissions';
+import { Roles } from '../rbac/constants/roles';
 import { AuthService } from './auth.service';
 import { PasswordHasher } from './password.hasher';
 import { hashToken } from './utils/token.util';
@@ -26,7 +29,15 @@ describe('AuthService', () => {
   let passwordHasher: { verify: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock };
   let configService: { getOrThrow: jest.Mock };
+  let authorizationService: {
+    loadPrincipalAuthorization: jest.Mock;
+  };
   let res: { cookie: jest.Mock; clearCookie: jest.Mock };
+
+  const authzFixture = {
+    roles: [Roles.ADMINISTRATOR],
+    permissions: [Permissions.CRM_ACCESS_SHELL, Permissions.ADM_MANAGE_USERS],
+  };
 
   const configMap: Record<string, unknown> = {
     'auth.jwtAccessSecret': 'test-access-secret-at-least-32-chars!!!',
@@ -73,12 +84,16 @@ describe('AuthService', () => {
       cookie: jest.fn(),
       clearCookie: jest.fn(),
     };
+    authorizationService = {
+      loadPrincipalAuthorization: jest.fn().mockResolvedValue(authzFixture),
+    };
 
     authService = new AuthService(
       prisma as unknown as PrismaService,
       passwordHasher as unknown as PasswordHasher,
       jwtService as unknown as JwtService,
       configService as unknown as ConfigService,
+      authorizationService as unknown as AuthorizationService,
     );
   });
 
@@ -146,7 +161,12 @@ describe('AuthService', () => {
       expect(result.user).toEqual({
         id: 'user-1',
         email: 'staff@example.com',
+        roles: authzFixture.roles,
+        permissions: authzFixture.permissions,
       });
+      expect(
+        authorizationService.loadPrincipalAuthorization,
+      ).toHaveBeenCalledWith('user-1');
       expect(res.cookie).toHaveBeenCalledWith(
         'clinexa_refresh',
         expect.any(String),
@@ -240,7 +260,12 @@ describe('AuthService', () => {
         email: 'staff@example.com',
         sessionId: 'session-1',
         tokenVersion: 0,
+        roles: authzFixture.roles,
+        permissions: authzFixture.permissions,
       });
+      expect(
+        authorizationService.loadPrincipalAuthorization,
+      ).toHaveBeenCalledWith('user-1');
       expect(prisma.session.update).toHaveBeenCalled();
     });
   });
@@ -286,6 +311,8 @@ describe('AuthService', () => {
           email: 'staff@example.com',
           sessionId: 'session-1',
           tokenVersion: 0,
+          roles: authzFixture.roles,
+          permissions: authzFixture.permissions,
         },
         res as unknown as Response,
       );

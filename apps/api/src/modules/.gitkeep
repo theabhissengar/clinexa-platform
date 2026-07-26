@@ -1,3 +1,0 @@
-# Domain modules will be added feature-by-feature (identity, catalog, orders, clinical, etc.).
-# Keep each module aligned with Clean Architecture:
-# presentation / application / domain / infrastructure

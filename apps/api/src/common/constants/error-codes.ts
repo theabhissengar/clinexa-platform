@@ -13,6 +13,22 @@ export const ErrorCodes = {
   RES_NOT_FOUND: 'ERR-RES-001',
   /** Unexpected server error. */
   SYS_UNEXPECTED: 'ERR-SYS-001',
+
+  /** Unauthenticated / invalid session. */
+  AUTH_UNAUTHENTICATED: 'ERR-AUTH-001',
+  /** Invalid credentials. */
+  AUTH_INVALID_CREDENTIALS: 'ERR-AUTH-002',
+  /** Session expired (idle or absolute). */
+  AUTH_SESSION_EXPIRED: 'ERR-AUTH-005',
+
+  /** Missing permission. */
+  AUTHZ_MISSING_PERMISSION: 'ERR-AUTHZ-001',
+  /** Object scope denied (including cross-patient). */
+  AUTHZ_OBJECT_SCOPE_DENIED: 'ERR-AUTHZ-002',
+  /** CRM shell denied for patient/guest. */
+  AUTHZ_CRM_SHELL_DENIED: 'ERR-AUTHZ-003',
+  /** Clinical data denied for Marketing/Content. */
+  AUTHZ_CLINICAL_DENIED: 'ERR-AUTHZ-004',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

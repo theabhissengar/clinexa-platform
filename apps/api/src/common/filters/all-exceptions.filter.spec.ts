@@ -1,6 +1,7 @@
 import {
   ArgumentsHost,
   BadRequestException,
+  ForbiddenException,
   HttpStatus,
   Logger,
   NotFoundException,
@@ -95,6 +96,17 @@ describe('AllExceptionsFilter', () => {
     expect(jsonBody).toEqual({
       code: ErrorCodes.RES_NOT_FOUND,
       message: 'Missing',
+      correlationId: 'corr-filter-1',
+    });
+  });
+
+  it('maps bare ForbiddenException to ERR-AUTHZ-001', () => {
+    filter.catch(new ForbiddenException('Denied'), createHost());
+
+    expect(statusCode).toBe(HttpStatus.FORBIDDEN);
+    expect(jsonBody).toEqual({
+      code: ErrorCodes.AUTHZ_MISSING_PERMISSION,
+      message: 'Denied',
       correlationId: 'corr-filter-1',
     });
   });

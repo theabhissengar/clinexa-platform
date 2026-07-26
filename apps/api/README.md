@@ -97,6 +97,8 @@ Optional: set `SWAGGER_VERSION` in CI/CD to override the OpenAPI document versio
 
 ```bash
 npm run prisma:generate -w @clinexa/api
+npm run prisma:migrate -w @clinexa/api
+npm run prisma:seed -w @clinexa/api
 ```
 
-Domain models are intentionally empty in the foundation.
+Identity models include Users, Sessions, Roles, Permissions, RolePermissions, and UserRoleAssignments. `prisma db seed` applies the **canonical** RBAC catalog from docs/08 and, when `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are set, assigns `ROLE-009` (Administrator) to that user.

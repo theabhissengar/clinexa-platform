@@ -76,30 +76,22 @@ describe('PermissionsGuard', () => {
     });
     authorizationService.hasAllPermissions.mockReturnValue(false);
 
-    expect(() =>
+    try {
       guard.canActivate(
         createContext({
           id: 'u1',
           roles: [Roles.ADMINISTRATOR],
           permissions: [Permissions.CRM_ACCESS_SHELL],
         }),
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        response: expect.objectContaining({
-          code: ErrorCodes.AUTHZ_MISSING_PERMISSION,
-        }),
-      }),
-    );
-    expect(() =>
-      guard.canActivate(
-        createContext({
-          id: 'u1',
-          roles: [Roles.ADMINISTRATOR],
-          permissions: [Permissions.CRM_ACCESS_SHELL],
-        }),
-      ),
-    ).toThrow(ForbiddenException);
+      );
+      fail('expected ForbiddenException');
+    } catch (error: unknown) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      const exception = error as ForbiddenException;
+      expect(exception.getResponse()).toMatchObject({
+        code: ErrorCodes.AUTHZ_MISSING_PERMISSION,
+      });
+    }
   });
 
   it('allows when all required permissions are present', () => {

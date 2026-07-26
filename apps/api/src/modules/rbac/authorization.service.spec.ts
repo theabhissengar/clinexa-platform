@@ -1,7 +1,6 @@
 import { AuthorizationService } from './authorization.service';
 import { Permissions } from './constants/permissions';
 import { Roles } from './constants/roles';
-import type { PermissionLoader } from './interfaces/permission-loader.interface';
 
 describe('AuthorizationService', () => {
   let service: AuthorizationService;
@@ -17,10 +16,7 @@ describe('AuthorizationService', () => {
         update: jest.fn().mockResolvedValue({}),
       },
     };
-    service = new AuthorizationService(
-      loader as unknown as PermissionLoader,
-      prisma as never,
-    );
+    service = new AuthorizationService(loader, prisma as never);
   });
 
   it('loads authorization via PermissionLoader', async () => {
@@ -44,10 +40,7 @@ describe('AuthorizationService', () => {
   it('evaluates RequirePermissions with AND semantics', () => {
     const principal = {
       roles: [Roles.ADMINISTRATOR],
-      permissions: [
-        Permissions.CRM_ACCESS_SHELL,
-        Permissions.ADM_MANAGE_USERS,
-      ],
+      permissions: [Permissions.CRM_ACCESS_SHELL, Permissions.ADM_MANAGE_USERS],
     };
 
     expect(
@@ -82,19 +75,16 @@ describe('AuthorizationService', () => {
       permissions: [Permissions.CRM_ACCESS_SHELL],
     };
 
-    expect(
-      service.hasAnyRole(principal, [Roles.DOCTOR, Roles.SUPPORT]),
-    ).toBe(true);
+    expect(service.hasAnyRole(principal, [Roles.DOCTOR, Roles.SUPPORT])).toBe(
+      true,
+    );
     expect(service.hasAnyRole(principal, [Roles.DOCTOR])).toBe(false);
   });
 
   it('Administrator lacks clinical approve by default matrix expectation', () => {
     const principal = {
       roles: [Roles.ADMINISTRATOR],
-      permissions: [
-        Permissions.CRM_ACCESS_SHELL,
-        Permissions.ADM_MANAGE_USERS,
-      ],
+      permissions: [Permissions.CRM_ACCESS_SHELL, Permissions.ADM_MANAGE_USERS],
     };
 
     expect(

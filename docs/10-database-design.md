@@ -142,6 +142,8 @@ Aligned with [03 §11](03-functional-requirements.md#11-crud-responsibility-matr
 | Terminal status only | Orders, subscriptions, tickets, prescriptions (no hard delete of paid/clinical history) |
 | Documented hard-delete procedure | Rare admin/sys retention actions; audit rows retained |
 
+**Operation ownership.** These destructive semantics are already retention-first; this design adds *context ownership* rather than new semantics. Soft delete, archive, restore, bulk cleanup, and the documented hard-delete procedure are **Guardian-owned operations** ([25](25-guardian.md); `ARCH-165`, `SEC-020a`) and require the corresponding Class D permission ([08](08-role-permissions.md)). The CRM context has no path to them, and the database enforces the same structural rules regardless of which client initiates a request (`ARCH-160`).
+
 ### 2.4 Auditability
 
 - Clinical and admin-sensitive actions record **actor user id**, **role(s) at time of action**, **action**, **timestamp**, **object type/id**, **outcome** (`OR-03`–`OR-06`, `OR-14`, FR-ADM-001/004, FR-DOC-004, RBAC-060+).
@@ -1559,6 +1561,7 @@ V1 may run unpartitioned. Future candidates: `audit_logs`, `domain_events`, `ana
 
 - Prefer deactivate/unpublish/terminal status.
 - Hard delete only via documented procedure with audit retention (NFR-064).
+- Deletion, archive, restore, and hard-delete execution are exposed only in the Guardian context and gated by Class D permissions (`PERM-ADM-030`–`034` and per-module equivalents); see [25 — Guardian](25-guardian.md) §7.
 
 ### 11.9 Backups
 

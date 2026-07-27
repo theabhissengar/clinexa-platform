@@ -9,7 +9,7 @@
 | Primary market | United States |
 | Audience | Principal Healthcare Solution Architecture, Enterprise Portal Architecture, Patient Experience Architecture, Enterprise Frontend Architecture, Frontend Engineering, Product, QA, Security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md), [16 — Store architecture](16-store-architecture.md) |
+| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md), [16 — Store architecture](16-store-architecture.md), [18 — CRM architecture](18-crm.md), [25 — Guardian architecture](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md) |
 
 This document is the **authoritative Patient Portal (authenticated self-service client) architecture** for Clinexa Version 1. It defines Portal responsibilities, module boundaries, navigation architecture, patient self-service capabilities, logical frontend state ownership, API integration surfaces, and Portal performance, accessibility, and security posture—without prescribing frameworks, component libraries, styling systems, or application source code.
 
@@ -53,7 +53,9 @@ Define a production-grade Patient Portal architecture for Clinexa so that:
 - Subscription manage/cancel and payment-method update are available without implying clinical or inventory authority (`FR-PRT-004`; `FR-SUB-004`; `FR-PAY-004`).
 - Staff CRM workflows and catalog configuration are never exposed in Portal (`FR-PRT-006`).
 - Accessibility and performance targets for Portal self-service are architecturally accountable (`NFR-002`, `NFR-091`, `NFR-098`, `NFR-101`).
-- Module boundaries prevent Portal from owning Store discovery/SEO commerce, CRM clinical ops, inventory truth, or payment merchant secrets.
+- Module boundaries prevent Portal from owning Store discovery/SEO commerce, clinical ops, inventory truth, or payment merchant secrets.
+
+> **Ecosystem position.** The Patient Portal is one client in the Clinexa ecosystem alongside the Store and the Internal Platform, all over the shared Backend API (`ARCH-170`). The Portal **owns no backend module**; it consumes platform modules under patient-scoped permissions (`ARCH-161`). The definitions and policies it renders—questionnaire versions, subscription plans, notification templates, document retention, appointment types—are administered in the **Guardian** context of the Internal Platform ([25 §2.4](25-guardian.md#24-relationship-with-patient-portal)), while operational work on patient records happens in the **CRM** context. The Portal exposes no administrative or destructive operations; a patient may cancel or manage their own records, but delete, archive, restore, financial correction, and override remain Guardian-only (`ARCH-165`).
 
 ### 1.2 Scope
 
@@ -74,7 +76,9 @@ Define a production-grade Patient Portal architecture for Clinexa so that:
 | Area | Deferred to / note |
 | --- | --- |
 | Public Store discovery / SEO catalog / cart / checkout finalize | [16](16-store-architecture.md) (`ARCH-011`) |
-| CRM clinical queues, pharmacy, fulfillment, catalog/CMS authoring | [05](05-system-architecture.md) (`ARCH-013`); `FR-PRT-006` |
+| Clinical queues, pharmacy, fulfillment | Internal Platform CRM context ([18](18-crm.md); `ARCH-013`); `FR-PRT-006` |
+| Catalog/CMS authoring, plan and questionnaire administration, platform settings | Internal Platform Guardian context ([25](25-guardian.md); `ARCH-172`) |
+| Destructive administrative operations | Guardian only (`ARCH-165`); patient-initiated cancel is not an administrative delete |
 | Standalone multi-address Address Book aggregate / `/addresses` API | Post-V1 recommendation ([10](10-database-design.md) §14); V1 uses shipping fields as modeled |
 | Native mobile Portal app | Out of V1 (PRD §11; `NFR-102`; future [19](19-mobile-app.md)) |
 | Integrated video telemedicine | Out of V1 (`FR-APT-004`) |

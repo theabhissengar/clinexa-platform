@@ -8,7 +8,9 @@
 | Status | Draft for review |
 | Primary market | United States |
 | Audience | Product, Architecture, Engineering, QA, DevOps, Design, Operations |
-| Related docs | [01 — Project overview](01-project-overview.md) through [24 — Future features](24-future-features.md) |
+| Related docs | [01 — Project overview](01-project-overview.md) through [30 — Migration and verification](30-migration-and-verification.md) |
+
+> **Terminology (authoritative):** Clinexa is an **ecosystem** of clients over one shared Backend API. The internal staff surface is the **Clinexa Internal Platform**—a single authenticated application with two contexts: **CRM** (operational lifecycle) and **Guardian** (administrative lifecycle, including all destructive operations). “Guardian” is the official name for the master platform management context; no other label (for example “Business Management System”) is used.
 
 This document is the **single source of truth** for Clinexa planning. All subsequent documents in this repository (architecture, database, APIs, CRM, Store, Patient Portal, Mobile, security, delivery) must derive scope, terminology, and business rules from this PRD. Where a later document adds detail, it must remain consistent with the decisions recorded here.
 
@@ -317,7 +319,8 @@ Role-permission matrices are summarized here and expanded in [08 — Role permis
 | --- | --- | --- |
 | Store Web Application | Guests, patients | In scope |
 | Patient Portal | Authenticated patients | In scope |
-| CRM | Clinical and internal staff | In scope |
+| Internal Platform — CRM context | Clinical and operational staff | In scope |
+| Internal Platform — Guardian context | Administrators and platform owners | In scope |
 | Backend API | All clients | In scope |
 | Future Mobile Application | Patients (later clinicians if needed) | Out of V1 functional delivery; architected for later |
 
@@ -339,14 +342,31 @@ Role-permission matrices are summarized here and expanded in [08 — Role permis
 | Users | Authenticated patients only |
 | Major features | Dashboard, order history, subscription management, document download/view, appointment booking/view, password/account security, support |
 
-### 7.4 CRM
+### 7.4 Internal Platform (CRM + Guardian)
+
+One authenticated staff application with two contexts. Both contexts share authentication, sessions, RBAC, backend, database, APIs, design system, theme, and application shell; only modules, workflows, and permissions differ.
+
+#### 7.4.1 CRM context — operational lifecycle
 
 | Aspect | Description |
 | --- | --- |
-| Purpose | Clinical and business operations control plane |
-| Responsibilities | Patient records (staff view), consultation queues, prescriptions, inventory, CMS/blogs, orders/fulfillment, coupons, support, analytics/reports, platform configuration (products, questionnaires, treatment plans, subscriptions, consultation workflows), user/role admin |
-| Users | Doctors, pharmacists, support, operations, marketing, content, administrators |
-| Major features | Configurable catalog and clinical workflows; consultation review; Rx workflow; inventory; CMS; ops dashboards |
+| Purpose | Clinical and operational control plane for day-to-day work |
+| Responsibilities | Patient records (staff view), consultation queues, prescriptions, pharmacist review, order operational workflow and fulfillment, timeline/documents/internal notes, support triage, operational reports, permitted subscription renew/pause/resume |
+| Users | Doctors, pharmacists, support, operations |
+| Major features | Consultation review; Rx workflow; fulfillment progression; support desk; operational dashboards |
+| Never exposes | Delete, archive, restore, financial corrections, administrative overrides, bulk cleanup, hard delete |
+
+#### 7.4.2 Guardian context — administrative lifecycle
+
+| Aspect | Description |
+| --- | --- |
+| Purpose | Master platform management and business administration |
+| Responsibilities | Catalog (products, categories, variants, pricing, media, inventory policy), content (pages, blogs, homepage, FAQs), marketing (coupons, campaigns, templates), platform settings, feature flags, taxes, shipping, payment providers and keys, webhooks, integrations, API keys, user administrative lifecycle, order administration and financial corrections, subscription administrative lifecycle, audit/activity/system logs |
+| Users | Administrators, platform owners, marketing and content administrators |
+| Major features | Configurable catalog and clinical-workflow configuration; grouped enterprise navigation; administrative reports and exports; sole exposure of destructive operations |
+| Future areas | Security (2FA, trusted devices, sessions, security logs), vendor management, Store-driven modules such as SEO, search configuration, and merchandising |
+
+Authoritative detail: [18 — CRM](18-crm.md) and [25 — Guardian](25-guardian.md).
 
 ### 7.5 Backend API
 
@@ -354,8 +374,9 @@ Role-permission matrices are summarized here and expanded in [08 — Role permis
 | --- | --- |
 | Purpose | Shared system of record and business logic layer |
 | Responsibilities | Authentication/authorization, domain services, persistence orchestration, payment provider integration, notifications triggers, audit logging, search indexing hooks, report data |
-| Users | Not end-user facing; consumed by Store, Portal, CRM, future Mobile |
+| Users | Not end-user facing; consumed by Store, Patient Portal, the Internal Platform (CRM and Guardian contexts), and future clients |
 | Major features | Versioned HTTP APIs, RBAC enforcement, clinical-gate enforcement, webhook receivers (payments), health/admin endpoints as designed later |
+| Ownership rule | The API is **application-agnostic**: backend modules are platform modules that clients consume, never own, and authorization depends on identity and permissions—not on the calling application |
 
 ### 7.6 Future Mobile Application
 
@@ -656,7 +677,7 @@ Version 1 includes the following.
 
 - Store Web Application
 - Patient Portal
-- CRM
+- Internal Platform (CRM context + Guardian context)
 - Backend API
 - Shared database / persistence design (documented and implemented in application repos)
 
@@ -679,12 +700,12 @@ Version 1 includes the following.
 | Support | Ticketing between Portal and CRM |
 | Analytics/Reports | Core operational and funnel reporting in CRM |
 | Search/SEO | Store search and editable SEO fields |
-| Configuration | CRM configuration for products, questionnaires, treatment plans, subscriptions, consultation workflows without code changes for new categories |
+| Configuration | Guardian configuration for products, questionnaires, treatment plans, subscriptions, consultation workflows without code changes for new categories |
 | Security posture | HIPAA-aware controls as product requirements (not certification) |
 
 ### 10.3 Documentation scope in this repository
 
-This planning repository delivers requirements and design documentation only. Application source code lives in other repositories. This PRD is the root requirements artifact for all numbered docs `01`–`24`.
+This repository delivers requirements and design documentation, plus the Internal Platform shell under `apps/admin`. Store and Patient Portal application code lives in their own repositories. This PRD is the root requirements artifact for all numbered docs `01`–`30`, including [25 — Guardian](25-guardian.md), [26 — Implementation tracker](26-implementation-tracker.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), and [30 — Migration and verification](30-migration-and-verification.md).
 
 ---
 
@@ -860,13 +881,16 @@ These are **product rules for the platform**, not legal advice:
 
 ### 14.1 Communication model
 
-All interactive surfaces communicate with the **Backend API**. The API owns business rules, authorization, and persistence orchestration against the **Database** (and document/object storage as designed later). Store, Patient Portal, and CRM are clients. The Future Mobile app is an additional client of the same API.
+All interactive surfaces communicate with the **Backend API**. The API owns business rules, authorization, and persistence orchestration against the **Database** (and document/object storage as designed later). Store, Patient Portal, and the Internal Platform (CRM and Guardian contexts) are clients. The Future Mobile app—and any later application such as an Admin Mobile app, Vendor Portal, Partner Portal, or Public API consumer—is an additional client of the same API. Adding a client is a matter of configuration, permissions, and registry documentation; it never requires a second domain or a parallel backend.
 
 ```mermaid
 flowchart LR
   Store[StoreWeb]
   Portal[PatientPortal]
-  CRM[CRM]
+  subgraph Internal [InternalPlatform]
+    CRM[CrmContext]
+    Guardian[GuardianContext]
+  end
   Mobile[FutureMobile]
   API[BackendAPI]
   DB[(Database)]
@@ -877,6 +901,7 @@ flowchart LR
   Store --> API
   Portal --> API
   CRM --> API
+  Guardian --> API
   Mobile -.-> API
   API --> DB
   API --> Files
@@ -890,14 +915,15 @@ flowchart LR
 | --- | --- | --- |
 | Store | UX for discovery, content, checkout entry | Clinical approval, inventory truth |
 | Patient Portal | UX for authenticated self-service | Staff workflows, catalog configuration |
-| CRM | Staff UX, configuration, clinical/ops workflows | Public SEO storefront rendering |
-| Backend API | Domain logic, RBAC, integrations, audits | Pixel-level UI |
+| Internal Platform — CRM context | Operational staff UX; clinical and fulfillment workflows | Public SEO storefront rendering; destructive administrative operations |
+| Internal Platform — Guardian context | Administrative staff UX; master data, platform configuration, destructive operations | Clinical decisions (prescribing, consult approval); public storefront rendering |
+| Backend API | Domain logic, RBAC, integrations, audits; owns all platform modules | Pixel-level UI; any awareness of which client called it |
 | Database | Durable state | Business rule interpretation without API |
-| Future Mobile | Native UX | Separate clinical backend |
+| Future Mobile / future applications | Native or client-specific UX | Separate clinical backend; ownership of platform modules |
 
 ### 14.3 Configuration-driven core
 
-Products, questionnaires, treatment plans, subscriptions, and consultation workflows are data/configuration in the platform. Adding a new category (for example, Migraine Care) should be achievable by administrators through CRM configuration and content—not by forking the codebase.
+Products, questionnaires, treatment plans, subscriptions, and consultation workflows are data/configuration in the platform. Adding a new category (for example, Migraine Care) should be achievable by administrators through Guardian configuration and content—not by forking the codebase.
 
 ### 14.4 Stack posture at PRD level
 
@@ -1065,6 +1091,7 @@ flowchart LR
 | Version | Date | Author | Changes |
 |----------|------|--------|----------|
 | 1.0 | YYYY-MM-DD | Abhishek Singh Sengar | Initial PRD |
+| 1.1 | 2026-07-27 | Architecture (Clinexa planning) | Adopted Clinexa Ecosystem and Internal Platform terminology (CRM + Guardian contexts); recorded application-agnostic backend ownership rule; Guardian as configuration and administration plane |
 
 ---
 

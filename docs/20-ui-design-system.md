@@ -143,7 +143,9 @@ The Clinexa Design System is based on enterprise healthcare software principles.
 | UI-007 | Reusability | Components should be reusable across applications. |
 | UI-008 | Performance | UI should remain lightweight and responsive. |
 | UI-009 | Clarity | Important actions remain visually distinguishable. |
-| UI-010 | Platform Consistency | Store, Portal, CRM, and Mobile share one visual language. |
+| UI-010 | Platform Consistency | Store, Portal, the Internal Platform, and Mobile share one visual language. |
+| UI-011 | One Internal Platform | The **CRM** and **Guardian** contexts are one product: identical chrome, tokens, spacing, typography, tables, forms, and dialogs. Navigation and available modules differ; the visual language never does. A user must not be able to tell which context they are in from styling alone—only from navigation, breadcrumbs, and content. |
+| UI-012 | Destructive Action Treatment | Destructive actions (delete, archive, restore, financial correction, administrative override, bulk cleanup, hard delete) use a single, deliberate treatment defined once here—never invented per module. They are visually distinct from ordinary actions, require an explicit confirmation step, state the scope and consequence in plain language, and never rely on color alone. Because these actions exist only in the Guardian context ([25](25-guardian.md)), CRM has no destructive variant. |
 
 ---
 
@@ -1246,9 +1248,9 @@ Dark mode applies consistently across:
 - Notifications
 - Dashboards
 
-### CRM admin implementation note
+### Internal Platform implementation note
 
-The CRM admin application (`apps/admin`) implements light/dark/system themes via semantic design tokens and `next-themes`. Shell and future pages **must** use semantic token classes only (`bg-background`, `text-foreground`, `bg-sidebar`, `border-border`, etc.). Direct palette colors (`bg-white`, `text-gray-*`) are forbidden in the shell so future modules inherit the active theme automatically. Application Shell SoT: [18 — CRM §4](18-crm.md#4-application-shell).
+The Internal Platform application (`apps/admin`), which hosts both the CRM and Guardian contexts, implements light/dark/system themes via semantic design tokens and `next-themes`. Shell and future pages **must** use semantic token classes only (`bg-background`, `text-foreground`, `bg-sidebar`, `border-border`, etc.). Direct palette colors (`bg-white`, `text-gray-*`) are forbidden in the shell so future modules inherit the active theme automatically. Both contexts consume the same tokens, so a module cannot look like it belongs to a different product depending on where it is mounted (`UI-011`). Application Shell SoT: [18 — CRM §4](18-crm.md#4-application-shell); Guardian shell rules: [25 §8](25-guardian.md).
 
 ---
 

@@ -99,6 +99,9 @@ This FRS does **not** specify tech stack, schemas, or API contracts (see docs 05
 | Grace / past-due | Subscription state after failed renewal charge pending recovery |
 | HIPAA-aware | Design patterns for minimization, access control, audit, encryption—not certification |
 | Backend API | System of record interface owning business rules for all clients |
+| Internal Platform | The single authenticated staff application hosting two contexts: **CRM** (operational lifecycle) and **Guardian** (administrative lifecycle, including all destructive operations) |
+| "via CRM" (legacy phrasing) | Where a requirement below says a capability is configured or performed "via CRM", it means **via the Internal Platform staff surface**. Which context surfaces it is decided by §11.1: operational work in CRM, administrative configuration in Guardian. The requirement is unchanged; only its surface is now explicit |
+| Destructive operation | Delete, archive, restore, financial correction, administrative override, bulk cleanup, or hard delete. Exposed in the Guardian context only, gated by a Class D permission ([08 §4.2](08-role-permissions.md#42-destructive-permission-class-rbac-010)) |
 
 ### 1.5 ID conventions
 
@@ -1829,6 +1832,8 @@ Authentication, Orders, Subscriptions, Documents, Appointments, Support, Notific
 
 Provide the clinical and business operations control plane: patient staff view, consultation queues, prescription workflow (doctor approve/decline, pharmacist review), inventory, CMS/blogs, orders/fulfillment, coupons, support, analytics/reports, and configuration of products, questionnaires, treatment plans, subscriptions, and consultation workflows—with RBAC separation of duties.
 
+> **Surface note.** `CRM-*` requirements are delivered by the Internal Platform. Operational requirements render in the **CRM context** (`/crm/*`); the configuration and administrative requirements catalogued here—catalog, content, coupons, questionnaire definitions, plan configuration, workflow governance—render in the **Guardian context** (`/guardian/*`) per [18 §2.8](18-crm.md#28-relationship-with-guardian). No `CRM-*` requirement is satisfied by a destructive affordance in the CRM context (`ARCH-165`).
+
 #### Actors
 
 | Actor | Role |
@@ -2784,6 +2789,8 @@ Orders, Inventory, Payments, CRM, Analytics, Authentication.
 
 Enable administrators to manage users/roles, catalog and clinical configuration publish, and platform integrity with audit logging—without replacing least-privilege practices.
 
+> **Surface note.** `ADM-*` requirements are delivered in the **Guardian context** (`/guardian/*`), which requires `PERM-GRD-001`. Destructive administrative operations additionally require a Class D grant ([08 §4.2](08-role-permissions.md#42-destructive-permission-class-rbac-010)) and are audited on every call.
+
 #### Actors
 
 | Actor | Role |
@@ -3363,6 +3370,31 @@ Role abbreviations: **Pat** = Patient, **Doc** = Doctor, **Pharm** = Pharmacist,
 
 Cross-reference: duty separation OR-06/OR-07; Support never approves prescriptions (FR-SUP-004); Marketing/Content no default clinical chart access (FR-CRM-006).
 
+### 11.1 Surface responsibility (which consumer exposes the operation)
+
+The matrix above records *which role* owns an operation. Because the Backend API is application-agnostic, a role's grants travel with the principal into whichever client they use ([05 §3.5](05-system-architecture.md), `ARCH-160`). The table below records where each operation is *exposed*, so a requirement can be traced to a surface without implying that any client owns the module.
+
+| Consumer | Exposes | Never exposes |
+| --- | --- | --- |
+| Store | Guest and patient commerce: browse published catalog and content, cart, checkout, register | Staff operations; administrative configuration; destructive operations |
+| Patient Portal | Patient self-service on own records: orders, subscriptions, questionnaires, appointments, documents, support | Any other patient's data; staff operations; destructive operations |
+| Internal Platform — CRM context (`/crm/*`) | Operational lifecycle: clinical review, pharmacy review, fulfillment, inventory, support triage, operational refund and cancel assist within policy | Administrative configuration; delete, archive, restore, financial correction, administrative override, bulk cleanup, hard delete |
+| Internal Platform — Guardian context (`/guardian/*`) | Administrative lifecycle: catalog, content, marketing, questionnaire definitions, users and roles, settings, governance, and **all destructive operations** | Clinical approval or decline; clinical notes; operational queue work |
+| Workers / System (`Sys`) | Scheduled and event-driven transitions: renewals, dispatch, exports, reindex | Interactive administrative or destructive decisions |
+| Future clients (Mobile, Vendor Portal, Partner Portal, Public API) | Only what their principal's grants allow, subject to the same rules | Anything requiring grants they do not hold |
+
+Destructive rules for entities in the matrix above:
+
+| Entity family | Delete / Archive / Restore exposure | Permission |
+| --- | --- | --- |
+| Users, Orders, Subscriptions | Guardian only | `PERM-ADM-030`–`032`, `PERM-ORD-010`–`012`, `PERM-SUB-010`–`012` |
+| Products, Categories, Blogs, CMS pages, Coupons | Guardian only | `PERM-PRD-010`, `PERM-CAT-010`, `PERM-BLG-010`, `PERM-CMS-010`, `PERM-CPN-010` |
+| Order financial correction and administrative override | Guardian only; distinct from policy-scoped operational refund (`PERM-PAY-003`) | `PERM-ORD-013`, `PERM-ORD-014` |
+| Prescriptions, Questionnaire responses, Clinical notes, Audit logs | No delete surface anywhere; clinical and audit retention applies | — |
+| Report artifacts, bulk cleanup, hard-delete procedure | Guardian only | `PERM-RPT-010`, `PERM-ADM-033`, `PERM-ADM-034` |
+
+Full entity-by-consumer detail lives in the [Ownership Matrix](28-ownership-matrix.md); permission definitions live in [08 §4](08-role-permissions.md).
+
 ---
 
 ## 12. Domain Events
@@ -3677,6 +3709,7 @@ Extended module-level definitions also appear in [§1.4 Definitions](#14-definit
 | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | Initial functional requirements specification |
 | 1.1 | 2026-07-23 | Abhishek Singh Sengar | Added business→FR traceability detail, CRUD matrix, domain events, sequence diagrams, state machine summary, and glossary |
+| 1.2 | 2026-07-27 | Platform Engineering | Added §11.1 surface responsibility (multi-consumer exposure and Guardian-only destructive rules); surface notes on `CRM` and `ADM` modules for the CRM and Guardian contexts of the Internal Platform |
 
 ---
 

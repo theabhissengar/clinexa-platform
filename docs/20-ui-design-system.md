@@ -1246,6 +1246,10 @@ Dark mode applies consistently across:
 - Notifications
 - Dashboards
 
+### CRM admin implementation note
+
+The CRM admin application (`apps/admin`) implements light/dark/system themes via semantic design tokens and `next-themes`. Shell and future pages **must** use semantic token classes only (`bg-background`, `text-foreground`, `bg-sidebar`, `border-border`, etc.). Direct palette colors (`bg-white`, `text-gray-*`) are forbidden in the shell so future modules inherit the active theme automatically. Application Shell SoT: [18 — CRM §4](18-crm.md#4-application-shell).
+
 ---
 
 # 26. Design Tokens

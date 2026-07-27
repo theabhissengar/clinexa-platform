@@ -217,7 +217,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Relationships | 1:N Sessions, PasswordResetTokens; 1:N UserRoleAssignments; 0:1 StaffProfiles; 1:N patient-owned Orders, Subscriptions, Documents, Appointments, Tickets, QuestionnaireResponses |
 | Business rules | Email unique (normalized); patients self-register (`FR-AUTH-001`); staff provisioned by Admin (`FR-ADM-001`); deactivate preferred over hard delete; password hashes only—no plaintext |
 | Retention | Deactivated accounts retained per policy; clinical history remains attributable |
-| Trace | FR-AUTH-001–006, FR-ADM-001, ARCH-040/041, ROLE-002–009 |
+| Trace | FR-AUTH-001–006, FR-ADM-001, ARCH-040/041, ROLE-002–010 |
 
 #### DB-002 Roles
 
@@ -228,7 +228,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Relationships | M:N Permissions via RolePermissions; M:N Users via UserRoleAssignments |
 | Business rules | Dual-role only via explicit assignment (`RBAC-030`); Admin configures with audit (`FR-ADM-001`) |
 | Retention | Retain role definitions; assignment history via audit |
-| Trace | FR-AUTH-004, FR-ADM-001, [08](08-role-permissions.md) ROLE-002–009 |
+| Trace | FR-AUTH-004, FR-ADM-001, [08](08-role-permissions.md) ROLE-002–010 |
 
 #### DB-003 Permissions
 
@@ -2078,6 +2078,7 @@ Central logical enumerations used by the database design. Values are **strings**
 | `marketing` | Marketing (no default clinical chart) | DB-002 / DB-005 | ROLE-007, FR-CRM-006 |
 | `content` | CMS/blog authors | DB-002 / DB-005 | ROLE-008, FR-CMS-001 |
 | `administrator` | Users/roles/config governance | DB-002 / DB-005 | ROLE-009, FR-ADM-001 |
+| `super-administrator` | Platform Administration Access (`PERM-ADM-020`) + Admin-equivalent SoD grants | DB-002 / DB-005 | ROLE-010, FR-ADM-001 |
 
 ### 16.13 Permission Prefixes
 

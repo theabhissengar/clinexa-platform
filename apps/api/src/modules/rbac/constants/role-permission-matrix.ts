@@ -4,7 +4,8 @@ import { Roles, type RoleCode } from './roles';
 /**
  * Canonical role → permission matrix (docs/08 §4–§5).
  * PERM-AUTH-005 is system-only and never assigned.
- * Admin does not receive clinical prescribe / pharmacy / fulfill powers (RBAC-028).
+ * ROLE-009 (Administrator) receives all V1 CRM business-module permissions by default.
+ * ROLE-010 adds PERM-ADM-020 (platform Administration only). No AuthZ bypass.
  */
 export const ROLE_PERMISSION_MATRIX: Readonly<
   Record<RoleCode, readonly PermissionCode[]>
@@ -157,6 +158,9 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.SRCH_CRM,
     Permissions.CRM_ACCESS_SHELL,
     Permissions.CRM_PATIENT_RECORDS,
+    Permissions.CRM_APPROVE_RX,
+    Permissions.CRM_PHARMACY_REVIEW,
+    Permissions.CRM_PHARMACY_READY,
     Permissions.PRD_VIEW_PUBLISHED,
     Permissions.PRD_MANAGE,
     Permissions.CAT_VIEW_PUBLISHED,
@@ -167,6 +171,7 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.SUB_MANAGE_OWN,
     Permissions.SUB_CONFIGURE_PLANS,
     Permissions.QST_CONFIGURE,
+    Permissions.QST_VIEW_FULL_ANSWERS,
     Permissions.APT_STAFF_MANAGE,
     Permissions.DOC_STAFF,
     Permissions.DOC_AUDIT_PHI,
@@ -188,6 +193,57 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.ADM_ASSIGN_ROLES,
     Permissions.ADM_CONFIGURE_WORKFLOWS,
     Permissions.ADM_VIEW_AUDIT,
+    Permissions.SET_MANAGE,
+    Permissions.SET_OVERSELL_POLICIES,
+    Permissions.REV_MODERATE,
+  ],
+  /**
+   * Super Administrator: same business-module grants as Administrator plus
+   * PERM-ADM-020 (platform Administration). Not a god mode — normal RBAC pipeline.
+   */
+  [Roles.SUPER_ADMINISTRATOR]: [
+    Permissions.AUTH_SIGN_IN,
+    Permissions.AUTH_PASSWORD_RESET,
+    Permissions.AUTH_SESSION_END,
+    Permissions.SRCH_CRM,
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+    Permissions.CRM_APPROVE_RX,
+    Permissions.CRM_PHARMACY_REVIEW,
+    Permissions.CRM_PHARMACY_READY,
+    Permissions.PRD_VIEW_PUBLISHED,
+    Permissions.PRD_MANAGE,
+    Permissions.CAT_VIEW_PUBLISHED,
+    Permissions.CAT_MANAGE,
+    Permissions.PAY_INITIATE_REFUND,
+    Permissions.ORD_VIEW,
+    Permissions.ORD_CANCEL,
+    Permissions.SUB_MANAGE_OWN,
+    Permissions.SUB_CONFIGURE_PLANS,
+    Permissions.QST_CONFIGURE,
+    Permissions.QST_VIEW_FULL_ANSWERS,
+    Permissions.APT_STAFF_MANAGE,
+    Permissions.DOC_STAFF,
+    Permissions.DOC_AUDIT_PHI,
+    Permissions.NTF_RECEIVE,
+    Permissions.NTF_MANAGE_TEMPLATES,
+    Permissions.INV_VIEW,
+    Permissions.INV_ADJUST,
+    Permissions.RPT_VIEW,
+    Permissions.RPT_EXPORT,
+    Permissions.ANL_MARKETING,
+    Permissions.ANL_OPS_CLINICAL,
+    Permissions.CMS_MANAGE,
+    Permissions.CMS_PUBLISH,
+    Permissions.BLG_MANAGE,
+    Permissions.CPN_CONFIGURE,
+    Permissions.SUP_TRIAGE,
+    Permissions.SUP_LINK_TICKET,
+    Permissions.ADM_MANAGE_USERS,
+    Permissions.ADM_ASSIGN_ROLES,
+    Permissions.ADM_CONFIGURE_WORKFLOWS,
+    Permissions.ADM_VIEW_AUDIT,
+    Permissions.ADM_ACCESS_ADMINISTRATION,
     Permissions.SET_MANAGE,
     Permissions.SET_OVERSELL_POLICIES,
     Permissions.REV_MODERATE,

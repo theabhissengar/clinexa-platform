@@ -101,4 +101,4 @@ npm run prisma:migrate -w @clinexa/api
 npm run prisma:seed -w @clinexa/api
 ```
 
-Identity models include Users, Sessions, Roles, Permissions, RolePermissions, and UserRoleAssignments. `prisma db seed` applies the **canonical** RBAC catalog from docs/08 and, when `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` are set, assigns `ROLE-009` (Administrator) to that user.
+Identity models include Users, Sessions, Roles, Permissions, RolePermissions, and UserRoleAssignments. `prisma db seed` applies the **canonical** RBAC catalog from docs/08 and, when seed env vars are set, assigns `ROLE-009` (Administrator) and/or `ROLE-010` (Super Administrator) to the configured users. **Re-run seed after matrix changes** so `RolePermission` rows reconcile. Administrator receives all V1 business-module permissions by default; Super Administrator adds `PERM-ADM-020` only.

@@ -1377,7 +1377,7 @@ Async acceptance should return quickly (&lt; 2 s) with job status resources wher
 
 ### 12.2 RBAC
 
-- Roles `ROLE-001`–`009` and permissions `PERM-*` from [08](08-role-permissions.md) are the AuthZ contract.
+- Roles `ROLE-001`–`010` and permissions `PERM-*` from [08](08-role-permissions.md) are the AuthZ contract. `ROLE-010` is a normal RBAC role (includes `PERM-ADM-020`); it never bypasses AuthN/AuthZ.
 - Feature flags must not bypass clinical gates (`ARCH-149`).
 
 ### 12.3 Patient isolation

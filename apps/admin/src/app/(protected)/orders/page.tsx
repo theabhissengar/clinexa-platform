@@ -1,18 +1,18 @@
 "use client";
 
-import { Users } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 
 import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
 import { Permissions } from "@/features/auth/permissions";
 
-export default function UsersPage() {
+export default function OrdersPage() {
   return (
-    <RequirePagePermission permission={Permissions.ADM_MANAGE_USERS}>
+    <RequirePagePermission permission={Permissions.ORD_VIEW}>
       <ModuleComingSoon
-        title="Users"
-        description="User Management will be delivered in a future phase."
-        icon={Users}
+        title="Orders"
+        description="Orders management will be delivered in a future phase."
+        icon={ShoppingCart}
       />
     </RequirePagePermission>
   );

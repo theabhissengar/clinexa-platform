@@ -17,7 +17,7 @@ It expands [PRD §6](00-product-requirements-document.md#6-user-personas) using 
 
 It does **not** define end-to-end journey scripts ([07](07-user-journeys.md)), full RBAC matrices ([08](08-role-permissions.md)), UI layouts or mockups ([20](20-ui-design-system.md)), API contracts, or database design. It does **not** invent roles beyond the PRD.
 
-> **Naming alignment:** Clinexa has no separate “Registered Customer” or “Super Administrator” persona. Unauthenticated Store visitors are **Guest Visitors**; after registration they are **Patients**. Inventory and fulfillment are owned by **Operations**. Elevated configuration and break-glass practices live under **Administrator**. Engineering and QA appear in the PRD as delivery stakeholders and are noted in scope only—they are not assigned `USER-*` IDs here.
+> **Naming alignment:** Unauthenticated Store visitors are **Guest Visitors**; after registration they are **Patients**. Inventory and fulfillment are owned by **Operations**. Day-to-day configuration lives under **Administrator** (`USER-009` / `ROLE-009`). **Super Administrator** (`USER-010` / `ROLE-010`) is a separate product persona for the CRM Administration plane (`PERM-ADM-020`); it is a normal RBAC role and never bypasses AuthN/AuthZ. There is no separate “Registered Customer” persona. Engineering and QA appear in the PRD as delivery stakeholders and are noted in scope only—they are not assigned `USER-*` IDs beyond the product catalog.
 
 ---
 
@@ -54,7 +54,7 @@ Define the primary human actors of Clinexa so that:
 
 | Area | Coverage |
 | --- | --- |
-| Primary personas | Guest Visitor, Patient, Doctor, Pharmacist, Support Agent, Operations Manager, Marketing Manager, Content Manager, Administrator |
+| Primary personas | Guest Visitor, Patient, Doctor, Pharmacist, Support Agent, Operations Manager, Marketing Manager, Content Manager, Administrator, Super Administrator |
 | Identity lifecycle | Guest → Patient registration transition (same person, new authenticated identity) |
 | Surfaces | Store Web, Patient Portal, CRM (staff) |
 | Persona attributes | Goals, responsibilities, activities, motivations, pain points, needs, permission summaries, devices, skill, frequency, success metrics, accessibility, related modules and business goals |
@@ -150,6 +150,7 @@ Personas express **intent and boundaries**. [08 — Role permissions](08-role-pe
 | USER-007 | Marketing Manager | Marketing | CRM (Store-facing outcomes) |
 | USER-008 | Content Manager | Content Team | CRM (Store-facing content) |
 | USER-009 | Administrator | Administrator | CRM |
+| USER-010 | Super Administrator | Super Administrator | CRM |
 
 ```mermaid
 flowchart TB
@@ -385,14 +386,14 @@ flowchart TB
 | --- | --- |
 | **Persona ID** | USER-009 |
 | **Role** | Administrator (platform configuration and governance) |
-| **Description** | An internal administrator who configures users/roles, catalog, questionnaires, treatment plans, subscription plans, consultation workflows, and system settings—with auditability and segregation-of-duties practices. There is no separate Super Administrator persona; elevated or break-glass access is an audited Administrator practice, including safeguards such as preventing removal of the last admin. |
+| **Description** | The **primary operational CRM role**. Configures users/roles, catalog, questionnaires, plans, workflows, and settings—and has default access to every V1 business module (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings). Platform Administration (`PERM-ADM-020`) belongs to Super Administrator only. |
 | **Primary Goals** | Configure the platform safely; manage staff roles; maintain catalog and workflow integrity without code deploys |
 | **Responsibilities** | Provision staff; assign roles; publish products/questionnaires/workflows safely; configure settings (oversell, moderation, notification templates); preserve audit trails |
 | **Daily Activities** | User/role changes; catalog and questionnaire versioning; publish-safety checks for Rx products; settings updates; investigate configuration issues with clinical/ops stakeholders |
 | **Motivations** | Reusable multi-category platform; safe configuration velocity; clear auditability |
 | **Pain Points** | Dangerous misconfiguration; unclear audit trails; pressure to widen roles beyond least privilege |
 | **Needs** | CRM administration modules; publish-safety guards; audited break-glass patterns; RACI clarity with clinical/ops consultants |
-| **Permissions Summary** | Broad configuration, user/role admin, settings, catalog/clinical workflow config—still subject to audit and segregation-of-duties. Not a substitute for clinical approval roles. Full matrix → [08](08-role-permissions.md). |
+| **Permissions Summary** | Full V1 CRM business-module access via the permission matrix (including Prescriptions). User/role admin, settings, catalog/workflow config, audit, reports. **No** `PERM-ADM-020`. Full matrix → [08](08-role-permissions.md). |
 | **Devices Used** | Desktop CRM |
 | **Technical Skill Level** | Medium to high (platform/admin literacy) |
 | **Frequency of Use** | Daily during launches; as needed for ops changes |
@@ -403,7 +404,31 @@ flowchart TB
 
 ---
 
-### 3.10 Delivery stakeholders (not `USER-*` personas)
+### 3.10 USER-010 — Super Administrator
+
+| Field | Detail |
+| --- | --- |
+| **Persona ID** | USER-010 |
+| **Role** | Super Administrator (platform Administration plane) |
+| **Description** | Platform Administration plane owner—not the primary operational CRM role. Receives the same business-module permissions as Administrator plus `PERM-ADM-020` (Administration console and future platform-only surfaces). |
+| **Primary Goals** | Govern platform-level Administration; retain full business-module visibility alongside Administrator |
+| **Responsibilities** | Platform Administration console; future platform config (multi-vendor, licenses, global settings). Business modules remain accessible via the normal permission matrix—not hidden from Super Administrator. |
+| **Daily Activities** | Administration plane tasks; escalate/config with clinical and ops stakeholders; never rely on special-cased AuthZ shortcuts |
+| **Motivations** | Clear separation between day-to-day Administrator work and platform Administration access |
+| **Pain Points** | Pressure to treat Super Admin as god mode; conflating ROLE-010 with ROLE-009 |
+| **Needs** | Permission-first UI (`PERM-ADM-020`); normal RBAC pipeline; audit trails |
+| **Permissions Summary** | Same V1 business-module grants as Administrator **plus** `PERM-ADM-020`. Platform-only exclusivity; not a god mode. Full matrix → [08](08-role-permissions.md). |
+| **Devices Used** | Desktop CRM |
+| **Technical Skill Level** | High (platform/admin literacy) |
+| **Frequency of Use** | As needed for platform Administration |
+| **Success Metrics** | Zero AuthZ bypass incidents; Administration gated only by `PERM-ADM-020` |
+| **Accessibility Considerations** | Keyboard CRM admin workflows; clear privileged-action confirmations |
+| **Related Functional Modules** | FR-ADM-001–004, FR-SET-001–004, FR-CRM-007 |
+| **Related Business Goals** | BO-5; BP-10; OR-14; AC-BR-05 |
+
+---
+
+### 3.11 Delivery stakeholders (not `USER-*` personas)
 
 | Stakeholder | PRD | Why not a product persona here |
 | --- | --- | --- |
@@ -639,6 +664,7 @@ Detailed step scripts, alternate paths, and notifications timing belong in doc 0
 | USER-007 Marketing Manager | BO-1, BO-4; BP-11; OR-07, OR-13; AC-BR-12/13 | FR-CPN-001, FR-ANL-001–002, FR-CRM-006 | ARCH-013; ARCH-057 Analytics; ARCH-063 Coupons |
 | USER-008 Content Manager | BO-1, BO-5; BP-11; OR-07, OR-13; AC-BR-06, AC-BR-13 | FR-BLG-001–004, FR-CMS-001–003, FR-REV-003 | ARCH-013; ARCH-060 Blogs; ARCH-061 CMS; Store render ARCH-011 |
 | USER-009 Administrator | BO-5; BP-10; OR-02, OR-10, OR-14; KPI-07; AC-BR-05/06 | FR-ADM-001–004, FR-SET-001–004, catalog/QST/SUB config FRs | ARCH-013; ARCH-041 Users; config modules ARCH-040+; settings |
+| USER-010 Super Administrator | BO-5; BP-10; OR-14; AC-BR-05 | FR-ADM, FR-SET, FR-CRM-007; `PERM-ADM-020` | ARCH-013; Administration plane |
 
 Cross-cutting for all staff and patients: FR-AUTH-004/005 (RBAC + isolation), NFR-045/046, ARCH-014 Backend API as single rule authority.
 
@@ -649,6 +675,8 @@ Cross-cutting for all staff and patients: FR-AUTH-004/005 (RBAC + isolation), NF
 | Version | Date | Author | Reviewer | Changes | Approval Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | — | Initial User Personas draft for review (PRD-aligned USER-001–USER-009) | Pending review |
+| 1.1 | 2026-07-27 | Platform Engineering | — | Add USER-010 Super Administrator; clarify Administrator vs Administration Access | Pending review |
+| 1.2 | 2026-07-27 | Platform Engineering | — | Administrator is primary operational CRM role with default business-module access; Super Admin platform-only exclusivity | Pending review |
 
 ---
 

@@ -28,7 +28,7 @@ model User {
   @@map("users")
 }
 
-/// Product roles ROLE-002–ROLE-009 (DB-002). Guest (ROLE-001) is not persisted.
+/// Product roles ROLE-002–ROLE-010 (DB-002). Guest (ROLE-001) is not persisted.
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
   code        String   @unique

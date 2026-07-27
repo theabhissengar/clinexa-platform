@@ -92,6 +92,7 @@ export const Permissions = {
   ADM_ASSIGN_ROLES: 'PERM-ADM-002',
   ADM_CONFIGURE_WORKFLOWS: 'PERM-ADM-003',
   ADM_VIEW_AUDIT: 'PERM-ADM-010',
+  ADM_ACCESS_ADMINISTRATION: 'PERM-ADM-020',
 
   SET_MANAGE: 'PERM-SET-001',
   SET_OVERSELL_POLICIES: 'PERM-SET-002',
@@ -640,6 +641,15 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     description: 'Read clinical/admin audit log records.',
     resource: 'admin',
     action: 'view_audit',
+  },
+  {
+    code: Permissions.ADM_ACCESS_ADMINISTRATION,
+    module: 'ADM',
+    name: 'Access Administration',
+    description:
+      'Access the CRM Administration plane (platform governance console).',
+    resource: 'admin',
+    action: 'access_administration',
   },
   {
     code: Permissions.SET_MANAGE,

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 import { useState, type ReactNode } from "react";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/providers/auth-provider";
 import { PermissionProvider } from "@/providers/permission-provider";
 
@@ -31,9 +32,11 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <PermissionProvider>{children}</PermissionProvider>
-        </AuthProvider>
+        <TooltipProvider>
+          <AuthProvider>
+            <PermissionProvider>{children}</PermissionProvider>
+          </AuthProvider>
+        </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

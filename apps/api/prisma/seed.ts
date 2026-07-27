@@ -15,7 +15,7 @@ import {
 import { Roles } from '../src/modules/rbac/constants/roles';
 
 /**
- * Canonical RBAC seed + optional staff Administrator user.
+ * Canonical RBAC seed + optional staff Administrator and Super Administrator users.
  * RolePermission rows for seeded roles are replaced to match the matrix.
  */
 async function seedRbacCatalog(prisma: PrismaClient): Promise<void> {
@@ -176,6 +176,71 @@ async function seedAdminUser(prisma: PrismaClient): Promise<void> {
   );
 }
 
+async function seedSuperAdminUser(prisma: PrismaClient): Promise<void> {
+  const email = process.env.SEED_SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.SEED_SUPER_ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    console.log(
+      'Super Admin user seed skipped: set SEED_SUPER_ADMIN_EMAIL and SEED_SUPER_ADMIN_PASSWORD to create a local Super Administrator.',
+    );
+    return;
+  }
+
+  if (password.length < 12) {
+    throw new Error(
+      'SEED_SUPER_ADMIN_PASSWORD must be at least 12 characters (AUTH-034).',
+    );
+  }
+
+  const passwordHash = await argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: parseInt(process.env.ARGON2_MEMORY_COST ?? '65536', 10),
+    timeCost: parseInt(process.env.ARGON2_TIME_COST ?? '3', 10),
+    parallelism: parseInt(process.env.ARGON2_PARALLELISM ?? '4', 10),
+  });
+
+  const user = await prisma.user.upsert({
+    where: { email },
+    create: {
+      email,
+      passwordHash,
+      status: UserStatus.ACTIVE,
+    },
+    update: {
+      passwordHash,
+      status: UserStatus.ACTIVE,
+    },
+  });
+
+  const superAdminRole = await prisma.role.findUnique({
+    where: { code: Roles.SUPER_ADMINISTRATOR },
+  });
+  if (!superAdminRole) {
+    throw new Error('Super Administrator role missing after catalog seed');
+  }
+
+  await prisma.userRoleAssignment.upsert({
+    where: {
+      userId_roleId: { userId: user.id, roleId: superAdminRole.id },
+    },
+    create: {
+      id: randomUUID(),
+      userId: user.id,
+      roleId: superAdminRole.id,
+      revokedAt: null,
+    },
+    update: {
+      revokedAt: null,
+      assignedAt: new Date(),
+    },
+  });
+
+  console.log(
+    `Seeded Super Administrator user: ${user.email} (${user.id}) with ${Roles.SUPER_ADMINISTRATOR}`,
+  );
+}
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -188,6 +253,7 @@ async function main(): Promise<void> {
   try {
     await seedRbacCatalog(prisma);
     await seedAdminUser(prisma);
+    await seedSuperAdminUser(prisma);
   } finally {
     await prisma.$disconnect();
   }

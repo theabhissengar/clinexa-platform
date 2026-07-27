@@ -496,6 +496,8 @@ Authority: [02 — Business requirements](02-business-requirements.md) §6.2 and
 | ROAD-020 | Administration and publish safety | FR-ADM; FR-SET-001–003; OR-14; AC-BR-05 |
 | ROAD-021 | CRM staff control plane | FR-CRM-001–007 |
 
+**Note (Phase 6):** ROAD-021 application **shell foundation** (sidebar + header + theme + configuration-driven nav) is delivered in `apps/admin`. Clinical/ops **module bodies** and dashboard widgets remain later milestones; the shell must not be redesigned to add them.
+
 Also Must as capability (BR §6.2): Store + Portal + CRM + shared API care-commerce loop; patient isolation; clinical pending visibility.
 
 ### 5.2 Should Have

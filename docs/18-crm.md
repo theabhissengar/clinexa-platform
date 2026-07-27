@@ -21,7 +21,7 @@ It does **not** redefine functional module behavior ([03](03-functional-requirem
 
 > **Implementation independence:** `CRM-*` IDs are logical architecture controls. Framework choice, rendering runtime, component structure, styling, state libraries, and SDK selection are out of scope. No React, TypeScript, CSS, Tailwind, or framework-specific examples appear here.
 
-> **Role naming:** V1 product roles are Doctor, Pharmacist, Support, Operations, Marketing, Content, and Administrator (`ROLE-003`–`ROLE-009`). There is **no Super Admin** persona and **no Finance** product role. Finance-adjacent work (refunds, operational reports) is performed under Support, Operations, and Administrator within existing separation of duties ([08](08-role-permissions.md)).
+> **Role naming:** V1 product roles are Doctor, Pharmacist, Support, Operations, Marketing, Content, Administrator, and Super Administrator (`ROLE-003`–`ROLE-010`). There is **no Finance** product role. Finance-adjacent work (refunds, operational reports) is performed under Support, Operations, and Administrator within existing separation of duties ([08](08-role-permissions.md)). Super Administrator is a **normal RBAC role** (`PERM-ADM-020` for Administration Access) and never bypasses AuthN/AuthZ/guards.
 
 ---
 
@@ -30,15 +30,16 @@ It does **not** redefine functional module behavior ([03](03-functional-requirem
 1. [Introduction](#1-introduction)
 2. [CRM Overview](#2-crm-overview)
 3. [CRM Modules](#3-crm-modules)
-4. [Role-Based Navigation](#4-role-based-navigation)
-5. [Operational Workflows](#5-operational-workflows)
-6. [CRM State Management](#6-crm-state-management)
-7. [API Integration](#7-api-integration)
-8. [Performance Strategy](#8-performance-strategy)
-9. [Accessibility](#9-accessibility)
-10. [CRM Security](#10-crm-security)
-11. [CRM Traceability Matrix](#11-crm-traceability-matrix)
-12. [Revision History](#12-revision-history)
+4. [Application Shell](#4-application-shell)
+5. [Role-Based Navigation](#5-role-based-navigation)
+6. [Operational Workflows](#6-operational-workflows)
+7. [CRM State Management](#7-crm-state-management)
+8. [API Integration](#8-api-integration)
+9. [Performance Strategy](#9-performance-strategy)
+10. [Accessibility](#10-accessibility)
+11. [CRM Security](#11-crm-security)
+12. [CRM Traceability Matrix](#12-crm-traceability-matrix)
+13. [Revision History](#13-revision-history)
 
 ---
 
@@ -84,7 +85,7 @@ Define a production-grade CRM architecture for Clinexa so that:
 | Real-time clinician chat | Out of V1 (PRD §11) |
 | Full ambulatory EHR / EHR replacement | Out of V1 (PRD §11) |
 | Guest or Patient CRM access | Hard deny (`RBAC-023`; `PERM-CRM-020`) |
-| Super Admin or Finance product roles | Not V1 product roles ([08](08-role-permissions.md)) |
+| Finance product role | Not a V1 product role; Super Administrator (`ROLE-010`) is in scope via normal RBAC ([08](08-role-permissions.md)) |
 | Named frameworks, SDKs, component libraries, styling systems | Implementation |
 | Physical DB DDL / API path invention | [10](10-database-design.md) / [11](11-api-design.md) |
 
@@ -323,7 +324,7 @@ flowchart TB
 | --- | --- |
 | Responsibilities | Create/update/deactivate staff users; assign roles; view permission dictionary |
 | Ownership | Administrator (`ROLE-009`); `FR-ADM-001` |
-| Boundaries | Admin config ≠ default clinical prescribe (`RBAC-028`); role changes audited; no Super Admin role |
+| Boundaries | Admin config ≠ default clinical prescribe (`RBAC-028`); role changes audited; Super Admin is ROLE-010 via normal RBAC (`PERM-ADM-020`) |
 
 ### 3.4 Patient Management (`CRM-032`)
 
@@ -479,9 +480,74 @@ flowchart TB
 
 ---
 
-## 4. Role-Based Navigation
 
-### 4.1 Navigation principles
+## 4. Application Shell
+
+This section is the **contributor source of truth** for the CRM admin application shell (ROAD-021 foundation). Framework-specific code lives in `apps/admin`; architecture rules below must not be violated by future modules.
+
+### 4.1 Sidebar architecture
+
+- The left sidebar is the **permanent application navigation** for every future CRM module.
+- It is a thin renderer over a configuration-driven navigation catalog.
+- Collapse/expand (desktop) and off-canvas (mobile) belong to the shell chrome, not to individual modules.
+
+### 4.2 Header architecture
+
+- Permanent top header slots: sidebar trigger, breadcrumbs, Vendor Switcher, theme switch, user profile menu.
+- Header does not own module route lists; it composes independent slot components.
+
+### 4.3 Navigation philosophy
+
+- Navigation is **fully configuration-driven** (single catalog for sidebar labels, routes, icons, permissions, order).
+- Visibility is **permission-filtered** (`PERM-*`). **Administrator (`ROLE-009`)** is the primary operational role and must receive matrix grants for every V1 business module so nav items are never hidden by default.
+- **Administration** (`PERM-ADM-020`) is the primary platform-only exclusivity for Super Administrator (`ROLE-010`).
+- Extensible metadata (`badge`, `category`, `hidden`, `disabled`, `featureFlag`, `role`) may exist on the type for future use; only required fields are populated until needed.
+- **Extension guideline:** add a nav-config entry + App Router page + matching permission gate. Do **not** modify sidebar/header/shell implementation for routine module adds.
+
+### 4.4 Breadcrumbs
+
+- Breadcrumbs are generated from the navigation configuration + current pathname.
+- Do not maintain a separate breadcrumb map. Navigation titles are the single source of truth.
+
+### 4.5 Theme philosophy
+
+- Light/dark (and system) theming uses semantic design tokens only.
+- Shell and future pages must not use direct palette colors (`bg-white`, `text-gray-*`, etc.).
+- Components that use tokens inherit the active theme automatically.
+
+### 4.6 Vendor Switcher abstraction
+
+- Vendor Switcher is intentionally behind a header abstraction.
+- Future multi-vendor support replaces only the Vendor Switcher implementation—not the surrounding header layout.
+- Phase foundation: disabled placeholder; no local state that assumes a single vendor forever.
+
+### 4.7 Icons
+
+- **Lucide** is the official and only icon library for the CRM admin application. Do not mix React Icons, Heroicons, or other packs.
+
+### 4.8 Dashboard placeholder
+
+- The current Dashboard page is a **placeholder** only.
+- Future dashboard widgets, analytics, and KPIs are implemented as page/feature content **without changing shell architecture**.
+
+### 4.9 Super Administrator (ROLE-010)
+
+- `ROLE-010` exists only as another RBAC role. It must never bypass authentication, authorization, guards, or permission evaluation.
+- **Super Administrator is not the primary operational CRM role.** It adds platform Administration (`PERM-ADM-020`) and future platform-only surfaces (multi-vendor, licenses, global system settings).
+- **Business modules** remain visible to both Administrator and Super Administrator via the normal permission matrix.
+
+### 4.10 Administrator business-module policy (ROLE-009)
+
+- **Administrator** is the primary operational CRM role.
+- All V1 business modules (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings, and future CRM business surfaces) must remain visible and accessible unless explicitly documented otherwise.
+- New business modules: add nav-config entry + matrix grants for `ROLE-009` and `ROLE-010` (Super Admin inherits the same business grants).
+
+---
+
+## 5. Role-Based Navigation
+
+
+### 5.1 Navigation principles
 
 | ID | Control | Rule |
 | --- | --- | --- |
@@ -490,9 +556,9 @@ flowchart TB
 | CRM-053 | Route protection | All CRM application routes require `PERM-CRM-020`; deep links re-checked after login (`AUTH-027`) |
 | CRM-054 | Dynamic navigation | Role change or privilege revocation invalidates prior sessions/token version; next shell load reflects current grants |
 | CRM-055 | Guest/Patient deny | Guest and Patient have no CRM Dashboard or modules (`RBAC-023`) |
-| CRM-056 | No Super Admin / Finance nav | V1 nav catalogs only `ROLE-003`–`ROLE-009`; finance-adjacent refunds/reports appear under Support/Operations/Admin modules |
+| CRM-056 | Staff + Super Admin nav | V1 nav catalogs `ROLE-003`–`ROLE-010`; Administration requires `PERM-ADM-020` (Super Administrator only); finance-adjacent refunds/reports appear under Support/Operations/Admin modules |
 
-### 4.2 Module visibility by role
+### 5.2 Module visibility by role
 
 Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate / marketing-safe; **—** = no access. Derived from [08](08-role-permissions.md) Screen-to-Role Access Matrix.
 
@@ -501,7 +567,7 @@ Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate 
 | Dashboard | Full | Full | Full | Full | Full | Full | Full |
 | Clinical Review | Full | — | — | — | — | — | — |
 | Pharmacy | — | Full | — | — | — | — | — |
-| Prescriptions | Full | Limited | Limited | Limited | — | — | Limited |
+| Prescriptions | Full | Limited | Limited | Limited | — | — | Full |
 | Patient Management | Limited | Limited | Limited | Limited | — | — | Limited |
 | Orders | Limited | Limited | Limited | Limited | — | — | Limited |
 | Inventory | — | Limited | — | Full | — | — | Limited |
@@ -518,7 +584,7 @@ Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate 
 | Audit Logs | — | — | — | — | — | — | Full |
 | System Settings | — | — | — | — | — | — | Full |
 
-### 4.3 Role navigation summaries
+### 5.3 Role navigation summaries
 
 | Role | Primary nav destinations |
 | --- | --- |
@@ -528,11 +594,12 @@ Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate 
 | Operations (`ROLE-006`) | Dashboard → Orders → Inventory → Documents/Appointments → Reports/Analytics |
 | Marketing (`ROLE-007`) | Dashboard → Coupons → limited CMS → marketing-safe Analytics |
 | Content (`ROLE-008`) | Dashboard → CMS / Blogs → review moderation |
-| Administrator (`ROLE-009`) | Dashboard → User Management → catalog/QST/plans/workflows → Settings → Audit → Reports; **not** default Clinical Review approve |
+| Administrator (`ROLE-009`) | Dashboard → Users → Orders → Prescriptions → Questionnaires → Activity Log → Reports → Settings → catalog/QST/plans/workflows; **no** Administration (`PERM-ADM-020`) |
+| Super Administrator (`ROLE-010`) | Same business-module destinations as Administrator **plus** Administration (`PERM-ADM-020`) |
 
 **CRM-057** — Dual-role assignments, if granted, union permissions still subject to hard denies (e.g., Support never gains Rx approve via configuration that would violate `FR-SUP-004`).
 
-### 4.4 Route protection and dynamic navigation
+### 5.4 Route protection and dynamic navigation
 
 | ID | Topic | Rule |
 | --- | --- | --- |
@@ -552,7 +619,7 @@ Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate 
 
 ---
 
-## 5. Operational Workflows
+## 6. Operational Workflows
 
 High-level staff workflows. Step narrative remains authoritative in [07](07-user-journeys.md); business process ownership in [02](02-business-requirements.md).
 
@@ -609,7 +676,7 @@ flowchart LR
 
 ---
 
-## 6. CRM State Management
+## 7. CRM State Management
 
 Logical frontend state domains only. Library choice is out of scope.
 
@@ -637,7 +704,7 @@ Logical frontend state domains only. Library choice is out of scope.
 
 ---
 
-## 7. API Integration
+## 8. API Integration
 
 CRM consumes documented APIs only ([11](11-api-design.md)). CRM must not invent endpoints or clinical outcomes.
 
@@ -685,7 +752,7 @@ CRM consumes documented APIs only ([11](11-api-design.md)). CRM must not invent 
 
 ---
 
-## 8. Performance Strategy
+## 9. Performance Strategy
 
 Reference [04](04-non-functional-requirements.md) §2 and CRM latency targets. Remain implementation-independent.
 
@@ -704,7 +771,7 @@ Reference [04](04-non-functional-requirements.md) §2 and CRM latency targets. R
 
 ---
 
-## 9. Accessibility
+## 10. Accessibility
 
 Reference [04](04-non-functional-requirements.md) §11 and PRD §12.4.
 
@@ -721,7 +788,7 @@ Reference [04](04-non-functional-requirements.md) §11 and PRD §12.4.
 
 ---
 
-## 10. CRM Security
+## 11. CRM Security
 
 Cross-reference [12](12-authentication-flow.md), [13](13-security.md), and [08](08-role-permissions.md).
 
@@ -742,7 +809,7 @@ Cross-reference [12](12-authentication-flow.md), [13](13-security.md), and [08](
 
 ---
 
-## 11. CRM Traceability Matrix
+## 12. CRM Traceability Matrix
 
 ### 11.1 Business → Functional → CRM → API → Auth → Database
 
@@ -849,7 +916,7 @@ flowchart TB
 
 ### 11.7 CRM Dashboard Widget Matrix
 
-Role-scoped Dashboard widget visibility. Complements §4 Role-Based Navigation and §3.2 Dashboard (`CRM-030`). Widgets are navigation affordances only; Backend API remains the AuthZ enforcement point (`FR-AUTH-004`; `RBAC-086`).
+Role-scoped Dashboard widget visibility. Complements §5 Role-Based Navigation and §3.2 Dashboard (`CRM-030`). Widgets are navigation affordances only; Backend API remains the AuthZ enforcement point (`FR-AUTH-004`; `RBAC-086`).
 
 Legend: **Full** = primary widget functions; **Limited** = scoped / status-appropriate / marketing-safe summary; **—** = not shown.
 
@@ -945,12 +1012,14 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 
 ---
 
-## 12. Revision History
+## 13. Revision History
 
 | Version | Date | Author | Reviewer | Changes | Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-24 | Principal Enterprise / Healthcare CRM / Operations / Frontend Architect (planning) | Pending | Initial CRM architecture: overview, modules (`CRM-030`–`050`), role navigation, operational workflows, state, API integration, performance/a11y/security, traceability (`CRM-001`–`CRM-151`) | Draft for review |
 | 1.0 | 2026-07-24 | Principal Enterprise / Healthcare CRM / Operations / Frontend Architect (planning) | Pending | Architectural appendices: §11.7 CRM Dashboard Widget Matrix, §11.8 Cross-Module Interaction Matrix, §11.9 Clinical Decision Lifecycle, §11.10 CRM Capability Ownership Matrix, §11.11 Module Criticality Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
+| 1.1 | 2026-07-27 | Platform Engineering | Pending | Application Shell SoT (§4); ROLE-010 / PERM-ADM-020; rewrite CRM-056; renumber sections | Draft for review |
+| 1.2 | 2026-07-27 | Platform Engineering | Pending | Administrator default business-module access; Super Admin platform-only exclusivity | Draft for review |
 
 ---
 

@@ -62,7 +62,7 @@ Define production-grade authorization policy for Clinexa so that:
 
 | Area | Coverage |
 | --- | --- |
-| Roles | Guest Visitor, Patient, Doctor, Pharmacist, Support, Operations, Marketing, Content, Administrator (`ROLE-001`–`ROLE-009`) |
+| Roles | Guest Visitor, Patient, Doctor, Pharmacist, Support, Operations, Marketing, Content, Administrator, Super Administrator (`ROLE-001`–`ROLE-010`) |
 | Surfaces | Store Web (`ARCH-011`), Patient Portal (`ARCH-012`), CRM (`ARCH-013`), Backend API as enforcement locus (`ARCH-014`) |
 | Permissions | Module-scoped `PERM-<MOD>-###` capabilities aligned to FR modules |
 | Policies | Least privilege, SoD, need-to-know, inheritance rules, sensitive-data access, audit events, break-glass |
@@ -101,14 +101,14 @@ Define production-grade authorization policy for Clinexa so that:
 | [03](03-functional-requirements.md) | `FR-AUTH-004/005`, `FR-CRM-006`, `FR-SUP-004`, module FRs |
 | [04](04-non-functional-requirements.md) | `NFR-045`–`NFR-047`, `NFR-057`–`NFR-062` |
 | [05](05-system-architecture.md) | Trust boundaries; `ARCH-005`, `ARCH-011`–`014`, domain modules |
-| [06](06-user-personas.md) | `USER-001`–`USER-009` |
+| [06](06-user-personas.md) | `USER-001`–`USER-010` |
 | [07](07-user-journeys.md) | Journey actors and restrictions |
 
 ### 1.5 ID conventions
 
 | Namespace | Pattern | Meaning |
 | --- | --- | --- |
-| Roles | `ROLE-001` … `ROLE-009` | Product roles (1:1 with `USER-001` … `USER-009`) |
+| Roles | `ROLE-001` … `ROLE-010` | Product roles (1:1 with `USER-001` … `USER-010`) |
 | Permissions | `PERM-<MOD>-###` | Capability within an FR module code |
 | Spec rules | `RBAC-001` … | Principles, SoD, inheritance, sensitive-data, audit, security, future roles |
 
@@ -123,8 +123,8 @@ Define production-grade authorization policy for Clinexa so that:
 | **RBAC-003** | Need-to-Know Access | Staff see PHI only as required for assigned case, ticket, order, or pharmacy review context. Marketing analytics exclude unnecessary PHI. | OR-07; NFR-059 |
 | **RBAC-004** | Healthcare Privacy | HIPAA-aware: minimize PHI collection/display; encrypt in transit/at rest patterns; redact sensitive bodies from debug logs. No certification claim as V1 gate. | PRD §1.5; NFR-058, NFR-065 |
 | **RBAC-005** | Auditability | Privileged and PHI-adjacent actions record attributable actor, action, timestamp, and object IDs. Clinical audit trails are distinct from debug logs. | NFR-057, NFR-062, NFR-076 |
-| **RBAC-006** | Role Hierarchy | Capability nesting: Guest ⊂ Patient (Store); staff roles are siblings under CRM; Administrator is governance elevation—not automatic clinical prescribe. | §8; PRD §13.4 |
-| **RBAC-007** | Permission Inheritance | Inherited permissions are explicit and SoD-constrained. Dual-role grants require explicit assignment and remain audited. Admin does **not** inherit Doctor approve or Ops fulfill by default. | §8; personas Admin |
+| **RBAC-006** | Role Hierarchy | Capability nesting: Guest ⊂ Patient (Store); staff roles are siblings under CRM. **Administrator (`ROLE-009`)** is the primary operational CRM role and receives all V1 business-module permissions by default. **Super Administrator (`ROLE-010`)** adds platform Administration (`PERM-ADM-020`) only; it never bypasses AuthN, AuthZ, guards, or permission evaluation. | §8; PRD §13.4 |
+| **RBAC-007** | Permission Inheritance | Inherited permissions are explicit and SoD-constrained. Dual-role grants require explicit assignment and remain audited. Administrator receives the full V1 business-module permission set via the matrix; platform-only surfaces remain Super Administrator–exclusive (`PERM-ADM-020`). | §8; personas Admin |
 | **RBAC-008** | Future Extensibility | New roles/permissions add via Admin-managed role config without collapsing SoD. Feature flags must not bypass clinical or payment gates. | FR-ADM-001; NFR-123; ARCH-149 |
 
 ---
@@ -144,6 +144,7 @@ Define production-grade authorization policy for Clinexa so that:
 | ROLE-007 | Marketing | USER-007 | CRM | Authenticated staff |
 | ROLE-008 | Content | USER-008 | CRM | Authenticated staff |
 | ROLE-009 | Administrator | USER-009 | CRM | Authenticated staff |
+| ROLE-010 | Super Administrator | USER-010 | CRM | Authenticated staff |
 
 ### 3.2 ROLE-001 — Guest Visitor
 
@@ -247,11 +248,23 @@ Define production-grade authorization policy for Clinexa so that:
 | --- | --- |
 | **Role ID** | ROLE-009 |
 | **Persona** | USER-009 |
-| **Description** | Platform configuration and governance owner for users, roles, settings, and clinical/commerce workflows. |
-| **Responsibilities** | Manage users/roles; configure products/categories/questionnaires/plans/workflows; platform settings; notification templates; publish-safety validation; audited break-glass practice. |
-| **System access** | CRM admin (`FR-ADM-001`–`004`, `FR-SET-001`–`004`, `FR-CRM-007`); broad config subject to audit. |
-| **Restrictions** | Does not substitute for clinical approval roles by default; unaudited break-glass forbidden; last-admin safeguard required; cannot disable clinical gates globally. |
+| **Description** | Primary operational CRM role: day-to-day governance, configuration, and access to all V1 business modules (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings, and future CRM business surfaces). |
+| **Responsibilities** | Manage users/roles; configure products/categories/questionnaires/plans/workflows; platform settings; publish-safety validation; operational visibility across business modules; audited break-glass practice. |
+| **System access** | CRM shell and **all V1 business modules** via explicit matrix grants (`PERM-CRM-020`, `PERM-ADM-001`, `PERM-ORD-001`, prescription module perms, questionnaire perms, `PERM-ADM-010`, `PERM-RPT-001`, `PERM-SET-001`, etc.). **No** platform Administration console (`PERM-ADM-020`). |
+| **Restrictions** | Does not receive `PERM-ADM-020` (Administration plane); unaudited break-glass forbidden; last-admin safeguard required; cannot disable clinical gates globally. API-level clinical gates still apply to privileged actions. |
 | **Business justification** | Safe configurability without code deploys (BO-5; BP-10; OR-14; AC-BR-05). |
+
+### 3.11 ROLE-010 — Super Administrator
+
+| Field | Detail |
+| --- | --- |
+| **Role ID** | ROLE-010 |
+| **Persona** | USER-010 |
+| **Description** | Platform Administration plane owner—not the primary operational CRM role. Receives the same **business-module** permission set as Administrator plus `PERM-ADM-020` (Administration Access). |
+| **Responsibilities** | Platform-level governance (Administration console, future platform-only surfaces); same business-module visibility as Administrator where granted by the matrix. |
+| **System access** | All V1 business modules (same as Administrator) **plus** Administration (`PERM-ADM-020`). All capabilities via normal matrix grants only. |
+| **Restrictions** | **Never bypasses** authentication, authorization, guards, or permission evaluation. Not a god mode. Every permission is resolved through the normal RBAC pipeline (role → role_permissions → session claims → guards/`can()`). |
+| **Business justification** | Separate platform Administration plane from day-to-day Administrator operations without hiding business modules from either role. |
 
 ---
 
@@ -287,7 +300,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Blogs | BLG | `PERM-BLG-001` Create/edit/publish posts | Content, Admin |
 | Coupons | CPN | `PERM-CPN-001` Configure coupons; `PERM-CPN-002` Redeem at checkout | Marketing/Admin; Patient |
 | Support | SUP | `PERM-SUP-001` Create ticket (patient); `PERM-SUP-002` Triage/resolve; `PERM-SUP-003` Link order/patient | Patient; Support |
-| Administration | ADM | `PERM-ADM-001` Manage users; `PERM-ADM-002` Assign roles; `PERM-ADM-003` Configure workflows | Admin |
+| Administration | ADM | `PERM-ADM-001` Manage users; `PERM-ADM-002` Assign roles; `PERM-ADM-003` Configure workflows; `PERM-ADM-020` Administration Access | Admin; Super Admin (`PERM-ADM-020`) |
 | System Configuration | SET | `PERM-SET-001` Manage platform settings; `PERM-SET-002` Oversell/publish policies | Admin |
 | Audit Logs | ADM, DOC | `PERM-ADM-010` View audit logs; `PERM-DOC-003` PHI access audit | Admin (primary) |
 | Reviews (product) | REV | `PERM-REV-001` Submit review; `PERM-REV-002` Moderate approve/reject | Patient; Content/Support/Admin as granted |
@@ -366,6 +379,7 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-ADM-002 | Assign roles | Assign and change roles/permissions (audited; no self-elevation). | ADM | Admin |
 | PERM-ADM-003 | Configure workflows | Configure catalog, questionnaires, treatment plans, and consult workflows. | ADM | Admin |
 | PERM-ADM-010 | View audit logs | Read clinical/admin audit log records. | ADM | Admin |
+| PERM-ADM-020 | Access Administration | Access the CRM Administration plane (platform governance console). | ADM | Super Administrator only |
 | PERM-SET-001 | Manage platform settings | Create/update platform configuration settings. | SET | Admin |
 | PERM-SET-002 | Manage oversell/publish policies | Configure oversell, publish-safety, and related operational policies. | SET | Admin |
 | PERM-REV-001 | Submit product review | Submit an eligible product review (held pending moderation). | REV | Patient |
@@ -410,10 +424,10 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Orders fulfill / ship | — | — | — | — | — | ✓† | — | — | — | PERM-ORD-003 |
 | Subscriptions own manage | — | ✓ | — | — | ◐ | — | — | — | M | PERM-SUB-001–002 |
 | QST submit / own status | — | ✓ | — | — | — | — | — | — | M | PERM-QST-001–002,004 |
-| QST full answers | — | — | ✓ | ◐ | — | — | — | — | — | PERM-QST-003 |
+| QST full answers | — | — | ✓ | ◐ | — | — | — | — | ✓ | PERM-QST-003 |
 | Clinical notes | — | — | C/E | — | — | — | — | — | — | PERM-CRM-005 |
-| Doctor approve / decline Rx | — | — | A/R | — | — | — | — | — | — | PERM-CRM-002–003 |
-| Pharmacy review | — | — | — | A | — | — | — | — | — | PERM-CRM-006–007 |
+| Doctor approve / decline Rx | — | — | A/R | — | — | — | — | — | ✓ | PERM-CRM-002–003 |
+| Pharmacy review | — | — | — | A | — | — | — | — | ✓ | PERM-CRM-006–007 |
 | Appointments | — | ✓ | ◐ | ◐ | ◐ | ◐ | — | — | M | PERM-APT-001–002 |
 | Documents | — | ◐ | ◐ | ◐ | ◐ | ◐ | — | — | ◐ | PERM-DOC-001–002 |
 | Inventory | — | — | — | ◐ | — | M | — | — | ◐ | PERM-INV-001–003 |
@@ -442,7 +456,7 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | CRM access | Guest, Patient | RBAC-023 |
 | Cross-patient data | Patient (any other patient) | RBAC-024; FR-AUTH-005 |
 | Fulfill Rx before gates | Operations | RBAC-025; FR-ORD-003 |
-| Approve treatments / prescribe | Operations, Admin (default) | RBAC-026 |
+| Approve treatments / prescribe | Operations (default) | RBAC-026 |
 
 ---
 
@@ -465,12 +479,12 @@ Actions: **V** View · **C** Create · **U** Update · **D** Delete · **A** App
 | Orders | C (via checkout) | — | ✓ | — | — | — | — | — | — | — |
 | Orders | U fulfill | — | — | — | — | — | ✓† | — | — | — |
 | Orders | Cancel / refund outcome | — | ◐ | — | — | ✓ | ✓ | — | — | ◐ |
-| Prescriptions | V status | — | ◐ | ✓ | ✓ | ◐‡ | ◐‡ | — | — | — |
-| Prescriptions | A/R (clinical) | — | — | ✓ | — | — | — | — | — | — |
-| Prescriptions | Pharmacy ready | — | — | — | ✓ | — | — | — | — | — |
+| Prescriptions | V status | — | ◐ | ✓ | ✓ | ◐‡ | ◐‡ | — | — | ✓ |
+| Prescriptions | A/R (clinical) | — | — | ✓ | — | — | — | — | — | ✓ |
+| Prescriptions | Pharmacy ready | — | — | — | ✓ | — | — | — | — | ✓ |
 | Questionnaires (defs) | C/U/P | — | — | — | — | — | — | — | — | ✓ |
 | Questionnaire answers | C (submit) | — | ✓ | — | — | — | — | — | — | — |
-| Questionnaire answers | V full | — | — | ✓ | ◐ | — | — | — | — | — |
+| Questionnaire answers | V full | — | — | ✓ | ◐ | — | — | — | — | ✓ |
 | Clinical notes | C/U | — | — | ✓ | — | — | — | — | — | — |
 | Clinical notes | V | — | — | ✓ | — | — | — | — | — | — |
 | Subscriptions | V/U/Cancel own | — | ✓ | — | — | ◐ | — | — | — | ✓ |
@@ -527,7 +541,7 @@ flowchart LR
 | **RBAC-025** | Operations cannot approve treatments | No doctor approve permissions | Fulfillment must not invent clinical clearance |
 | **RBAC-026** | Patients only access their own data | `FR-AUTH-005` isolation | Patient privacy and KPI-08 |
 | **RBAC-027** | Payment does not authorize dispensing | Checkout/pay ≠ Rx approve | Clinical gates first-class (OR-03) |
-| **RBAC-028** | Admin config ≠ clinical prescribe | Admin lacks default `PERM-CRM-002` | Governance without replacing licensed review |
+| **RBAC-028** | Administrator business-module access | `ROLE-009` receives all V1 CRM business-module permissions by default (including Prescriptions). Platform-only surfaces use `PERM-ADM-020` (Super Administrator only). API clinical gates remain enforced server-side. |
 | **RBAC-029** | No shared anonymous clinical accounts | All staff actions attributable | Accountability (OR-06; NFR-047) |
 | **RBAC-030** | Dual-role only by explicit assignment | Extra permissions audited | Controlled exceptions without silent god-roles |
 
@@ -774,7 +788,8 @@ flowchart TB
 | ROLE-006 Operations | Fulfill; inventory; ops reports | BO-4; BP-05/09; OR-08/12; AC-BR-03 | FR-CRM-005, FR-INV, FR-ORD-002/003, FR-RPT | ARCH-013, ARCH-047/064 |
 | ROLE-007 Marketing | Coupons; marketing analytics | BO-1/4; BP-11; OR-07; AC-BR-13 | FR-CPN, FR-ANL-001/002; **deny** FR-CRM-006 | ARCH-013, ARCH-057/063 |
 | ROLE-008 Content | Blogs/CMS; review mod as granted | BO-1/5; BP-11; OR-07/13; AC-BR-06/13 | FR-BLG, FR-CMS, FR-REV-003; **deny** FR-CRM-006 | ARCH-013, ARCH-060/061 |
-| ROLE-009 Admin | Users/roles/settings/workflows/audit | BO-5; BP-10; OR-14; AC-BR-05 | FR-ADM, FR-SET, FR-CRM-007 | ARCH-013, ARCH-041, ARCH-058 |
+| ROLE-009 Admin | All V1 business modules + users/roles/settings/audit | BO-5; BP-10; OR-14; AC-BR-05 | FR-ADM, FR-SET, FR-CRM-007 | ARCH-013, ARCH-041, ARCH-058 |
+| ROLE-010 Super Admin | Same business modules as Admin + `PERM-ADM-020` platform Administration | BO-5; BP-10; OR-14 | FR-ADM, FR-SET, FR-CRM-007 | ARCH-013, ARCH-041, ARCH-058 |
 
 ### 13.2 Cross-cutting enforcement
 
@@ -807,6 +822,8 @@ flowchart TB
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Principal Security / IAM Architect (Clinexa Planning) | — | Initial Role & Permission Specification (RBAC-001+; ROLE-001–009; PERM matrices) for review | Draft for review |
 | 1.1 | 2026-07-23 | Principal Security / IAM Architect (Clinexa Planning) | — | Additive enterprise sections: Permission Dictionary, Screen-to-Role Access Matrix, JWT Claims Reference, Authorization Request Flow (no changes to existing IDs, matrices, or rules) | Draft for review |
+| 1.2 | 2026-07-27 | Platform Engineering | — | Introduce ROLE-010 Super Administrator and PERM-ADM-020 (Administration Access); clarify no AuthN/AuthZ/guard/permission bypass | Draft for review |
+| 1.3 | 2026-07-27 | Platform Engineering | — | Administrator default business-module access (incl. Prescriptions); Super Admin platform-only exclusivity | Draft for review |
 
 ---
 
@@ -822,30 +839,31 @@ UI/screen access derived from §5 Permission Matrix and §3 Role Catalog. This m
 | ◐ Limited Access | Role may access only scoped, status-appropriate, ticket/case-context, marketing-safe, or as-granted functions |
 | — No Access | Screen/module is not available to the role |
 
-| Screen / Module | Guest | Patient | Doctor | Pharmacist | Support | Operations | Marketing | Content | Admin |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Home | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
-| Product Listing | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
-| Product Details | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
-| Cart | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Checkout | ◐ Limited Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Patient Portal Dashboard | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Orders | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access |
-| Subscriptions | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | ✓ Full Access |
-| Documents | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access |
-| Appointments | — No Access | ✓ Full Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ✓ Full Access |
-| CRM Dashboard | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
-| Clinical Queue | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Pharmacy Queue | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Inventory | — No Access | — No Access | — No Access | ◐ Limited Access | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access |
-| Coupons | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | ✓ Full Access |
-| CMS | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access |
-| Blogs | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access |
-| Reports | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ✓ Full Access | — No Access | — No Access | ✓ Full Access |
-| Analytics | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ✓ Full Access | ◐ Limited Access | — No Access | ✓ Full Access |
-| User Management | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access |
-| Settings | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access |
-| Audit Logs | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access |
+| Screen / Module | Guest | Patient | Doctor | Pharmacist | Support | Operations | Marketing | Content | Admin | Super Admin |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Home | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Product Listing | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Product Details | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Cart | ✓ Full Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
+| Checkout | ◐ Limited Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
+| Patient Portal Dashboard | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
+| Orders | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
+| Subscriptions | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Documents | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
+| Appointments | — No Access | ✓ Full Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| CRM Dashboard | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Clinical Queue | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
+| Pharmacy Queue | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
+| Inventory | — No Access | — No Access | — No Access | ◐ Limited Access | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
+| Coupons | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | ✓ Full Access | ✓ Full Access |
+| CMS | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Blogs | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
+| Reports | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ✓ Full Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Analytics | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ✓ Full Access | ◐ Limited Access | — No Access | ✓ Full Access | ✓ Full Access |
+| User Management | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Settings | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Audit Logs | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Administration | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access |
 
 Notes:
 
@@ -854,7 +872,7 @@ Notes:
 - Guest **Checkout** is limited because finalize requires authentication (`PERM-CHK-002`).
 - Staff **Orders**, **Documents**, and **Appointments** are need-to-know / case-or-ticket scoped.
 - Marketing **Analytics** is marketing-safe / PHI-minimized (`PERM-ANL-001`); Ops/clinical metrics use `PERM-ANL-002`.
-
+- **Administration** requires PERM-ADM-020, granted only to Super Administrator (ROLE-010) via the normal permission matrix (no AuthN/AuthZ/guard bypass).
 ---
 
 ## JWT Claims Reference

@@ -17,7 +17,7 @@ It expands [PRD §6](00-product-requirements-document.md#6-user-personas) using 
 
 It does **not** define end-to-end journey scripts ([07](07-user-journeys.md)), full RBAC matrices ([08](08-role-permissions.md)), UI layouts or mockups ([20](20-ui-design-system.md)), API contracts, or database design. It does **not** invent roles beyond the PRD.
 
-> **Naming alignment:** Unauthenticated Store visitors are **Guest Visitors**; after registration they are **Patients**. Inventory and fulfillment are owned by **Operations**. Day-to-day configuration lives under **Administrator** (`USER-009` / `ROLE-009`). **Super Administrator** (`USER-010` / `ROLE-010`) is a separate product persona for the CRM Administration plane (`PERM-ADM-020`); it is a normal RBAC role and never bypasses AuthN/AuthZ. There is no separate “Registered Customer” persona. Engineering and QA appear in the PRD as delivery stakeholders and are noted in scope only—they are not assigned `USER-*` IDs beyond the product catalog.
+> **Naming alignment:** Unauthenticated Store visitors are **Guest Visitors**; after registration they are **Patients**. Inventory and fulfillment are owned by **Operations**. Day-to-day configuration lives under **Administrator** (`USER-009` / `ROLE-009`). **Super Administrator** (`USER-010` / `ROLE-010`) is a separate product persona for the platform Administration plane in the Guardian context (`PERM-ADM-020`); it is a normal RBAC role and never bypasses AuthN/AuthZ. There is no separate “Registered Customer” persona. Engineering and QA appear in the PRD as delivery stakeholders and are noted in scope only—they are not assigned `USER-*` IDs beyond the product catalog.
 
 ---
 
@@ -141,16 +141,20 @@ Personas express **intent and boundaries**. [08 — Role permissions](08-role-pe
 
 | Persona ID | Persona | PRD name | Primary surface(s) |
 | --- | --- | --- | --- |
-| USER-001 | Guest Visitor | Guest | Store |
-| USER-002 | Patient | Patient | Store, Patient Portal |
-| USER-003 | Doctor | Doctor | CRM |
-| USER-004 | Pharmacist | Pharmacist | CRM |
-| USER-005 | Support Agent | Support Team | CRM |
-| USER-006 | Operations Manager | Operations | CRM |
-| USER-007 | Marketing Manager | Marketing | CRM (Store-facing outcomes) |
-| USER-008 | Content Manager | Content Team | CRM (Store-facing content) |
-| USER-009 | Administrator | Administrator | CRM |
-| USER-010 | Super Administrator | Super Administrator | CRM |
+Staff personas work in the **Internal Platform**, which has two contexts: **CRM** (`/crm/*`, operational lifecycle) and **Guardian** (`/guardian/*`, administrative lifecycle). The “primary context” column below records where each persona spends most of its time; access is always granted per permission, and destructive operations exist only in Guardian ([25 — Guardian](25-guardian.md)).
+
+| Persona ID | Persona | PRD name | Primary surface(s) | Primary Internal Platform context |
+| --- | --- | --- | --- | --- |
+| USER-001 | Guest Visitor | Guest | Store | — |
+| USER-002 | Patient | Patient | Store, Patient Portal | — |
+| USER-003 | Doctor | Doctor | Internal Platform | CRM |
+| USER-004 | Pharmacist | Pharmacist | Internal Platform | CRM |
+| USER-005 | Support Agent | Support Team | Internal Platform | CRM |
+| USER-006 | Operations Manager | Operations | Internal Platform | CRM (Guardian for inventory policy and administrative reports where granted) |
+| USER-007 | Marketing Manager | Marketing | Internal Platform (Store-facing outcomes) | Guardian |
+| USER-008 | Content Manager | Content Team | Internal Platform (Store-facing content) | Guardian |
+| USER-009 | Administrator | Administrator | Internal Platform | Guardian (CRM for scoped operational visibility) |
+| USER-010 | Super Administrator | Super Administrator | Internal Platform | Guardian (holds the full destructive permission class) |
 
 ```mermaid
 flowchart TB
@@ -160,26 +164,25 @@ flowchart TB
     Store[Store_ARCH011]
     Portal[Portal_ARCH012]
   end
-  subgraph staffSurf [CRM_ARCH013]
-    Doctor[USER003_Doctor]
-    Pharmacist[USER004_Pharmacist]
-    Support[USER005_SupportAgent]
-    Ops[USER006_OperationsManager]
-    Marketing[USER007_MarketingManager]
-    Content[USER008_ContentManager]
-    Admin[USER009_Administrator]
+  subgraph staffSurf [InternalPlatform_ARCH171]
+    subgraph crmCtx [CrmContext_ARCH013]
+      Doctor[USER003_Doctor]
+      Pharmacist[USER004_Pharmacist]
+      Support[USER005_SupportAgent]
+      Ops[USER006_OperationsManager]
+    end
+    subgraph guardianCtx [GuardianContext_ARCH172]
+      Marketing[USER007_MarketingManager]
+      Content[USER008_ContentManager]
+      Admin[USER009_Administrator]
+      SuperAdmin[USER010_SuperAdministrator]
+    end
   end
   Guest -->|register_sign_in| Patient
   Guest --> Store
   Patient --> Store
   Patient --> Portal
-  Doctor --> staffSurf
-  Pharmacist --> staffSurf
-  Support --> staffSurf
-  Ops --> staffSurf
-  Marketing --> staffSurf
-  Content --> staffSurf
-  Admin --> staffSurf
+  crmCtx -->|shared session and shell| guardianCtx
 ```
 
 ---
@@ -346,7 +349,7 @@ flowchart TB
 | **Pain Points** | Slow coupon/content changes historically; weak SEO/funnel visibility; temptation to request clinical data that is out of role |
 | **Needs** | Coupon tooling; PHI-minimized analytics; selected CMS fields where granted; clear deny on clinical notes/full QST answers |
 | **Permissions Summary** | Coupons, marketing analytics, selected CMS fields as granted. Default deny clinical notes and full questionnaire answers (OR-07, FR-CRM-006). Full matrix → [08](08-role-permissions.md). |
-| **Devices Used** | Desktop CRM; Store outcomes observed via public web |
+| **Devices Used** | Desktop Internal Platform — primarily the Guardian context (coupons, campaigns, templates); Store outcomes observed via public web |
 | **Technical Skill Level** | Medium |
 | **Frequency of Use** | Daily to several times per week |
 | **Success Metrics** | KPI-01 (supporting conversion quality); funnel metrics; AC-BR-13 (marketing PHI boundary) |
@@ -370,7 +373,7 @@ flowchart TB
 | **Pain Points** | Engineering dependency for every content change; inconsistent product education; risk of mixing content work with PHI systems |
 | **Needs** | CRM CMS/blog tooling; clear publish states; no clinical queue/PHI requirements for daily work |
 | **Permissions Summary** | CMS and blog management; review moderation as granted. No order, Rx, or clinical queue access. Full matrix → [08](08-role-permissions.md). |
-| **Devices Used** | Desktop CRM; preview via Store |
+| **Devices Used** | Desktop Internal Platform — primarily the Guardian context (pages, blogs, media, moderation); preview via Store |
 | **Technical Skill Level** | Medium (CMS literacy) |
 | **Frequency of Use** | Daily to several times per week |
 | **Success Metrics** | Content publish velocity without deploys; SEO discoverability supporting BO-1; AC-BR-13 |
@@ -386,19 +389,19 @@ flowchart TB
 | --- | --- |
 | **Persona ID** | USER-009 |
 | **Role** | Administrator (platform configuration and governance) |
-| **Description** | The **primary operational CRM role**. Configures users/roles, catalog, questionnaires, plans, workflows, and settings—and has default access to every V1 business module (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings). Platform Administration (`PERM-ADM-020`) belongs to Super Administrator only. |
+| **Description** | The **primary administrative role**, working mainly in the **Guardian** context and retaining scoped CRM visibility. Configures users/roles, catalog, questionnaires, plans, workflows, and settings—and has default access to every V1 business module (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings). Requires `PERM-GRD-001` for Guardian; platform Administration (`PERM-ADM-020`) belongs to Super Administrator only; destructive Class D permissions are granted explicitly, never implied. |
 | **Primary Goals** | Configure the platform safely; manage staff roles; maintain catalog and workflow integrity without code deploys |
 | **Responsibilities** | Provision staff; assign roles; publish products/questionnaires/workflows safely; configure settings (oversell, moderation, notification templates); preserve audit trails |
 | **Daily Activities** | User/role changes; catalog and questionnaire versioning; publish-safety checks for Rx products; settings updates; investigate configuration issues with clinical/ops stakeholders |
 | **Motivations** | Reusable multi-category platform; safe configuration velocity; clear auditability |
 | **Pain Points** | Dangerous misconfiguration; unclear audit trails; pressure to widen roles beyond least privilege |
-| **Needs** | CRM administration modules; publish-safety guards; audited break-glass patterns; RACI clarity with clinical/ops consultants |
-| **Permissions Summary** | Full V1 CRM business-module access via the permission matrix (including Prescriptions). User/role admin, settings, catalog/workflow config, audit, reports. **No** `PERM-ADM-020`. Full matrix → [08](08-role-permissions.md). |
-| **Devices Used** | Desktop CRM |
+| **Needs** | Guardian administration modules; publish-safety guards; audited break-glass patterns; RACI clarity with clinical/ops consultants |
+| **Permissions Summary** | Full V1 business-module access via the permission matrix (including Prescriptions), plus `PERM-GRD-001` for the Guardian context and a documented subset of the destructive Class D. **No** `PERM-ADM-020`; no bulk cleanup or hard-delete execution. Full matrix → [08](08-role-permissions.md). |
+| **Devices Used** | Desktop; primarily the **Guardian** context, with CRM access as needed |
 | **Technical Skill Level** | Medium to high (platform/admin literacy) |
 | **Frequency of Use** | Daily during launches; as needed for ops changes |
 | **Success Metrics** | KPI-07 (configuration velocity); AC-BR-05; OR-14 publish safety; zero unsafe role sprawl incidents |
-| **Accessibility Considerations** | Keyboard CRM admin workflows; clear confirmation patterns for destructive/privileged actions |
+| **Accessibility Considerations** | Keyboard-operable Guardian administrative workflows; clear confirmation patterns for destructive and privileged actions (`UI-012`) |
 | **Related Functional Modules** | FR-ADM-001–004, FR-SET-001–004, FR-PRD/CAT/QST/SUB config FRs, FR-CRM-007, FR-APT config, FR-INV thresholds via settings |
 | **Related Business Goals** | BO-5; BP-10; OR-02, OR-10, OR-14; AC-BR-05, AC-BR-06 |
 
@@ -410,19 +413,19 @@ flowchart TB
 | --- | --- |
 | **Persona ID** | USER-010 |
 | **Role** | Super Administrator (platform Administration plane) |
-| **Description** | Platform Administration plane owner—not the primary operational CRM role. Receives the same business-module permissions as Administrator plus `PERM-ADM-020` (Administration console and future platform-only surfaces). |
+| **Description** | Platform Administration plane owner, working in the **Guardian** context. Receives the same business-module permissions as Administrator plus `PERM-ADM-020` (Administration console and future platform-only surfaces) and the full destructive Class D permission set, including bulk cleanup and documented hard-delete execution. |
 | **Primary Goals** | Govern platform-level Administration; retain full business-module visibility alongside Administrator |
 | **Responsibilities** | Platform Administration console; future platform config (multi-vendor, licenses, global settings). Business modules remain accessible via the normal permission matrix—not hidden from Super Administrator. |
 | **Daily Activities** | Administration plane tasks; escalate/config with clinical and ops stakeholders; never rely on special-cased AuthZ shortcuts |
 | **Motivations** | Clear separation between day-to-day Administrator work and platform Administration access |
 | **Pain Points** | Pressure to treat Super Admin as god mode; conflating ROLE-010 with ROLE-009 |
 | **Needs** | Permission-first UI (`PERM-ADM-020`); normal RBAC pipeline; audit trails |
-| **Permissions Summary** | Same V1 business-module grants as Administrator **plus** `PERM-ADM-020`. Platform-only exclusivity; not a god mode. Full matrix → [08](08-role-permissions.md). |
-| **Devices Used** | Desktop CRM |
+| **Permissions Summary** | Same V1 business-module grants as Administrator **plus** `PERM-ADM-020`, `PERM-GRD-001`, and the complete destructive Class D including `PERM-ADM-033` bulk cleanup and `PERM-ADM-034` hard-delete execution. Platform-only exclusivity; not a god mode. Full matrix → [08](08-role-permissions.md). |
+| **Devices Used** | Desktop; primarily the **Guardian** context |
 | **Technical Skill Level** | High (platform/admin literacy) |
 | **Frequency of Use** | As needed for platform Administration |
 | **Success Metrics** | Zero AuthZ bypass incidents; Administration gated only by `PERM-ADM-020` |
-| **Accessibility Considerations** | Keyboard CRM admin workflows; clear privileged-action confirmations |
+| **Accessibility Considerations** | Keyboard-operable Guardian administrative workflows; clear privileged-action and destructive confirmations |
 | **Related Functional Modules** | FR-ADM-001–004, FR-SET-001–004, FR-CRM-007 |
 | **Related Business Goals** | BO-5; BP-10; OR-14; AC-BR-05 |
 
@@ -557,7 +560,7 @@ Doctors and Pharmacists operate inside CRM clinical modules (consult queue, phar
 | USER-006 Operations Manager | Fulfillment flow; inventory accuracy | INV, CRM (fulfillment), ORD, RPT, SET (policy) | BO-4 |
 | USER-007 Marketing Manager | Conversion via coupons and funnel insight | CPN, ANL, limited CMS, CRM boundary | BO-1, BO-4 |
 | USER-008 Content Manager | Publish education/SEO without deploys | BLG, CMS, STO (published), REV (moderation) | BO-1, BO-5 |
-| USER-009 Administrator | Safe config; roles; catalog/workflow integrity | ADM, SET, PRD/CAT/QST/SUB config, CRM admin | BO-5 |
+| USER-009 Administrator | Safe config; roles; catalog/workflow integrity | ADM, SET, PRD/CAT/QST/SUB config, Guardian administration | BO-5 |
 
 ---
 
@@ -598,7 +601,7 @@ Aligned with PRD §12.4 and NFR-091–NFR-096.
 | Clinical workflows | Queue, case open, approve/decline aim for WCAG 2.2 AA (NFR-093 Should) |
 | Cognitive load | Clear clinical context and status; avoid ambiguous commerce-only cues during review |
 
-### 8.3 Administrators (and other CRM staff)
+### 8.3 Administrators (and other Internal Platform staff)
 
 | Need | Expectation |
 | --- | --- |

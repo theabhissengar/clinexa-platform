@@ -123,9 +123,12 @@ Define production-grade authorization policy for Clinexa so that:
 | **RBAC-003** | Need-to-Know Access | Staff see PHI only as required for assigned case, ticket, order, or pharmacy review context. Marketing analytics exclude unnecessary PHI. | OR-07; NFR-059 |
 | **RBAC-004** | Healthcare Privacy | HIPAA-aware: minimize PHI collection/display; encrypt in transit/at rest patterns; redact sensitive bodies from debug logs. No certification claim as V1 gate. | PRD §1.5; NFR-058, NFR-065 |
 | **RBAC-005** | Auditability | Privileged and PHI-adjacent actions record attributable actor, action, timestamp, and object IDs. Clinical audit trails are distinct from debug logs. | NFR-057, NFR-062, NFR-076 |
-| **RBAC-006** | Role Hierarchy | Capability nesting: Guest ⊂ Patient (Store); staff roles are siblings under CRM. **Administrator (`ROLE-009`)** is the primary operational CRM role and receives all V1 business-module permissions by default. **Super Administrator (`ROLE-010`)** adds platform Administration (`PERM-ADM-020`) only; it never bypasses AuthN, AuthZ, guards, or permission evaluation. | §8; PRD §13.4 |
+| **RBAC-006** | Role Hierarchy | Capability nesting: Guest ⊂ Patient (Store); staff roles are siblings within the Internal Platform. **Administrator (`ROLE-009`)** receives all V1 business-module permissions by default and holds Guardian context access. **Super Administrator (`ROLE-010`)** adds platform Administration (`PERM-ADM-020`) and the full destructive Class D; it never bypasses AuthN, AuthZ, guards, or permission evaluation. | §8; PRD §13.4 |
 | **RBAC-007** | Permission Inheritance | Inherited permissions are explicit and SoD-constrained. Dual-role grants require explicit assignment and remain audited. Administrator receives the full V1 business-module permission set via the matrix; platform-only surfaces remain Super Administrator–exclusive (`PERM-ADM-020`). | §8; personas Admin |
 | **RBAC-008** | Future Extensibility | New roles/permissions add via Admin-managed role config without collapsing SoD. Feature flags must not bypass clinical or payment gates. | FR-ADM-001; NFR-123; ARCH-149 |
+| **RBAC-009** | Application-Context Access | The Internal Platform has two contexts: **CRM** (`/crm/*`, `PERM-CRM-020`) and **Guardian** (`/guardian/*`, `PERM-GRD-001`). Context access is a first-class permission layer evaluated before module permissions. One session serves both contexts; switching never re-authenticates. | ARCH-163; [25](25-guardian.md) |
+| **RBAC-010** | Destructive Permission Segregation | Destructive operations form a segregated **Class D** granted explicitly and never implied by view or edit permissions. Class D is exposed only in Guardian and enforced server-side on every call. | ARCH-165; SEC-020a–020c |
+| **RBAC-011** | Consumer-Independent Authorization | Authorization derives from identity, roles, and permissions—never from which application issued the request. A client-supplied context or application claim is never an authorization input. | ARCH-160; DEV-022 |
 
 ---
 
@@ -289,7 +292,8 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Pharmacy | CRM | `PERM-CRM-006` Pharmacy review; `PERM-CRM-007` Mark pharmacy ready / flag | Pharmacist |
 | Appointments | APT | `PERM-APT-001` Book/cancel own; `PERM-APT-002` Staff view/manage | Patient; Staff as granted |
 | Patient Portal | PRT | `PERM-PRT-010` Aggregate self-service dashboard | Patient only |
-| CRM | CRM | `PERM-CRM-020` Access CRM shell (staff); deny patients | Staff roles |
+| CRM context | CRM | `PERM-CRM-020` Access the CRM context shell (`/crm/*`, staff); deny patients | Staff roles |
+| Guardian context | GRD | `PERM-GRD-001` Access the Guardian context shell (`/guardian/*`, staff); deny patients | Marketing, Content, Admin, Super Admin |
 | Documents | DOC | `PERM-DOC-001` View/download own; `PERM-DOC-002` Staff attach/view case-scoped; `PERM-DOC-003` Audit PHI access | Patient; Staff scoped |
 | Notifications | NTF | `PERM-NTF-001` Receive; `PERM-NTF-002` Manage prefs; `PERM-NTF-003` Manage templates | Patient; Admin |
 | Inventory | INV | `PERM-INV-001` View stock; `PERM-INV-002` Adjust/reserve/decrement; `PERM-INV-003` Low-stock alerts | Ops; Pharmacist coord |
@@ -304,6 +308,33 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | System Configuration | SET | `PERM-SET-001` Manage platform settings; `PERM-SET-002` Oversell/publish policies | Admin |
 | Audit Logs | ADM, DOC | `PERM-ADM-010` View audit logs; `PERM-DOC-003` PHI access audit | Admin (primary) |
 | Reviews (product) | REV | `PERM-REV-001` Submit review; `PERM-REV-002` Moderate approve/reject | Patient; Content/Support/Admin as granted |
+| **Destructive operations (Class D)** | ADM, ORD, SUB, PRD, CAT, CMS, BLG, CPN, RPT | `PERM-ADM-030`–`032` user delete/archive/restore; `PERM-ADM-033` bulk cleanup; `PERM-ADM-034` hard-delete execution; `PERM-ORD-010`–`012` order delete/archive/restore; `PERM-ORD-013` financial correction; `PERM-ORD-014` administrative override; `PERM-SUB-010`–`012` subscription delete/archive/restore; `PERM-PRD-010` delete product; `PERM-CAT-010` delete category; `PERM-CMS-010` delete page; `PERM-BLG-010` delete post; `PERM-CPN-010` delete coupon; `PERM-RPT-010` purge report artifacts | Super Admin (full); Admin (subset as granted) — **Guardian context only** |
+
+### 4.1 Application contexts (`RBAC-009`)
+
+Context access is evaluated **before** module permissions. A principal without the context permission receives no navigation for that context and is denied every route under its prefix.
+
+| Context | Permission | Prefix | Typical holders |
+| --- | --- | --- | --- |
+| CRM (operational) | `PERM-CRM-020` | `/crm/*` | Doctor, Pharmacist, Support, Operations, Admin, Super Admin |
+| Guardian (administrative) | `PERM-GRD-001` | `/guardian/*` | Marketing, Content, Admin, Super Admin |
+
+Clinical and operational roles are CRM-only by default. Marketing and Content work primarily in Guardian because the content, catalog, and marketing modules they own are administrative surfaces ([18 §2.8](18-crm.md#28-relationship-with-guardian)).
+
+### 4.2 Destructive permission class (`RBAC-010`)
+
+A permission belongs to **Class D** when it removes, hides, or financially rewrites durable truth, or overrides a gate or policy.
+
+| Rule | Statement |
+| --- | --- |
+| Explicit grant | Class D is never implied by a module's view, edit, manage, or publish permission |
+| Guardian-only exposure | Class D affordances render only under `/guardian/*` (`ARCH-165`) |
+| Server enforcement | Every Class D operation is authorized server-side from the principal's grants, independent of the calling application (`RBAC-011`) |
+| Audited | Every Class D operation writes an audit record with actor, target, and scope (`SEC-020c`) |
+| Bounded | Bulk cleanup and hard delete require bounded scope plus explicit confirmation |
+| Retention-first | Soft delete and archive are preferred; hard delete follows the documented database procedure ([10](10-database-design.md)) |
+
+Note on existing permissions: `PERM-PRD-002` (manage/publish products) already covers archive and restore. Those actions are **Class D behavior within Guardian** and are exposed only there; a dedicated `PERM-PRD-010` governs product deletion.
 
 ---
 
@@ -379,11 +410,31 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-ADM-002 | Assign roles | Assign and change roles/permissions (audited; no self-elevation). | ADM | Admin |
 | PERM-ADM-003 | Configure workflows | Configure catalog, questionnaires, treatment plans, and consult workflows. | ADM | Admin |
 | PERM-ADM-010 | View audit logs | Read clinical/admin audit log records. | ADM | Admin |
-| PERM-ADM-020 | Access Administration | Access the CRM Administration plane (platform governance console). | ADM | Super Administrator only |
+| PERM-ADM-020 | Access Administration | Access the platform governance console in the Guardian context (`/guardian/administration`). | ADM | Super Administrator only |
 | PERM-SET-001 | Manage platform settings | Create/update platform configuration settings. | SET | Admin |
 | PERM-SET-002 | Manage oversell/publish policies | Configure oversell, publish-safety, and related operational policies. | SET | Admin |
 | PERM-REV-001 | Submit product review | Submit an eligible product review (held pending moderation). | REV | Patient |
 | PERM-REV-002 | Moderate reviews | Approve or reject product reviews before public display. | REV | Admin; Content, Support, Marketing (as granted) |
+| PERM-GRD-001 | Access Guardian context | Enter the Guardian administrative context shell (`/guardian/*`); denied to Guest and Patient. | GRD | Marketing, Content, Admin, Super Administrator |
+| PERM-ADM-030 | Delete user | Soft-delete a user record in Guardian; subject to the last-admin safeguard. **Class D.** | ADM | Admin (as granted), Super Administrator |
+| PERM-ADM-031 | Archive user | Archive a user record, removing it from active surfaces while retaining history. **Class D.** | ADM | Admin (as granted), Super Administrator |
+| PERM-ADM-032 | Restore user | Restore an archived or soft-deleted user record. **Class D.** | ADM | Admin (as granted), Super Administrator |
+| PERM-ADM-033 | Bulk data cleanup | Execute bounded bulk cleanup or maintenance operations across records. **Class D.** | ADM | Super Administrator |
+| PERM-ADM-034 | Execute hard-delete procedure | Run a documented hard-delete/retention-purge procedure with audit retention. **Class D.** | ADM | Super Administrator |
+| PERM-ORD-010 | Delete order | Soft-delete an order record in Guardian. **Class D.** | ORD | Admin (as granted), Super Administrator |
+| PERM-ORD-011 | Archive order | Archive an order record while retaining commerce and clinical history. **Class D.** | ORD | Admin (as granted), Super Administrator |
+| PERM-ORD-012 | Restore order | Restore an archived or soft-deleted order. **Class D.** | ORD | Admin (as granted), Super Administrator |
+| PERM-ORD-013 | Financial correction | Apply an administrative financial correction, adjustment, or write-off to an order or payment. Distinct from policy-scoped operational refunds (`PERM-PAY-003`). **Class D.** | ORD | Admin (as granted), Super Administrator |
+| PERM-ORD-014 | Administrative override | Force an administratively justified state transition or policy exemption. Never bypasses clinical or payment gates silently; always audited. **Class D.** | ORD | Super Administrator |
+| PERM-SUB-010 | Delete subscription | Soft-delete a subscription record in Guardian. **Class D.** | SUB | Admin (as granted), Super Administrator |
+| PERM-SUB-011 | Archive subscription | Archive a subscription record. **Class D.** | SUB | Admin (as granted), Super Administrator |
+| PERM-SUB-012 | Restore subscription | Restore an archived or soft-deleted subscription. **Class D.** | SUB | Admin (as granted), Super Administrator |
+| PERM-PRD-010 | Delete product | Delete a product record in Guardian; blocked where order history requires retention. **Class D.** | PRD | Admin (as granted), Super Administrator |
+| PERM-CAT-010 | Delete category | Delete a category in Guardian; blocked where dependent catalog structure requires retention. **Class D.** | CAT | Admin (as granted), Super Administrator |
+| PERM-CMS-010 | Delete CMS page | Delete a CMS page or block in Guardian. **Class D.** | CMS | Content (as granted), Admin, Super Administrator |
+| PERM-BLG-010 | Delete blog post | Delete a blog post in Guardian. **Class D.** | BLG | Content (as granted), Admin, Super Administrator |
+| PERM-CPN-010 | Delete coupon | Delete a coupon in Guardian; redemption history is retained. **Class D.** | CPN | Admin (as granted), Super Administrator |
+| PERM-RPT-010 | Purge report artifacts | Delete generated report job artifacts and exports per retention policy. **Class D.** | RPT | Admin (as granted), Super Administrator |
 
 ---
 
@@ -412,7 +463,9 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Module / capability | G | P | Dr | Ph | Su | Op | Mk | Ct | Ad | Key permissions |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Auth — register / sign-in / reset | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PERM-AUTH-001–003 |
-| CRM shell access | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PERM-CRM-020 |
+| CRM context access (`/crm/*`) | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PERM-CRM-020 |
+| Guardian context access (`/guardian/*`) | — | — | — | — | — | — | ✓ | ✓ | ✓ | PERM-GRD-001 |
+| Destructive operations (Class D) | — | — | — | — | — | — | ◐‖ | ◐‖ | ◐‖ | PERM-ADM-030–034, PERM-ORD-010–014, PERM-SUB-010–012, PERM-PRD/CAT/CMS/BLG/CPN/RPT-010 |
 | Patient Portal | — | ✓ | — | — | — | — | — | — | — | PERM-PRT-010 |
 | Published catalog / CMS / blogs (Store) | V | V | — | — | — | — | V* | V* | V* | PERM-PRD/CAT/CMS/BLG-001 |
 | Products / categories manage | — | — | — | — | — | — | — | — | M | PERM-PRD-002, PERM-CAT-002 |
@@ -443,8 +496,11 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Settings / system config | — | — | — | — | — | — | — | — | M | PERM-SET-001–002 |
 | Audit log view | — | — | — | — | — | — | — | — | ✓ | PERM-ADM-010 |
 
-\* Marketing/Content may view Store publicly; manage only via CRM permissions.  
-† Ops fulfill only after clinical + pharmacy gates clear for Rx (`FR-ORD-003`).
+\* Marketing/Content may view Store publicly; manage only via Guardian permissions.  
+† Ops fulfill only after clinical + pharmacy gates clear for Rx (`FR-ORD-003`).  
+‖ Class D is granted per operation, never as a block: Content may hold only content deletions, Marketing only coupon deletion, Administrator a documented subset, and Super Administrator the full set including bulk cleanup and hard-delete execution. Class D is exposed only in the Guardian context (`ARCH-165`).
+
+Role columns above end at **Ad** (Administrator). **Super Administrator (`ROLE-010`)** holds the same business-module grants as Administrator plus `PERM-ADM-020` and the complete Class D set.
 
 ### 5.3 Hard-deny summary (always —)
 
@@ -457,6 +513,10 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Cross-patient data | Patient (any other patient) | RBAC-024; FR-AUTH-005 |
 | Fulfill Rx before gates | Operations | RBAC-025; FR-ORD-003 |
 | Approve treatments / prescribe | Operations (default) | RBAC-026 |
+| Guardian context access | Guest, Patient; Doctor, Pharmacist, Support, Operations by default | RBAC-009; requires `PERM-GRD-001` |
+| Destructive operations from CRM, Store, or Patient Portal | Every role, every client | RBAC-010; ARCH-165; SEC-020a |
+| Clinical approval from a Guardian surface | Every Guardian principal | GRD-020 — administrative power grants no clinical authority |
+| Class D implied by view/edit/publish | Every role | RBAC-010 — Class D requires an explicit grant |
 
 ---
 
@@ -511,6 +571,23 @@ Actions: **V** View · **C** Create · **U** Update · **D** Delete · **A** App
 † Gate-cleared Rx only.  
 ‡ Status/context only—not clinical edit; Support ticket need-to-know.
 
+### 6.1 Context ownership of CRUD actions (`RBAC-009`, `RBAC-010`)
+
+The matrix above answers *which role* may perform an action. This table answers *which Internal Platform context exposes it*. Both checks apply: a principal needs the role permission **and** access to the context where the action lives.
+
+| Entity | Create | View | Edit | Delete / Archive / Restore | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Users | Guardian | Both | Guardian (administrative fields), CRM (operational, clinical, support fields as permitted) | Guardian only | `PERM-ADM-030`–`032` |
+| Orders | Guardian (administrative path), Store checkout (patient path) | Both | Guardian (administrative), CRM (operational workflow) | Guardian only | `PERM-ORD-010`–`012` |
+| Orders — financial | Guardian: corrections and administrative overrides (`PERM-ORD-013`, `PERM-ORD-014`) | — | CRM: policy-scoped operational refund and cancel assist (`PERM-PAY-003`) | Guardian only | Corrections ≠ operational refunds |
+| Subscriptions | Both | Both | Guardian (administrative), CRM (operational: renew, pause, resume) | Guardian only | `PERM-SUB-010`–`012` |
+| Products, Categories, CMS, Blogs, Coupons | Guardian | Both (published content readable from Store) | Guardian | Guardian only | `PERM-PRD/CAT/CMS/BLG/CPN-010` |
+| Prescriptions, Clinical notes | CRM | CRM | CRM | Neither — clinical records are retained, never deleted | `GRD-020` |
+| Reports | Both (role-scoped runs) | Both | — | Guardian only (artifact purge, `PERM-RPT-010`) | — |
+| Settings, Roles, Audit logs | Guardian | Guardian | Guardian | Guardian only, audit logs never deleted outside retention | `PERM-ADM-020` |
+
+Full entity-by-consumer ownership, including Store and Patient Portal columns, lives in the [Ownership Matrix](28-ownership-matrix.md).
+
 ---
 
 ## 7. Separation of Duties
@@ -544,6 +621,12 @@ flowchart LR
 | **RBAC-028** | Administrator business-module access | `ROLE-009` receives all V1 CRM business-module permissions by default (including Prescriptions). Platform-only surfaces use `PERM-ADM-020` (Super Administrator only). API clinical gates remain enforced server-side. |
 | **RBAC-029** | No shared anonymous clinical accounts | All staff actions attributable | Accountability (OR-06; NFR-047) |
 | **RBAC-030** | Dual-role only by explicit assignment | Extra permissions audited | Controlled exceptions without silent god-roles |
+| **RBAC-031** | Administrative power is not clinical authority | Guardian exposes no prescription approve, decline, or clinical note surface | Platform administration must never become a back door around the clinical gates (`GRD-020`) |
+| **RBAC-032** | Destructive operations are segregated from routine work | Class D requires an explicit grant and is unavailable outside `/guardian/*` | An operator who can edit a record must not be able to erase it by accident or by default |
+| **RBAC-033** | Bulk cleanup and hard delete are Super Administrator only | Administrator holds no `PERM-ADM-033`/`034` unless explicitly granted and audited | Irreversible scope demands the narrowest possible holder set |
+| **RBAC-034** | Financial correction is separate from operational refund | `PERM-ORD-013` is distinct from `PERM-PAY-003` | Rewriting financial truth is an administrative act, not a support action |
+| **RBAC-035** | Last remaining administrator cannot be removed | User delete, archive, and role-strip are refused where they would leave no active principal holding `PERM-ADM-001` | Prevents an unrecoverable platform lockout (`GRD-149`) |
+| **RBAC-036** | Context access is not self-granted | Only `PERM-ADM-002` holders may grant `PERM-CRM-020` or `PERM-GRD-001`; grants are audited | Prevents privilege escalation into the administrative plane |
 
 ---
 
@@ -824,12 +907,15 @@ flowchart TB
 | 1.1 | 2026-07-23 | Principal Security / IAM Architect (Clinexa Planning) | — | Additive enterprise sections: Permission Dictionary, Screen-to-Role Access Matrix, JWT Claims Reference, Authorization Request Flow (no changes to existing IDs, matrices, or rules) | Draft for review |
 | 1.2 | 2026-07-27 | Platform Engineering | — | Introduce ROLE-010 Super Administrator and PERM-ADM-020 (Administration Access); clarify no AuthN/AuthZ/guard/permission bypass | Draft for review |
 | 1.3 | 2026-07-27 | Platform Engineering | — | Administrator default business-module access (incl. Prescriptions); Super Admin platform-only exclusivity | Draft for review |
+| 1.4 | 2026-07-27 | Platform Engineering | — | Internal Platform context RBAC: `PERM-GRD-001` Guardian context access, `RBAC-009`–`011` principles, segregated destructive **Class D** dictionary (`PERM-ADM-030`–`034`, `PERM-ORD-010`–`014`, `PERM-SUB-010`–`012`, `PERM-PRD/CAT/CMS/BLG/CPN/RPT-010`), §4.1–4.2 context and Class D definitions, §6.1 context ownership of CRUD, SoD rules `RBAC-031`–`036`, hard-deny and screen-matrix context notes | Draft for review |
 
 ---
 
 ## Screen-to-Role Access Matrix
 
 UI/screen access derived from §5 Permission Matrix and §3 Role Catalog. This matrix is a **navigation affordance guide**; the Backend API remains the authoritative enforcement point (`FR-AUTH-004`, `RBAC-086`).
+
+> **Context note.** Internal Platform screens live in either the CRM context (`/crm/*`, `PERM-CRM-020`) or the Guardian context (`/guardian/*`, `PERM-GRD-001`); §6.1 records which context owns each entity's actions. Administrative screens—Products, Categories, CMS, Blogs, Coupons, Questionnaire definitions, Users & Roles, Settings, Audit Logs—render only in Guardian, so a ✓ for Marketing, Content, Admin, or Super Admin on those rows is contingent on `PERM-GRD-001`. Destructive affordances never render on a CRM screen regardless of the marks below.
 
 ### Legend
 
@@ -983,6 +1069,10 @@ UI hiding of buttons is non-authoritative (`RBAC-086`). Feature flags must not s
 | [05 — System architecture](05-system-architecture.md) | Surfaces and trust boundaries |
 | [12 — Authentication flow](12-authentication-flow.md) | AuthN (sessions, reset)—not AuthZ matrices |
 | [13 — Security](13-security.md) | Broader security controls |
+| [18 — CRM architecture](18-crm.md) | Operational context; `PERM-CRM-020` surfaces |
+| [25 — Guardian architecture](25-guardian.md) | Administrative context; `PERM-GRD-001` and Class D exposure rules |
+| [28 — Ownership matrix](28-ownership-matrix.md) | Entity actions per consuming application |
+| [29 — Navigation blueprint](29-navigation-blueprint.md) | How context and permission filtering shape navigation |
 
 ---
 

@@ -2,16 +2,20 @@
 
 | Field | Value |
 | --- | --- |
-| Document | CRM Architecture |
+| Document | CRM Architecture — Internal Platform operational context |
 | Product | Clinexa |
-| Version | 1.0 |
+| Version | 1.3 |
 | Status | Approved — Implementation Ready |
 | Primary market | United States |
 | Audience | Principal Enterprise Solution Architecture, Healthcare CRM Architecture, Enterprise Operations Architecture, Principal Frontend Architecture, Frontend Engineering, Product, QA, Security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md), [16 — Store architecture](16-store-architecture.md), [17 — Patient portal](17-patient-portal.md) |
+| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md), [16 — Store architecture](16-store-architecture.md), [17 — Patient portal](17-patient-portal.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md) |
 
-This document is the **authoritative CRM (staff clinical and operational control plane) architecture** for Clinexa Version 1. It defines CRM responsibilities, module boundaries, role-based navigation, operational workflows, logical frontend state ownership, API integration surfaces, and CRM performance, accessibility, and security posture—without prescribing frameworks, component libraries, styling systems, or application source code.
+This document is the **authoritative CRM architecture** for Clinexa Version 1. CRM is the **operational context of the Clinexa Internal Platform** (`ARCH-013` inside `ARCH-171`)—not the whole staff control plane. It defines CRM responsibilities, module boundaries, role-based navigation, operational workflows, logical frontend state ownership, API integration surfaces, and CRM performance, accessibility, and security posture—without prescribing frameworks, component libraries, styling systems, or application source code.
+
+> **Internal Platform context boundary (authoritative):** CRM owns the **operational lifecycle**; **Guardian** (`ARCH-172`, [25 — Guardian](25-guardian.md)) owns the **administrative lifecycle**. Both are contexts inside one authenticated application sharing authentication, sessions, RBAC, backend, APIs, design system, and application shell; only modules, workflows, and permissions differ. CRM lives under `/crm/*`, Guardian under `/guardian/*`.
+>
+> **Destructive operations are never exposed in CRM** (`ARCH-165`): delete, archive, restore, financial corrections, administrative overrides, bulk cleanup, and hard delete belong to Guardian and are gated by Guardian-owned permissions server-side. Administrative modules historically catalogued here (user administration, catalog and category authoring, coupons, CMS/blogs, notification templates, audit log query, system settings) are **Guardian-owned**; see §2.8 for the relocation table.
 
 It expands [PRD §7.4](00-product-requirements-document.md) (CRM), [PRD §8](00-product-requirements-document.md) CRM-facing capabilities and §8.12, [PRD §9](00-product-requirements-document.md) staff journeys, [PRD §12.1](00-product-requirements-document.md)/[§12.4](00-product-requirements-document.md)/[§12.6](00-product-requirements-document.md), [03](03-functional-requirements.md) `FR-CRM-*` and related clinical/ops/admin FRs, [05](05-system-architecture.md) `ARCH-013` / `ARCH-053`, [08](08-role-permissions.md) staff roles and `PERM-CRM-*`, [11](11-api-design.md) CRM/admin consumer APIs, [12](12-authentication-flow.md) `AUTH-027`, [13](13-security.md), [14](14-notifications.md) admin templates and clinical triggers, [16](16-store-architecture.md) Store↔CRM publish boundary (`STORE-014`), and [17](17-patient-portal.md) Portal↔CRM status boundary (`PORTAL-013`).
 
@@ -64,8 +68,9 @@ Define a production-grade CRM architecture for Clinexa so that:
 
 | Area | Coverage |
 | --- | --- |
-| CRM Web client | Staff clinical and operational control plane (`ARCH-013`) |
-| Modules | Dashboard, user management, patient management, orders, clinical review, prescriptions, pharmacy, inventory, products, categories, questionnaires, appointments, subscriptions, documents, support, coupons, CMS (including blogs and review moderation), notifications (admin templates), reports (including analytics surfaces), audit logs, system settings |
+| CRM context | Operational context of the Internal Platform (`ARCH-013` within `ARCH-171`), served under `/crm/*` |
+| Modules (CRM-owned) | Dashboard, patient management, orders (operational), clinical review, prescriptions, pharmacy, inventory, questionnaires (clinician case view), appointments, subscriptions (operational actions), documents, support, operational reports |
+| Modules (catalogued here, Guardian-owned) | User administration, products, categories, questionnaire configuration, coupons, CMS/blogs/review moderation, notification templates, audit log query, system settings — behavior remains traceable via `CRM-*` IDs, but the surface is Guardian (§2.8, [25](25-guardian.md)) |
 | Navigation | Permission-driven, role-scoped shell; route protection; dynamic navigation |
 | Operational workflows | Order review, clinical approval, prescription processing, pharmacy fulfillment readiness, inventory updates, subscription assist, appointment management, support resolution, document management |
 | Logical FE state | Auth/session, users, patients, orders, clinical queue, prescriptions, inventory, products, CMS, support, reports, notification templates, UI state |
@@ -85,6 +90,9 @@ Define a production-grade CRM architecture for Clinexa so that:
 | Real-time clinician chat | Out of V1 (PRD §11) |
 | Full ambulatory EHR / EHR replacement | Out of V1 (PRD §11) |
 | Guest or Patient CRM access | Hard deny (`RBAC-023`; `PERM-CRM-020`) |
+| Administrative lifecycle (provisioning, master data, platform governance) | [25 — Guardian](25-guardian.md) (`ARCH-172`, `ARCH-164`) |
+| Destructive operations (delete, archive, restore, financial corrections, administrative overrides, bulk cleanup, hard delete) | Guardian only (`ARCH-165`; §2.8) |
+| Guardian navigation, groups, and shell behavior | [29 — Navigation blueprint](29-navigation-blueprint.md) |
 | Finance product role | Not a V1 product role; Super Administrator (`ROLE-010`) is in scope via normal RBAC ([08](08-role-permissions.md)) |
 | Named frameworks, SDKs, component libraries, styling systems | Implementation |
 | Physical DB DDL / API path invention | [10](10-database-design.md) / [11](11-api-design.md) |
@@ -136,8 +144,15 @@ Define a production-grade CRM architecture for Clinexa so that:
 | CRM-006 | Config without deploy | Ordinary catalog, questionnaire, plan, and workflow expansion is CRM-configurable (`FR-CRM-007`; `OR-14`) |
 | CRM-007 | Need-to-know PHI | Staff see patient data only as required for assigned case, ticket, order, or pharmacy context (`OR-06`; `RBAC-003`) |
 | CRM-008 | Attributable staff | No shared anonymous clinical accounts; actions carry actor identity (`OR-06`; `NFR-047`) |
-| CRM-009 | One API, three clients | CRM shares Backend API with Store and Portal; surface-specific AuthZ (`ARCH-003`) |
+| CRM-009 | One API, many clients | CRM shares the Backend API with Guardian, Store, Portal, and future clients; the API is application-agnostic and authorizes identity, not caller (`ARCH-003`, `ARCH-160`) |
 | CRM-010 | Accessibility for clinical density | Primary clinical workflows are keyboard-operable; AA goal for queue and decision paths (`NFR-092`, `NFR-093`) |
+| CRM-160 | Operational lifecycle only | CRM owns day-to-day processing; the administrative lifecycle belongs to Guardian (`ARCH-164`) |
+| CRM-161 | No destructive exposure | CRM must never render or invoke delete, archive, restore, financial correction, administrative override, bulk cleanup, or hard delete affordances (`ARCH-165`) |
+| CRM-162 | One platform, two contexts | CRM shares authentication, session, RBAC engine, shell, and design system with Guardian; a context switch is navigation, never a second login (`ARCH-163`, `ARCH-153`) |
+| CRM-163 | Platform modules are consumed | CRM consumes backend platform modules; it owns none of them (`ARCH-161`) |
+| CRM-164 | Context-prefixed routing | Every CRM route lives under `/crm/*` and is resolvable as CRM context from the pathname alone (`ARCH-116`) |
+| CRM-165 | Escalation, not duplication | When operational staff need an administrative or destructive action, the path is a permission-gated Guardian escalation—never a parallel CRM implementation |
+| CRM-166 | Visual unity | CRM must remain visually and behaviorally indistinguishable from Guardian in chrome, tokens, and component patterns (`ARCH-166`) |
 
 ---
 
@@ -145,24 +160,28 @@ Define a production-grade CRM architecture for Clinexa so that:
 
 ### 2.1 CRM responsibilities
 
-The CRM Web Application (`ARCH-013`) is the authenticated **clinical and operational control plane** for internal staff. It serves Doctor, Pharmacist, Support, Operations, Marketing, Content, and Administrator personas (`USER-003`–`USER-009` / `ROLE-003`–`ROLE-009`). Backend composition of authorized staff views is described as `ARCH-053`.
+The CRM context (`ARCH-013`) is the authenticated **operational control plane** for internal staff, served under `/crm/*` inside the Internal Platform (`ARCH-171`). It primarily serves Doctor, Pharmacist, Support, and Operations personas (`USER-003`–`USER-006` / `ROLE-003`–`ROLE-006`), with scoped Administrator visibility. Backend composition of authorized staff views is described as `ARCH-053`.
 
-| Responsibility | CRM owns (UX) | Server owns (truth) |
-| --- | --- | --- |
-| Dashboard | Role-scoped summaries and queues entry | Aggregates and AuthZ (`PERM-CRM-020`) |
-| User management | Provision/deactivate staff; role assignment UX | Users/RBAC persistence and audit (`FR-ADM-001`) |
-| Patient management | Staff-scoped search and case-context views | Isolation and field redaction (`PERM-CRM-010`; `SEC-061`) |
-| Clinical review | Consult queue; approve / decline / request info; notes | Decisions, audit, order clinical states (`FR-CRM-002`) |
-| Prescriptions | Create/update after approval; status for pharmacy/ops | Rx after doctor approval only (`FR-CRM-003`) |
-| Pharmacy | Pharmacy queue; ready / flag | Pharmacist review before Rx fulfillment (`FR-CRM-004`) |
-| Orders / fulfillment | Staff lists, fulfill, cancel within policy | Lifecycle gates and inventory side effects (`FR-CRM-005`; `FR-ORD-003`) |
-| Inventory | Balances, adjustments, low-stock | Ledger and oversell policy (`FR-INV-*`) |
-| Catalog / QST / plans / workflows | Admin configure and publish | Publish safety validation (`FR-CRM-007`; `OR-14`) |
-| Coupons / CMS / blogs / reviews | Author, publish, moderate | Published-only Store consume; moderation (`FR-CPN-*`, `FR-CMS-*`, `FR-BLG-*`, `FR-REV-*`) |
-| Support | Triage, reply, resolve; refund assist | Ticket lifecycle; never Rx approve (`FR-SUP-002`/`004`) |
-| Reports / analytics | Role-scoped dashboards and exports | Query/export AuthZ and PHI minimization (`FR-RPT-*`, `FR-ANL-*`) |
-| Notifications | Admin template management UX | Workers send; clients never invent sends (`NTF-001`) |
-| Audit / settings | Admin query and platform policy UX | Append-only audit; server-applied settings |
+| Responsibility | Owning context | CRM owns (UX) | Server owns (truth) |
+| --- | --- | --- | --- |
+| Dashboard | CRM (operational) | Role-scoped operational summaries and queue entry | Aggregates and AuthZ (`PERM-CRM-020`) |
+| Patient management | CRM | Staff-scoped search and case-context views | Isolation and field redaction (`PERM-CRM-010`; `SEC-061`) |
+| Clinical review | CRM | Consult queue; approve / decline / request info; notes | Decisions, audit, order clinical states (`FR-CRM-002`) |
+| Prescriptions | CRM | Create/update after approval; status for pharmacy/ops | Rx after doctor approval only (`FR-CRM-003`) |
+| Pharmacy | CRM | Pharmacy queue; ready / flag | Pharmacist review before Rx fulfillment (`FR-CRM-004`) |
+| Orders / fulfillment (operational) | CRM | Staff lists, fulfill, cancel within policy, timeline, documents, internal notes | Lifecycle gates and inventory side effects (`FR-CRM-005`; `FR-ORD-003`) |
+| Inventory | CRM | Balances, adjustments, low-stock | Ledger and oversell policy (`FR-INV-*`) |
+| Subscriptions (operational) | CRM | Renew / pause / resume assist within policy | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`; `OR-10`) |
+| Support | CRM | Triage, reply, resolve; policy-scoped refund assist | Ticket lifecycle; never Rx approve (`FR-SUP-002`/`004`) |
+| Operational reports | CRM | Role-scoped operational dashboards and exports | Query/export AuthZ and PHI minimization (`FR-RPT-*`, `FR-ANL-*`) |
+| Questionnaires (case view) | CRM | Clinician view of full answers in case context | Versioning and redaction (`FR-QST-005`) |
+| User administration | **Guardian** | — (escalate to `/guardian/users`) | Users/RBAC persistence and audit (`FR-ADM-001`) |
+| Catalog / QST / plans / workflow configuration | **Guardian** | — (escalate to `/guardian/*`) | Publish safety validation (`FR-CRM-007`; `OR-14`) |
+| Coupons / CMS / blogs / review moderation | **Guardian** | — | Published-only Store consume; moderation (`FR-CPN-*`, `FR-CMS-*`, `FR-BLG-*`, `FR-REV-*`) |
+| Notification templates | **Guardian** | — | Workers send; clients never invent sends (`NTF-001`) |
+| Audit query / platform settings | **Guardian** | — | Append-only audit; server-applied settings |
+| Order administration, financial corrections, overrides | **Guardian** | — | Refund/correction authorization and audit (`ARCH-165`) |
+| Delete / archive / restore / bulk cleanup / hard delete | **Guardian** | — (never rendered in CRM) | Guardian-owned permissions enforced server-side (`ARCH-152`) |
 
 **CRM-011** — CRM is a presentation and staff-orchestration client. All durable clinical, commerce, inventory, and identity decisions are enforced by the Backend API.
 
@@ -170,10 +189,10 @@ The CRM Web Application (`ARCH-013`) is the authenticated **clinical and operati
 
 | Aspect | CRM | Store |
 | --- | --- | --- |
-| Catalog / CMS / blogs / coupons | Author, configure, publish | Consume published only |
-| Reviews | Moderate approve/reject | Display approved |
+| Catalog / CMS / blogs / coupons | Read for operational context; authoring and publishing belong to Guardian ([25 §2.3](25-guardian.md#23-relationship-with-store)) | Consume published only |
+| Reviews | Read; moderation is a Guardian surface | Display approved |
 | Clinical / inventory / ops | Own queues and truth | Never mutate |
-| SEO metadata | Editable via CRM config | Render indexable pages |
+| SEO metadata | Read; editable in Guardian | Render indexable pages |
 | Access | Staff roles only | Guest/Patient denied CRM (`PERM-CRM-020`) |
 
 **CRM-012** — CRM never exposes public Store commerce UX (browse, cart, checkout finalize). Content and catalog changes appear on Store only after publish (`OR-14`; `FR-CMS-002`; `STORE-014`).
@@ -279,6 +298,52 @@ flowchart TB
 | CRM-019 | Invent clinical outcomes, pharmacy readiness, or fulfillment clearance client-side |
 | CRM-020 | Grant Marketing/Content default clinical notes or full questionnaire answers |
 | CRM-021 | Allow Support to approve prescriptions or Operations to fulfill Rx before doctor + pharmacist gates |
+| CRM-022 | Expose any destructive administrative operation, or any Guardian-owned administrative module, under `/crm/*` (`ARCH-165`) |
+
+### 2.8 Relationship with Guardian
+
+Guardian (`ARCH-172`) is the **administrative** context of the same application. It is not a separate product, not a settings panel, and not a second backend.
+
+| Aspect | CRM (`/crm/*`) | Guardian (`/guardian/*`) |
+| --- | --- | --- |
+| Lifecycle | Operational: process, review, fulfill, support | Administrative: provision, configure, govern, correct |
+| Shared entities (Users, Orders, Subscriptions, Reports) | Operational, clinical, and support fields | Administrative fields, financial corrections, lifecycle state |
+| Destructive operations | Never exposed | Sole exposure point (`ARCH-165`) |
+| Navigation model | Role-scoped operational queues | Grouped enterprise navigation (Commerce, Content, Users, Marketing, Platform, …) |
+| Session and shell | Same session, same shell, same design tokens | Same session, same shell, same design tokens |
+| Backend | Consumes platform modules | Consumes the same platform modules with administrative permissions |
+
+#### Module relocation (authoritative)
+
+`CRM-0xx` control IDs remain valid for traceability; the **surface** for the rows below is Guardian, and their detailed architecture lives in [25 — Guardian](25-guardian.md).
+
+| Catalogued module | ID | Owning context | Notes |
+| --- | --- | --- | --- |
+| Dashboard | `CRM-030` | Both (context-specific) | CRM shows operational queues; Guardian shows administrative KPIs |
+| User Management | `CRM-031` | Guardian | Full administrative user lifecycle including delete/archive/restore |
+| Patient Management | `CRM-032` | CRM | Need-to-know clinical/ops context |
+| Orders | `CRM-033` | Both | CRM operational workflow; Guardian administration, corrections, destructive actions |
+| Clinical Review | `CRM-034` | CRM | Doctor-only |
+| Prescriptions | `CRM-035` | CRM | Clinical |
+| Pharmacy | `CRM-036` | CRM | Pharmacist-only |
+| Inventory | `CRM-037` | CRM operational balances; Guardian policy/master data | Oversell policy is a Guardian setting |
+| Products | `CRM-038` | Guardian | Catalog authoring and publish |
+| Categories | `CRM-039` | Guardian | Catalog taxonomy |
+| Questionnaires | `CRM-040` | Both | Guardian owns definitions, versions, bindings; CRM owns clinician case view |
+| Appointments | `CRM-041` | CRM operational; Guardian types/slots configuration | Scheduling only |
+| Subscriptions | `CRM-042` | Both | CRM renew/pause/resume; Guardian plans and administrative lifecycle |
+| Documents | `CRM-043` | CRM | Case-scoped attachment |
+| Support | `CRM-044` | CRM | Ticket lifecycle |
+| Coupons | `CRM-045` | Guardian | Marketing administration |
+| CMS (pages, blogs, review moderation) | `CRM-046` | Guardian | Content administration |
+| Notifications (templates) | `CRM-047` | Guardian | Template administration |
+| Reports | `CRM-048` | Both | CRM operational reports; Guardian administrative reports and exports |
+| Audit Logs | `CRM-049` | Guardian | Governance surface |
+| System Settings | `CRM-050` | Guardian | Platform policy |
+
+#### Escalation pattern
+
+**CRM-167** — When an operational task requires an administrative or destructive action, CRM surfaces a permission-aware link into the corresponding Guardian module (for example, order detail → `/guardian/orders/:id`). CRM must not reimplement the action, and the link must be hidden when the principal lacks Guardian access.
 
 ---
 
@@ -286,29 +351,31 @@ flowchart TB
 
 ### 3.1 Module map
 
-| ID | Module | MoSCoW | Primary FRs | Primary journeys / processes |
-| --- | --- | --- | --- | --- |
-| CRM-030 | Dashboard | Must | `FR-CRM-001`, `FR-ANL-*` | Staff home; `NFR-006` |
-| CRM-031 | User Management | Must | `FR-ADM-001` | `JRN-031` |
-| CRM-032 | Patient Management | Must | `FR-CRM-001`, `FR-SRCH-002`, `PERM-CRM-010` | Clinical/ops context |
-| CRM-033 | Orders | Must | `FR-CRM-005`, `FR-ORD-003`–`006` | `JRN-016`; `BP-05` |
-| CRM-034 | Clinical Review | Must | `FR-CRM-002` | `JRN-011`–`014`; `BP-03` |
-| CRM-035 | Prescriptions | Must | `FR-CRM-003` | `JRN-012`; `BP-04`; cross-module |
-| CRM-036 | Pharmacy | Must | `FR-CRM-004` | `JRN-015`; `BP-04`/`05` |
-| CRM-037 | Inventory | Must | `FR-INV-001`–`005`, `FR-CRM-005` | `JRN-016`; `OR-12` |
-| CRM-038 | Products | Must | `FR-PRD-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
-| CRM-039 | Categories | Must | `FR-CAT-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
-| CRM-040 | Questionnaires | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | Admin config; doctor case view |
-| CRM-041 | Appointments | Should | `FR-APT-002`/`003` | `JRN-022` |
-| CRM-042 | Subscriptions | Must | `FR-SUB-003`/`004`, `OR-10` | `JRN-020` assist |
-| CRM-043 | Documents | Must | `FR-DOC-003`/`004` | Clinical/ops attach |
-| CRM-044 | Support | Must | `FR-SUP-002`–`005` | `JRN-025`/`026` |
-| CRM-045 | Coupons | Should | `FR-CPN-001`/`003` | `JRN-032` |
-| CRM-046 | CMS | Should | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003` | `JRN-033`; moderation |
-| CRM-047 | Notifications | Must | `FR-NTF-002` | Admin templates |
-| CRM-048 | Reports | Should | `FR-RPT-*`, `FR-ANL-*` | Ops/clinical-ops/marketing-safe |
-| CRM-049 | Audit Logs | Must | `FR-ADM-004` | Admin accountability |
-| CRM-050 | System Settings | Must | `FR-SET-001`–`004` | `JRN-031`; publish/oversell policy |
+Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = administrative surface under `/guardian/*` (see §2.8 and [25](25-guardian.md)); **Both** = dual-mounted with different action sets.
+
+| ID | Module | Context | MoSCoW | Primary FRs | Primary journeys / processes |
+| --- | --- | --- | --- | --- | --- |
+| CRM-030 | Dashboard | Both | Must | `FR-CRM-001`, `FR-ANL-*` | Staff home; `NFR-006` |
+| CRM-031 | User Management | Guardian | Must | `FR-ADM-001` | `JRN-031` |
+| CRM-032 | Patient Management | CRM | Must | `FR-CRM-001`, `FR-SRCH-002`, `PERM-CRM-010` | Clinical/ops context |
+| CRM-033 | Orders | Both | Must | `FR-CRM-005`, `FR-ORD-003`–`006` | `JRN-016`; `BP-05` |
+| CRM-034 | Clinical Review | CRM | Must | `FR-CRM-002` | `JRN-011`–`014`; `BP-03` |
+| CRM-035 | Prescriptions | CRM | Must | `FR-CRM-003` | `JRN-012`; `BP-04`; cross-module |
+| CRM-036 | Pharmacy | CRM | Must | `FR-CRM-004` | `JRN-015`; `BP-04`/`05` |
+| CRM-037 | Inventory | Both | Must | `FR-INV-001`–`005`, `FR-CRM-005` | `JRN-016`; `OR-12` |
+| CRM-038 | Products | Guardian | Must | `FR-PRD-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
+| CRM-039 | Categories | Guardian | Must | `FR-CAT-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
+| CRM-040 | Questionnaires | Both | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | Guardian config; doctor case view |
+| CRM-041 | Appointments | Both | Should | `FR-APT-002`/`003` | `JRN-022` |
+| CRM-042 | Subscriptions | Both | Must | `FR-SUB-003`/`004`, `OR-10` | `JRN-020` assist |
+| CRM-043 | Documents | CRM | Must | `FR-DOC-003`/`004` | Clinical/ops attach |
+| CRM-044 | Support | CRM | Must | `FR-SUP-002`–`005` | `JRN-025`/`026` |
+| CRM-045 | Coupons | Guardian | Should | `FR-CPN-001`/`003` | `JRN-032` |
+| CRM-046 | CMS | Guardian | Should | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003` | `JRN-033`; moderation |
+| CRM-047 | Notifications | Guardian | Must | `FR-NTF-002` | Admin templates |
+| CRM-048 | Reports | Both | Should | `FR-RPT-*`, `FR-ANL-*` | Ops/clinical-ops/marketing-safe |
+| CRM-049 | Audit Logs | Guardian | Must | `FR-ADM-004` | Admin accountability |
+| CRM-050 | System Settings | Guardian | Must | `FR-SET-001`–`004` | `JRN-031`; publish/oversell policy |
 
 ### 3.2 Dashboard (`CRM-030`)
 
@@ -483,30 +550,33 @@ flowchart TB
 
 ## 4. Application Shell
 
-This section is the **contributor source of truth** for the CRM admin application shell (ROAD-021 foundation). Framework-specific code lives in `apps/admin`; architecture rules below must not be violated by future modules.
+This section is the **contributor source of truth** for the shared **Internal Platform** application shell (ROAD-021 foundation). The shell is **one shell for both contexts**: CRM and Guardian render inside it with identical chrome. Framework-specific code lives in `apps/admin`; architecture rules below must not be violated by future modules. Navigation structure, grouping, nesting, and fly-out behavior are specified in [29 — Navigation blueprint](29-navigation-blueprint.md).
 
 ### 4.1 Sidebar architecture
 
-- The left sidebar is the **permanent application navigation** for every future CRM module.
-- It is a thin renderer over a configuration-driven navigation catalog.
+- The left sidebar is the **permanent application navigation** for every future module in either context.
+- It is a thin renderer over a configuration-driven navigation catalog; catalog entries are **context-tagged** (`crm` | `guardian`) and the active context filters what renders.
 - Collapse/expand (desktop) and off-canvas (mobile) belong to the shell chrome, not to individual modules.
+- The sidebar must support nested modules, expandable groups, and fly-out submenus without per-module shell changes.
 
 ### 4.2 Header architecture
 
-- Permanent top header slots: sidebar trigger, breadcrumbs, Vendor Switcher, theme switch, user profile menu.
+- Permanent top header slots: sidebar trigger, breadcrumbs, **Application Switcher**, theme switch, user profile menu.
 - Header does not own module route lists; it composes independent slot components.
 
 ### 4.3 Navigation philosophy
 
-- Navigation is **fully configuration-driven** (single catalog for sidebar labels, routes, icons, permissions, order).
-- Visibility is **permission-filtered** (`PERM-*`). **Administrator (`ROLE-009`)** is the primary operational role and must receive matrix grants for every V1 business module so nav items are never hidden by default.
-- **Administration** (`PERM-ADM-020`) is the primary platform-only exclusivity for Super Administrator (`ROLE-010`).
+- Navigation is **fully configuration-driven** (single catalog for sidebar labels, routes, icons, permissions, order, context, and group).
+- Visibility is **permission-filtered** (`PERM-*`) and **context-filtered**. A user who cannot access a context never sees its navigation or its switcher entry.
+- **Administrator (`ROLE-009`)** is the primary operational role for CRM business modules and must receive matrix grants so nav items are never hidden by default.
+- **Administration** (`PERM-ADM-020`) is the primary platform-only exclusivity for Super Administrator (`ROLE-010`); **Guardian context access** requires `PERM-GRD-001` ([08](08-role-permissions.md)).
+- CRM navigation stays role-scoped operational queues; Guardian navigation uses grouped enterprise navigation. The grouping model differs; the rendering components do not.
 - Extensible metadata (`badge`, `category`, `hidden`, `disabled`, `featureFlag`, `role`) may exist on the type for future use; only required fields are populated until needed.
-- **Extension guideline:** add a nav-config entry + App Router page + matching permission gate. Do **not** modify sidebar/header/shell implementation for routine module adds.
+- **Extension guideline:** add a nav-config entry (with context + group) + App Router page under the correct prefix + matching permission gate. Do **not** modify sidebar/header/shell implementation for routine module adds.
 
 ### 4.4 Breadcrumbs
 
-- Breadcrumbs are generated from the navigation configuration + current pathname.
+- Breadcrumbs are generated from the navigation configuration + current pathname; the context segment (`/crm` or `/guardian`) is the authoritative root.
 - Do not maintain a separate breadcrumb map. Navigation titles are the single source of truth.
 
 ### 4.5 Theme philosophy
@@ -514,33 +584,37 @@ This section is the **contributor source of truth** for the CRM admin applicatio
 - Light/dark (and system) theming uses semantic design tokens only.
 - Shell and future pages must not use direct palette colors (`bg-white`, `text-gray-*`, etc.).
 - Components that use tokens inherit the active theme automatically.
+- Theme and shell state survive a context switch; CRM and Guardian must never look like different products (`CRM-166`).
 
-### 4.6 Vendor Switcher abstraction
+### 4.6 Application Switcher (replaces the Vendor Switcher placeholder)
 
-- Vendor Switcher is intentionally behind a header abstraction.
-- Future multi-vendor support replaces only the Vendor Switcher implementation—not the surrounding header layout.
-- Phase foundation: disabled placeholder; no local state that assumes a single vendor forever.
+- The header switcher selects the **application context**: **CRM** or **Guardian**.
+- Switching changes context, navigation, and URL prefix only. It reuses the same authenticated session—no second login, no theme reset.
+- The switcher is permission-aware: a context the principal cannot access is hidden (or denied on deep link).
+- It does **not** imply multi-vendor. Vendor switching remains a later phase and would be an additional header abstraction, not a repurposing of this control.
 
 ### 4.7 Icons
 
-- **Lucide** is the official and only icon library for the CRM admin application. Do not mix React Icons, Heroicons, or other packs.
+- **Lucide** is the official and only icon library for the Internal Platform. Do not mix React Icons, Heroicons, or other packs.
 
 ### 4.8 Dashboard placeholder
 
 - The current Dashboard page is a **placeholder** only.
+- Each context has its own dashboard (operational queues in CRM; administrative KPIs in Guardian).
 - Future dashboard widgets, analytics, and KPIs are implemented as page/feature content **without changing shell architecture**.
 
 ### 4.9 Super Administrator (ROLE-010)
 
 - `ROLE-010` exists only as another RBAC role. It must never bypass authentication, authorization, guards, or permission evaluation.
-- **Super Administrator is not the primary operational CRM role.** It adds platform Administration (`PERM-ADM-020`) and future platform-only surfaces (multi-vendor, licenses, global system settings).
+- **Super Administrator is not the primary operational CRM role.** It adds platform Administration (`PERM-ADM-020`), the full Guardian destructive permission class, and future platform-only surfaces (multi-vendor, licenses, global system settings).
 - **Business modules** remain visible to both Administrator and Super Administrator via the normal permission matrix.
 
 ### 4.10 Administrator business-module policy (ROLE-009)
 
-- **Administrator** is the primary operational CRM role.
-- All V1 business modules (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings, and future CRM business surfaces) must remain visible and accessible unless explicitly documented otherwise.
+- **Administrator** is the primary operational CRM role and a primary Guardian role.
+- All V1 business modules (Dashboard, Users, Orders, Prescriptions, Questionnaires, Activity Log, Reports, Settings, and future business surfaces) must remain visible and accessible in their owning context unless explicitly documented otherwise.
 - New business modules: add nav-config entry + matrix grants for `ROLE-009` and `ROLE-010` (Super Admin inherits the same business grants).
+- Destructive permissions are **not** implied by business-module access; they are granted explicitly and only in Guardian ([08](08-role-permissions.md)).
 
 ---
 
@@ -553,14 +627,18 @@ This section is the **contributor source of truth** for the CRM admin applicatio
 | --- | --- | --- |
 | CRM-051 | Module visibility | Nav items appear only when the authenticated staff principal holds the corresponding `PERM-*` (advisory claims may hint UI; server re-resolves) |
 | CRM-052 | Permission-driven navigation | Navigation is an affordance guide; Backend API remains authoritative (`FR-AUTH-004`; `RBAC-086`) |
-| CRM-053 | Route protection | All CRM application routes require `PERM-CRM-020`; deep links re-checked after login (`AUTH-027`) |
+| CRM-053 | Route protection | All `/crm/*` routes require `PERM-CRM-020`; all `/guardian/*` routes require `PERM-GRD-001`; deep links re-checked after login (`AUTH-027`) |
+| CRM-053a | Context filtering | The navigation catalog is filtered first by context, then by permission; a CRM principal never receives Guardian entries and vice versa |
 | CRM-054 | Dynamic navigation | Role change or privilege revocation invalidates prior sessions/token version; next shell load reflects current grants |
 | CRM-055 | Guest/Patient deny | Guest and Patient have no CRM Dashboard or modules (`RBAC-023`) |
 | CRM-056 | Staff + Super Admin nav | V1 nav catalogs `ROLE-003`–`ROLE-010`; Administration requires `PERM-ADM-020` (Super Administrator only); finance-adjacent refunds/reports appear under Support/Operations/Admin modules |
+| CRM-056a | Destructive affordances | Destructive controls are absent from the CRM catalog entirely—not merely disabled—and are rendered only in Guardian for principals holding the relevant Guardian destructive permission (`ARCH-165`) |
 
 ### 5.2 Module visibility by role
 
 Legend: **Full** = primary functions; **Limited** = scoped / status-appropriate / marketing-safe; **—** = no access. Derived from [08](08-role-permissions.md) Screen-to-Role Access Matrix.
+
+The matrix below is **module-level**, spanning both contexts. Rows marked Guardian-owned in §2.8 (User Management, Products / Categories, Coupons, CMS, Notification templates, Audit Logs, System Settings) are reachable only in the Guardian context and therefore additionally require `PERM-GRD-001`. Marketing (`ROLE-007`) and Content (`ROLE-008`) work primarily in Guardian for that reason.
 
 | Module | Doctor | Pharmacist | Support | Operations | Marketing | Content | Admin |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -806,6 +884,8 @@ Cross-reference [12](12-authentication-flow.md), [13](13-security.md), and [08](
 | CRM-149 | Clinical fail-closed | Gates fail closed (`SEC-005`); payment success ≠ dispensing |
 | CRM-150 | Document ACLs | CRM document resources honor case/ticket/document ACLs (`SEC-053`) |
 | CRM-151 | Attributable identity | No shared anonymous clinical accounts (`NFR-047`; `OR-06`; `RBAC-029`) |
+| CRM-152 | Destructive-operation exclusion | CRM exposes no destructive administrative affordance; the API rejects such calls from any principal lacking Guardian-owned destructive permissions, regardless of calling surface (`ARCH-152`, `ARCH-165`) |
+| CRM-153 | Context boundary | A principal without `PERM-GRD-001` is denied every `/guardian/*` route and receives no Guardian navigation or switcher entry; denial is server-verified, not UI-only |
 
 ---
 
@@ -869,18 +949,20 @@ Cross-reference [12](12-authentication-flow.md), [13](13-security.md), and [08](
 
 ### 11.4 Responsibility matrix
 
-| Concern | Store | Portal | CRM | Backend API |
-| --- | --- | --- | --- | --- |
-| Public SEO catalog | Render | — | Configure/publish | Enforce publish |
-| Clinical approval | No | Status view | Yes (Doctor) | Enforce |
-| Pharmacist review | No | Status view | Yes (Pharmacist) | Enforce |
-| Fulfillment / inventory | No | Status view | Yes (Ops) | Enforce ledger/gates |
-| Support tickets | Contact CMS only | Create/view | Triage | Persist |
-| Coupons | Redeem | — | Configure | Validate |
-| CMS / blogs | Consume published | Consume | Author/publish | Enforce draft/publish |
-| Catalog / QST config | — | Forbidden | Admin | Validate bindings |
-| Analytics / reports | — | — | Role-scoped | Query AuthZ |
-| Notification send | No | Prefs only | Templates/admin | Workers |
+| Concern | Store | Portal | CRM | Guardian | Backend API |
+| --- | --- | --- | --- | --- | --- |
+| Public SEO catalog | Render | — | — | Configure/publish | Enforce publish |
+| Clinical approval | No | Status view | Yes (Doctor) | No | Enforce |
+| Pharmacist review | No | Status view | Yes (Pharmacist) | No | Enforce |
+| Fulfillment / inventory | No | Status view | Yes (Ops) | Policy and master data | Enforce ledger/gates |
+| Support tickets | Contact CMS only | Create/view | Triage | Administrative visibility | Persist |
+| Coupons | Redeem | — | — | Configure | Validate |
+| CMS / blogs | Consume published | Consume | — | Author/publish | Enforce draft/publish |
+| Catalog / QST config | — | Forbidden | Clinician case view only | Configure | Validate bindings |
+| Analytics / reports | — | — | Operational, role-scoped | Administrative reports and exports | Query AuthZ |
+| Notification send | No | Prefs only | No | Templates | Workers |
+| User lifecycle | Self-register (patient) | Own profile | Operational/support fields | Full administrative lifecycle | Enforce RBAC and audit |
+| Destructive operations | No | No | No | Sole exposure | Enforce Guardian-owned permissions |
 
 ### 11.5 Traceability flow
 
@@ -1020,6 +1102,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.0 | 2026-07-24 | Principal Enterprise / Healthcare CRM / Operations / Frontend Architect (planning) | Pending | Architectural appendices: §11.7 CRM Dashboard Widget Matrix, §11.8 Cross-Module Interaction Matrix, §11.9 Clinical Decision Lifecycle, §11.10 CRM Capability Ownership Matrix, §11.11 Module Criticality Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-07-27 | Platform Engineering | Pending | Application Shell SoT (§4); ROLE-010 / PERM-ADM-020; rewrite CRM-056; renumber sections | Draft for review |
 | 1.2 | 2026-07-27 | Platform Engineering | Pending | Administrator default business-module access; Super Admin platform-only exclusivity | Draft for review |
+| 1.3 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Re-scoped CRM as the Internal Platform **operational** context: administrative modules and all destructive operations reassigned to Guardian (§2.8 relocation table), context column added to the module map, shell section generalized to the shared Internal Platform shell with the Application Switcher, context-aware routing/navigation controls (`CRM-160`–`CRM-167`, `CRM-152`–`CRM-153`) | Draft for review |
 
 ---
 
@@ -1036,6 +1119,10 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | [13 — Security](13-security.md) | SoD, PHI, session, XSS/CSRF |
 | [16 — Store architecture](16-store-architecture.md) | Publish boundary |
 | [17 — Patient portal](17-patient-portal.md) | Status boundary; no CRM in Portal |
+| [25 — Guardian](25-guardian.md) | Peer administrative context; destructive-operation ownership |
+| [27 — Module registry](27-module-registry.md) | Module catalog, contexts, and consumers |
+| [28 — Ownership matrix](28-ownership-matrix.md) | Per-entity action ownership across applications |
+| [29 — Navigation blueprint](29-navigation-blueprint.md) | Sidebar, groups, breadcrumbs, context switching |
 
 ---
 
@@ -1045,6 +1132,6 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | --- | --- |
 | Classification | Internal planning |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Control catalog | `CRM-001` – `CRM-151` |
+| Control catalog | `CRM-001` – `CRM-167` |
 | Next review | After stakeholder approval of Draft for review |
 | Implementation repos | Out of scope for this document |

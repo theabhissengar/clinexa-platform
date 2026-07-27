@@ -221,9 +221,9 @@ Post-V1 themes must **not** block MVP delivery (PRD §19). Detail belongs in [24
 | MS-02 | Core Commerce | ROAD-004–010, ROAD-022 (partial) | BO-1 |
 | MS-03 | Clinical Workflow | ROAD-005, ROAD-011–013 | BO-2 |
 | MS-04 | Patient Portal | ROAD-015–018 | BO-3 |
-| MS-05 | CRM | ROAD-021 (+ clinical/ops surfaces) | BO-2, BO-4 |
+| MS-05 | Internal Platform — CRM context | ROAD-021 (+ clinical/ops surfaces) | BO-2, BO-4 |
 | MS-06 | Subscriptions | ROAD-019 | BO-3 |
-| MS-07 | Administration | ROAD-020, ROAD-004/005 publish | BO-5 |
+| MS-07 | Internal Platform — Guardian context (administration) | ROAD-020, ROAD-004/005 publish | BO-5 |
 | MS-08 | Content Management | ROAD-023–024 | BO-1, BO-4 |
 | MS-09 | Optimization | ROAD-026, NFR polish, ROAD-022/025 | BO-2, BO-4 |
 | MS-10 | Production Launch | All Must + committed Should | BO-1–BO-5 |
@@ -290,7 +290,7 @@ Post-V1 themes must **not** block MVP delivery (PRD §19). Detail belongs in [24
 | Goal | Admin user/role management, settings (oversell, moderation, notification hooks), and publish-safe catalog/clinical config without code deploy. |
 | Business Value | BO-5 reusability (KPI-07, AC-BR-05). |
 | Success Criteria | AC-BR-05; FR-ADM-001–004; FR-SET-001–003; OR-14 publish safety. |
-| Dependencies | MS-01 RBAC; CRM admin surfaces (ROAD-021). |
+| Dependencies | MS-01 RBAC (including `PERM-GRD-001` and the destructive Class D); Internal Platform shell and Guardian context surfaces (ROAD-021). |
 
 ### 3.9 MS-08 — Content Management
 
@@ -493,12 +493,16 @@ Authority: [02 — Business requirements](02-business-requirements.md) §6.2 and
 | ROAD-017 | Email notifications | FR-NTF-001–003 |
 | ROAD-018 | Support ticketing | FR-SUP-001–005 |
 | ROAD-019 | Subscriptions and renewals | FR-SUB-001–005; AC-BR-11 |
-| ROAD-020 | Administration and publish safety | FR-ADM; FR-SET-001–003; OR-14; AC-BR-05 |
-| ROAD-021 | CRM staff control plane | FR-CRM-001–007 |
+| ROAD-020 | Administration and publish safety — delivered in the **Guardian** context ([25](25-guardian.md)) | FR-ADM; FR-SET-001–003; OR-14; AC-BR-05 |
+| ROAD-021 | Internal Platform staff control plane — shared shell hosting the **CRM** and **Guardian** contexts | FR-CRM-001–007 |
 
-**Note (Phase 6):** ROAD-021 application **shell foundation** (sidebar + header + theme + configuration-driven nav) is delivered in `apps/admin`. Clinical/ops **module bodies** and dashboard widgets remain later milestones; the shell must not be redesigned to add them.
+**Note (Phase 6):** ROAD-021 application **shell foundation** (sidebar + header + theme + configuration-driven nav) is delivered in `apps/admin` and is shared by both contexts. Clinical/ops **module bodies** and dashboard widgets remain later milestones; the shell must not be redesigned to add them.
 
-Also Must as capability (BR §6.2): Store + Portal + CRM + shared API care-commerce loop; patient isolation; clinical pending visibility.
+**Governance note:** Guardian is the platform's **master administrative plane** (`ARCH-172`). All administrative-lifecycle roadmap items—user administration, catalog and content authorship, marketing configuration, platform settings, integrations, governance surfaces—and every destructive operation land in Guardian, not CRM (`ARCH-164`, `ARCH-165`). Delivery sequencing, dependencies, and verification per phase are tracked in [26 — Implementation tracker](26-implementation-tracker.md).
+
+**Ecosystem sequencing:** the Internal Platform (CRM + Guardian) is delivered in this repository against the shared Backend API. Store and Patient Portal are separate applications on the same API and are out of scope for the current phase; when they arrive, they consume existing platform modules and require Module Registry consumer entries plus Ownership Matrix columns rather than new backends (`ARCH-162`, `ARCH-134`).
+
+Also Must as capability (BR §6.2): Store + Portal + Internal Platform + shared API care-commerce loop; patient isolation; clinical pending visibility.
 
 ### 5.2 Should Have
 
@@ -727,10 +731,10 @@ Readiness values are **planning targets** for promotion gates (not claims of imp
 | Module | Backend | Frontend | Infrastructure | Security | Testing | Deployment |
 | --- | --- | --- | --- | --- | --- | --- |
 | Auth / Sessions (ROAD-002) | A | A | A | A | A | A |
-| Users / RBAC (ROAD-003) | A | B (CRM admin) | A | A | A (isolation suite) | A |
+| Users / RBAC (ROAD-003) | A | B (Guardian) | A | A | A (isolation suite) | A |
 | Platform / API / Observe (ROAD-001) | A | — | A | A | A | A |
-| Catalog PRD/CAT (ROAD-004) | A | B Store + CRM | A | B publish audit | A seed tests | A |
-| Questionnaires (ROAD-005) | B | B Store + CRM | A | B PHI | B gate tests | B |
+| Catalog PRD/CAT (ROAD-004) | A | B Store + Guardian | A | B publish audit | A seed tests | A |
+| Questionnaires (ROAD-005) | B | B Store + Guardian (definitions) + CRM (case view) | A | B PHI | B gate tests | B |
 | Store / Search / SEO (ROAD-006) | A | A | A CDN | B | B a11y/SEO smoke | B |
 | Cart (ROAD-007) | A | A | A | A | A | A |
 | Checkout (ROAD-008) | A/B | A/B | A | B | B fail-safe | B |
@@ -986,8 +990,8 @@ Functional ownership only—no named individuals. Roles describe which function 
 | ROAD-017 | Email notifications | Supporting | Primary | Supporting | Supporting | Primary | Review | Supporting |
 | ROAD-018 | Support ticketing | Primary | Primary | Supporting | Supporting | Supporting | Review | N/A |
 | ROAD-019 | Subscriptions and renewals | Primary | Primary | Supporting | Primary | Supporting | Review | Review |
-| ROAD-020 | Administration and publish safety | Primary | Primary | Supporting | Supporting | Supporting | Primary | Review |
-| ROAD-021 | CRM staff control plane | Primary | Primary | Primary | Primary | Supporting | Review | Primary |
+| ROAD-020 | Administration and publish safety (Guardian) | Primary | Primary | Supporting | Supporting | Supporting | Primary | Review |
+| ROAD-021 | Internal Platform staff control plane | Primary | Primary | Primary | Primary | Supporting | Review | Primary |
 | ROAD-022 | Coupons | Primary | Primary | Supporting | Supporting | Supporting | Review | N/A |
 | ROAD-023 | Reviews and moderation | Primary | Supporting | Supporting | Supporting | Supporting | Review | N/A |
 | ROAD-024 | CMS and blogs | Primary | Supporting | Supporting | Supporting | Supporting | Review | N/A |
@@ -1038,8 +1042,8 @@ Relative implementation size only. Values express complexity of building and ver
 | ROAD-017 | Email notifications | M | Event-driven templates, retries, worker dispatch |
 | ROAD-018 | Support ticketing | M | Portal ↔ CRM tickets with order context and refund policy checks |
 | ROAD-019 | Subscriptions and renewals | XL | Plans, workers, grace, Portal manage, Rx reassessment hooks |
-| ROAD-020 | Administration and publish safety | L | Users/roles, settings, publish validation, audit |
-| ROAD-021 | CRM staff control plane | XL | Unified staff UX composing clinical, ops, config, and SoD |
+| ROAD-020 | Administration and publish safety (Guardian context) | L | Users/roles, settings, publish validation, audit, destructive-operation permissions |
+| ROAD-021 | Internal Platform staff control plane | XL | Shared shell plus CRM operational and Guardian administrative contexts composing clinical, ops, config, and SoD |
 | ROAD-022 | Coupons | S | Config + server-side checkout validation + redemption record |
 | ROAD-023 | Reviews and moderation | S | Submit, moderate-before-publish, Store display |
 | ROAD-024 | CMS and blogs | M | Content authoring, drafts, Store render, SEO fields |

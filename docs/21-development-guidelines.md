@@ -109,20 +109,37 @@ This document complements:
 - Security
 - Database Design
 - UI Design System
+- CRM (operational context) and Guardian (administrative context)
+- Module Registry, Ownership Matrix, and Navigation Blueprint
+- Implementation Tracker
 
 These documents remain authoritative for their respective domains.
 
-### CRM Application Shell
+### Internal Platform Application Shell
 
-Contributor source of truth for the admin CRM shell (sidebar, header, nav, theme, extension guidelines): [18 — CRM §4 Application Shell](18-crm.md#4-application-shell).
+`apps/admin` is the **Clinexa Internal Platform**: one authenticated application hosting the **CRM** context (`/crm/*`) and the **Guardian** context (`/guardian/*`). Contributor source of truth for the shared shell (sidebar, header, nav, theme, extension guidelines): [18 — CRM §4 Application Shell](18-crm.md#4-application-shell). Navigation structure and grouping: [29 — Navigation blueprint](29-navigation-blueprint.md). Guardian specifics: [25 — Guardian](25-guardian.md).
 
 Rules for `apps/admin` contributors:
 
-- Navigation is configuration-driven (`nav-config`); add modules without editing sidebar/header/shell composition.
+- **One shell, two contexts.** CRM and Guardian share the shell, design system, theme, components, and API client. Do not fork chrome, tokens, or component patterns per context; the two must never feel like different products.
+- Navigation is configuration-driven (`nav-config`); entries carry a **context** and, in Guardian, a **navigation group**. Add modules without editing sidebar/header/shell composition.
+- Routes live under the owning context's prefix. The first path segment is the authoritative context signal for guards, active navigation, and breadcrumbs.
+- **Destructive operations belong to Guardian only.** Never add delete, archive, restore, financial correction, administrative override, bulk cleanup, or hard-delete affordances under `/crm/*`; gate each on its own destructive permission in Guardian.
 - Icons: **Lucide React only** — do not mix React Icons, Heroicons, or other packs.
 - Styling: semantic design tokens only so light/dark themes inherit automatically.
-- Authorization UI: permission checks (`PERM-*`); never special-case `ROLE-010` as a bypass.
-- **Administrator (`ROLE-009`)** must receive matrix grants for every V1 business module; **Super Administrator** adds only platform permissions (`PERM-ADM-020`).
+- Authorization UI: permission checks (`PERM-*`); never special-case `ROLE-010` as a bypass. Guardian routes additionally require `PERM-GRD-001`.
+- **Administrator (`ROLE-009`)** must receive matrix grants for every V1 business module; **Super Administrator** adds only platform permissions (`PERM-ADM-020`) and the destructive permission class.
+
+### Backend module ownership (application-agnostic backend)
+
+| ID | Rule |
+| --- | --- |
+| DEV-020 | **Backend modules are platform modules.** Users, Orders, Products, Subscriptions, Payments, Questionnaires, Blogs, Reports and peers are owned by `apps/api`. Client applications consume them; no client owns one. |
+| DEV-021 | **No frontend coupling.** Do not name, structure, branch, or gate backend code by consuming application. There is no “CRM controller” or “Store service”; there are domain modules with permissioned endpoints. |
+| DEV-022 | **Authorize the principal, not the caller.** Authorization derives from identity, roles, and permissions. A backend module must never change behavior based on which client sent the request, and must never trust a client-supplied context claim as an authorization input. |
+| DEV-023 | **Rules live in the API.** A business rule that matters to one client matters to all; put it in the Domain or Business layer so Store, Patient Portal, Internal Platform, and future clients inherit it. Clients stay thin. |
+| DEV-024 | **New clients are additive.** Adding an application means new permission grants, Module Registry consumer entries, and Ownership Matrix columns—not new domain logic. |
+| DEV-025 | **Destructive endpoints are permission-gated server-side.** Every destructive operation checks its Guardian-owned permission in the API and fails closed; UI absence is defense-in-depth only. |
 
 ---
 

@@ -1,0 +1,354 @@
+# 26 — Implementation Tracker
+
+| Field | Value |
+| --- | --- |
+| Document | Implementation Tracker — Ecosystem and Internal Platform |
+| Product | Clinexa |
+| Version | 1.0 |
+| Status | Draft for review |
+| Audience | Engineering leadership, architects, engineers, product, QA |
+| Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md) |
+
+This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
+
+It answers three questions for every phase: what is being delivered, what state is it in, and how do we know it is done. It does **not** restate architecture. Design intent lives in [05](05-system-architecture.md), [18](18-crm.md), [25](25-guardian.md), and [29](29-navigation-blueprint.md); scope sequencing lives in [09 — Feature roadmap](09-feature-roadmap.md). This tracker records delivery state against that design.
+
+> **Relationship to the roadmap.** [09](09-feature-roadmap.md) answers *what ships in which milestone, and why*. This tracker answers *what is in flight right now, on which branch, blocked by what*. When the two disagree about scope, the roadmap wins and this tracker is corrected.
+
+---
+
+## Table of contents
+
+1. [How to use this tracker](#1-how-to-use-this-tracker)
+2. [Field definitions](#2-field-definitions)
+3. [Status model](#3-status-model)
+4. [Phase overview](#4-phase-overview)
+5. [Phase records](#5-phase-records)
+6. [Dependency graph](#6-dependency-graph)
+7. [Architecture decision log](#7-architecture-decision-log)
+8. [Open decisions](#8-open-decisions)
+9. [Risk register](#9-risk-register)
+10. [Definition of done](#10-definition-of-done)
+11. [Revision History](#11-revision-history)
+
+---
+
+## 1. How to use this tracker
+
+| Rule | Statement |
+| --- | --- |
+| TRK-001 | Every phase has exactly one record in §5. A phase is not started until its record exists with dependencies resolved or explicitly waived |
+| TRK-002 | Status changes are recorded here first, then reflected in standups and boards. This document is the durable record; boards are ephemeral |
+| TRK-003 | A phase moves to **Complete** only when every verification item in its record passes. Partial verification is **In review**, not complete |
+| TRK-004 | Architecture changes discovered mid-phase are logged in §7 and reflected in the owning architecture document in the same pull request. A code change that contradicts a document is a defect |
+| TRK-005 | Documentation updates are deliverables, not follow-ups. A phase whose docs lag its code is not complete |
+| TRK-006 | A blocked phase records the blocking phase or decision ID in **Notes**; silent stalls are not acceptable |
+| TRK-007 | Branch and PR fields are filled when work starts, not retroactively, so that reviewers can locate in-flight work from this document alone |
+
+---
+
+## 2. Field definitions
+
+Every phase record in §5 carries these fields.
+
+| Field | Meaning |
+| --- | --- |
+| **Phase** | Sequential identifier and short name |
+| **Objective** | The single outcome the phase delivers, in one sentence |
+| **Status** | One value from §3 |
+| **Owner** | Accountable engineer or team |
+| **Branch** | Git branch carrying the work (`—` until started) |
+| **PR** | Pull request reference (`—` until opened) |
+| **Dependencies** | Phase IDs, decision IDs, or external prerequisites that must land first |
+| **Scope** | Concrete deliverables in this phase |
+| **Architecture changes** | New or amended `ARCH-*`, `CRM-*`, `GRD-*`, `NAV-*`, `RBAC-*`, `API-*` controls |
+| **Documentation updates** | Documents that must change in the same pull request |
+| **Notes** | Decisions taken, deviations, blockers, follow-ups |
+| **Verification** | The checks that must pass before **Complete** |
+
+---
+
+## 3. Status model
+
+| Status | Meaning | Exit condition |
+| --- | --- | --- |
+| **Not started** | Recorded and scoped; no work begun | Dependencies satisfied and owner assigned |
+| **Blocked** | Cannot proceed; blocker recorded in Notes | Blocker cleared |
+| **In progress** | Branch exists and work is active | Deliverables implemented |
+| **In review** | Pull request open; verification partially or fully executed | All verification items pass and review approved |
+| **Complete** | Merged, verified, documentation aligned | — |
+| **Deferred** | Consciously postponed with a recorded reason | Re-planned into a future phase |
+
+---
+
+## 4. Phase overview
+
+| Phase | Objective | Status | Depends on |
+| --- | --- | --- | --- |
+| **P0** | Ecosystem and terminology established across planning documents | Complete | — |
+| **P1** | Navigation Blueprint and context-aware navigation catalog model | Complete (design) | P0 |
+| **P2** | Context prefix routing (`/crm/*`, `/guardian/*`) and the Application Switcher | Not started | P1 |
+| **P3** | RBAC: Guardian context access and the segregated destructive permission class | Complete (design) | P0 |
+| **P4** | CRM relocated under `/crm/*` with operational scope only | Not started | P2, P3 |
+| **P5** | Guardian module skeletons under `/guardian/*` | Not started | P2, P3, P4 |
+| **P6** | API enforcement for destructive operations | Not started | P3 |
+| **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
+| **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
+
+> **Design versus code.** P0, P1, and P3 are documentation phases and are complete as *design*. Their code counterparts land inside P2, P4, P5, and P6; each of those phases verifies the design it implements.
+
+---
+
+## 5. Phase records
+
+### P0 — Ecosystem and terminology
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Establish the Clinexa ecosystem, the Internal Platform with CRM and Guardian contexts, and the application-agnostic backend as authoritative terminology across planning documents |
+| **Status** | Complete |
+| **Owner** | Platform architecture |
+| **Branch** | `docs/ecosystem-internal-platform` |
+| **PR** | — |
+| **Dependencies** | — |
+| **Scope** | Ecosystem model and future application ports in [05](05-system-architecture.md); terminology alignment in [00](00-product-requirements-document.md) and [README](../README.md); CRM re-scoped to the operational context in [18](18-crm.md); new Guardian architecture in [25](25-guardian.md); destructive ownership in [13](13-security.md) and [10](10-database-design.md); roadmap and persona alignment in [09](09-feature-roadmap.md) and [06](06-user-personas.md); Store and Portal cross-links in [16](16-store-architecture.md) and [17](17-patient-portal.md) |
+| **Architecture changes** | `ARCH-160`–`166` (application-agnostic backend, platform module consumption, future flexibility, two contexts, lifecycle ownership, destructive ownership, visual unity); `ARCH-170`–`173` (ecosystem, Internal Platform, Guardian, future application port); `ARCH-113`–`116` decisions; `CRM-160`–`166`; `GRD-001`–`015`; `SEC-020a`–`020c`; `UI-011`–`012` |
+| **Documentation updates** | [00](00-product-requirements-document.md), [05](05-system-architecture.md), [06](06-user-personas.md), [09](09-feature-roadmap.md), [10](10-database-design.md), [13](13-security.md), [16](16-store-architecture.md), [17](17-patient-portal.md), [18](18-crm.md), [20](20-ui-design-system.md), [21](21-development-guidelines.md), [25](25-guardian.md), [README](../README.md) |
+| **Notes** | "Business Management System" is retired as an official name; **Guardian** is the only sanctioned term. Store and Patient Portal are cross-linked as consumers but not designed here |
+| **Verification** | Zero occurrences of the retired name as an official term; no document assigns a backend module to a frontend application; CRM documents no destructive operation; ecosystem diagram shows Internal Platform, Store, Portal, and shared Backend API |
+
+### P1 — Navigation Blueprint and catalog model
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Define navigation philosophy, context-aware catalog structure, sidebar capabilities, breadcrumbs, and context switching before any navigation code changes |
+| **Status** | Complete (design) |
+| **Owner** | Frontend architecture |
+| **Branch** | `docs/ecosystem-internal-platform` |
+| **PR** | — |
+| **Dependencies** | P0 |
+| **Scope** | [29 — Navigation blueprint](29-navigation-blueprint.md); catalog fields for context, group, and parent; sidebar capability set including nesting, expandable groups, fly-outs, and permission filtering; Guardian navigation groups; CRM operational navigation; breadcrumb rules; deferred conveniences |
+| **Architecture changes** | `NAV-001`–`131` |
+| **Documentation updates** | [29](29-navigation-blueprint.md); shell section of [18 §4](18-crm.md#4-application-shell); navigation section of [25 §4](25-guardian.md) |
+| **Notes** | Catalog shape is designed, not yet implemented. `apps/admin/src/components/layout/nav-config.ts` gains `context`, `group`, and `parent` during P2 |
+| **Verification** | Every sidebar capability in the plan has a rule; breadcrumbs derive from the pathname; no destructive action appears as a navigation entry; anti-patterns recorded |
+
+### P2 — Context routing and Application Switcher
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Introduce `/crm/*` and `/guardian/*` as first-class route prefixes and replace the Vendor Switcher placeholder with a permission-aware Application Switcher |
+| **Status** | Not started |
+| **Owner** | TBD |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P1; open decision `DEC-001` (default post-login context) |
+| **Scope** | Route groups for both prefixes in `apps/admin`; context resolution from pathname; `nav-config` context tagging; legacy path redirects per [29 §2.3](29-navigation-blueprint.md); Application Switcher in the header; context-scoped breadcrumb roots; route guards for `PERM-CRM-020` and `PERM-GRD-001` |
+| **Architecture changes** | Implements `ARCH-116`, `GRD-072`–`074`, `NAV-010`–`021`, `NAV-100`–`110` |
+| **Documentation updates** | [29](29-navigation-blueprint.md) if mappings change; `apps/admin/README.md`; [21](21-development-guidelines.md) if conventions shift |
+| **Notes** | Switching context must reuse the session. A second login, a lost theme, or a reset shell state is a defect, not a trade-off |
+| **Verification** | Legacy paths redirect once, without loops; a principal lacking `PERM-GRD-001` receives no Guardian navigation and is refused every `/guardian/*` route; a principal lacking `PERM-CRM-020` is refused every `/crm/*` route; the switcher hides contexts the principal cannot enter; deep links land in the correct context after login |
+
+### P3 — RBAC: context access and destructive class
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Define Guardian context access and a segregated destructive permission class, and record them in the permission dictionary and matrices |
+| **Status** | Complete (design) |
+| **Owner** | Security / IAM |
+| **Branch** | `docs/ecosystem-internal-platform` |
+| **PR** | — |
+| **Dependencies** | P0 |
+| **Scope** | `PERM-GRD-001`; Class D dictionary entries `PERM-ADM-030`–`034`, `PERM-ORD-010`–`014`, `PERM-SUB-010`–`012`, `PERM-PRD-010`, `PERM-CAT-010`, `PERM-CMS-010`, `PERM-BLG-010`, `PERM-CPN-010`, `PERM-RPT-010`; context and Class D sections in [08 §4](08-role-permissions.md); context ownership of CRUD in [08 §6.1](08-role-permissions.md); separation-of-duties rules; hard-deny rows; surface responsibility in [03 §11.1](03-functional-requirements.md); destructive endpoint rules in [11 §3.2a](11-api-design.md) |
+| **Architecture changes** | `RBAC-009`–`011`, `RBAC-031`–`036`, `API-020`–`026` |
+| **Documentation updates** | [03](03-functional-requirements.md), [08](08-role-permissions.md), [11](11-api-design.md), [13](13-security.md), [25](25-guardian.md) |
+| **Notes** | Naming resolved: `PERM-GRD-001` for context access; destructive codes stay in their owning module family with a Class D tag, so a reader sees at a glance which module an operation belongs to |
+| **Verification** | No Class D permission is implied by a view, edit, manage, or publish grant; every destructive operation in [25 §3.1](25-guardian.md) maps to a dictionary entry; bulk cleanup and hard delete are Super Administrator only; financial correction is distinct from operational refund |
+
+### P4 — CRM under `/crm/*`
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Relocate CRM screens under the CRM context prefix and remove administrative and destructive affordances from them |
+| **Status** | Not started |
+| **Owner** | TBD |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P2, P3 |
+| **Scope** | Move existing operational screens; retain operational actions only; replace administrative affordances with escalation links into Guardian per [29 §9.2](29-navigation-blueprint.md); update catalog entries; update in-app links and tests |
+| **Architecture changes** | Implements `CRM-160`–`166`, `NAV-070`–`073` |
+| **Documentation updates** | [18](18-crm.md) module map if relocation details change; [27](27-module-registry.md) status fields |
+| **Notes** | The module relocation table in [18 §2.8](18-crm.md#28-relationship-with-guardian) is the authoritative source for what moves and what stays |
+| **Verification** | No CRM screen renders delete, archive, restore, financial correction, or override; escalation links carry the user into the correct Guardian route; operational workflows are unchanged in behavior |
+
+### P5 — Guardian skeletons under `/guardian/*`
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Stand up Guardian navigation groups and module shells so administrative modules have a home to grow into |
+| **Status** | Not started |
+| **Owner** | TBD |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P2, P3, P4 |
+| **Scope** | Guardian dashboard; navigation groups per [29 §5](29-navigation-blueprint.md); module shells following the page hierarchy in [25 §5.3](25-guardian.md); destructive action treatment per [20 §2.1](20-ui-design-system.md) `UI-012`; confirmation patterns for destructive operations |
+| **Architecture changes** | Implements `GRD-070`–`075`, `GRD-091`–`095`, `NAV-060`–`063` |
+| **Documentation updates** | [25](25-guardian.md) module map; [27](27-module-registry.md) per-module status |
+| **Notes** | Skeletons before features. A Guardian module ships its destructive affordances only once the corresponding API gate from P6 is enforced |
+| **Verification** | Guardian and CRM are visually indistinguishable in chrome, tokens, and layout; groups render only when the principal can see at least one child; destructive confirmations name the record and the consequence |
+
+### P6 — API enforcement for destructive operations
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Enforce Class D permissions server-side on every destructive endpoint, independent of the calling application |
+| **Status** | Not started |
+| **Owner** | TBD |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P3 |
+| **Scope** | Permission gates on every destructive endpoint; fail-closed defaults; audit emission with actor, target, and scope; bounded selectors for bulk operations; last-admin safeguard; documented hard-delete procedure under `PERM-ADM-034` |
+| **Architecture changes** | Implements `API-020`–`026`, `GRD-084`–`090`, `SEC-020a`–`020c` |
+| **Documentation updates** | [11](11-api-design.md) endpoint catalog as endpoints are added; [13](13-security.md) if controls change |
+| **Notes** | This is the phase that makes the Guardian-only rule real. Until it lands, UI absence is the only protection, which is not protection |
+| **Verification** | A destructive call succeeds with the grant and returns 403 without it, regardless of origin, headers, or client; forging an application or context claim changes nothing; unbounded bulk scope is rejected; every success and every denial is audited; removing the last administrator is refused |
+
+### P7 — Verification and sign-off
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Prove the delivered system matches the architecture and close the traceability chain |
+| **Status** | Not started |
+| **Owner** | TBD |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P2, P4, P5, P6 |
+| **Scope** | Execute the verification strategy in [30 §3](30-migration-and-verification.md#3-verification-strategy); reconcile [27](27-module-registry.md) and [28](28-ownership-matrix.md) with delivered reality; close open decisions; update this tracker to Complete |
+| **Architecture changes** | None expected; any discovered change is logged in §7 |
+| **Documentation updates** | [26](26-implementation-tracker.md) (this document), [27](27-module-registry.md), [28](28-ownership-matrix.md), [30](30-migration-and-verification.md) |
+| **Notes** | A phase that cannot be verified is not complete, however finished it looks |
+| **Verification** | Every check in [30](30-migration-and-verification.md) passes; registry and matrix reflect delivered state; no open decision blocks a shipped surface |
+
+### PF — Future work
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Hold deferred scope so it is neither forgotten nor allowed to leak into current phases |
+| **Status** | Deferred |
+| **Owner** | Platform architecture |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P7 |
+| **Scope** | Guardian Security area (two-factor authentication, trusted devices, active sessions, login history, recovery codes, security logs) per [25 §14](25-guardian.md); Store and Patient Portal clients; navigation conveniences (global search, pinned modules, favorites, recent); vendor switching; additional consumers (mobile, admin mobile, vendor portal, partner portal, public APIs) |
+| **Architecture changes** | Must be additive. Any future client that requires redesign of the ecosystem model is a violation of `ARCH-162` |
+| **Documentation updates** | [27](27-module-registry.md) consumers, [28](28-ownership-matrix.md) columns, [29 §11](29-navigation-blueprint.md) |
+| **Notes** | Deferred scope is designed for, not designed now. The architecture must not preclude any item listed here |
+| **Verification** | Adding a future consumer requires new configuration, permissions, and documentation rows only—no change to module ownership or business rules |
+
+---
+
+## 6. Dependency graph
+
+```mermaid
+flowchart TD
+  P0[P0_Ecosystem_and_terminology]
+  P1[P1_Navigation_blueprint]
+  P3[P3_RBAC_context_and_class_D]
+  P2[P2_Routing_and_switcher]
+  P4[P4_CRM_under_crm_prefix]
+  P5[P5_Guardian_skeletons]
+  P6[P6_API_destructive_enforcement]
+  P7[P7_Verification_and_signoff]
+  PF[PF_Future_work]
+  P0 --> P1
+  P0 --> P3
+  P1 --> P2
+  P3 --> P2
+  P2 --> P4
+  P3 --> P4
+  P4 --> P5
+  P3 --> P6
+  P4 --> P7
+  P5 --> P7
+  P6 --> P7
+  P7 --> PF
+```
+
+---
+
+## 7. Architecture decision log
+
+Decisions taken while planning this work. Full architectural decision records live in [05 §14](05-system-architecture.md); this log is the delivery-facing index.
+
+| ID | Decision | Rationale | Recorded in |
+| --- | --- | --- | --- |
+| `ARCH-113` | One Internal Platform hosting two contexts, not two applications | Staff move between administrative and operational work continuously; two applications would duplicate authentication, shell, and design system while fragmenting the experience | [05 §14](05-system-architecture.md), [25 §1](25-guardian.md) |
+| `ARCH-114` | Guardian is the sole exposure point for destructive operations | Concentrating irreversible power in one audited context makes it reviewable; scattering it across surfaces makes it unreviewable | [05 §14](05-system-architecture.md), [08 §4.2](08-role-permissions.md) |
+| `ARCH-115` | The backend is application-agnostic | Business rules that live in a client fork per client; rules in the API stay singular as consumers multiply | [05 §14](05-system-architecture.md), [21](21-development-guidelines.md) |
+| `ARCH-116` | Context prefix routing (`/crm/*`, `/guardian/*`) | The URL is the cheapest unambiguous context signal, and it makes context legible in links, logs, and guards | [05 §14](05-system-architecture.md), [29 §2.1](29-navigation-blueprint.md) |
+| `RBAC-010` | Destructive permissions form a segregated Class D | An operator who may edit a record must not gain the power to erase it by default | [08 §4.2](08-role-permissions.md) |
+| `NAV-006` | WordPress and similar consoles are inspiration only | Clinexa's module catalog derives from Clinexa's requirements; cloning another product's menu imports its assumptions | [29 §1](29-navigation-blueprint.md) |
+
+---
+
+## 8. Open decisions
+
+Non-blocking for design; each must be resolved before the phase that consumes it.
+
+| ID | Decision | Recommendation | Needed by |
+| --- | --- | --- | --- |
+| `DEC-001` | Default post-login Internal Platform context | Role-based: clinical and operational roles land in CRM, administrative and platform roles land in Guardian; deep links always win over the default ([29 §9.3](29-navigation-blueprint.md)) | P2 |
+| `DEC-002` | Whether operational refund assist remains in CRM under existing support requirements | Yes. Policy-scoped refund assist is operational; financial correction is administrative and stays in Guardian ([08 §6.1](08-role-permissions.md)) | P4 |
+| `DEC-003` | Which Class D permissions Administrator holds by default versus by explicit grant | Administrator holds delete, archive, and restore for commerce and content; bulk cleanup and hard delete remain Super Administrator only | P6 |
+| `DEC-004` | Whether Guardian gets its own dashboard metrics or reuses CRM analytics widgets | Guardian dashboard shows administrative health (publish state, pending governance, recent administrative activity) rather than clinical throughput | P5 |
+
+---
+
+## 9. Risk register
+
+| Risk | Impact | Mitigation | Owning phase |
+| --- | --- | --- | --- |
+| UI hides destructive operations while the API leaves them open | Irreversible data loss by an under-privileged actor | Server-side Class D gates plus negative authorization tests | P6 |
+| A backend module acquires a dependency on one client | Rules fork as consumers multiply | Application-agnostic principle in review criteria; no client name in domain code | P6 |
+| Shared modules confuse contributors about which context owns an action | Duplicated or contradictory affordances | [27](27-module-registry.md) consumers and [28](28-ownership-matrix.md) actions | P4, P5 |
+| Operational refunds misclassified as financial corrections | Support blocked, or corrections performed without oversight | Explicit taxonomy in [08 §6.1](08-role-permissions.md) | P4 |
+| CRM and Guardian drift into two products | Users experience a seam; shell code forks | Shared shell, shared tokens, `UI-011` review check | P5 |
+| Store or Portal work forces a redesign | Rework of ownership and registry structure | Consumers and matrix columns pre-declared | PF |
+| Guardian catalog grows into a clone of another admin console | Modules with no requirement behind them | Inspiration-only rule (`NAV-006`, `GRD-012`); registry entry requires a requirement reference | P5 |
+
+---
+
+## 10. Definition of done
+
+A phase is complete when all of the following hold.
+
+| Check | Statement |
+| --- | --- |
+| Scope delivered | Every item in the phase's Scope is implemented or explicitly deferred with a recorded reason |
+| Verification passed | Every item in the phase's Verification list passes, including negative authorization cases |
+| Documentation aligned | Every document in Documentation updates reflects the delivered state, in the same pull request |
+| Controls traced | New behavior maps to a control ID, and each new control ID appears in its owning document |
+| No architectural contradiction | Nothing delivered contradicts `ARCH-160`–`166`, and no backend module is owned by a client |
+| Destructive containment | No destructive affordance exists outside Guardian, and none is reachable on the API without a Class D grant |
+| Tracker updated | This document records the final status, branch, pull request, and notes |
+
+---
+
+## 11. Revision History
+
+| Version | Date | Author | Changes |
+| --- | --- | --- | --- |
+| 1.0 | 2026-07-27 | Platform Engineering | Initial Implementation Tracker: usage rules `TRK-001`–`007`, field definitions, status model, phase overview and records P0–P7 and PF, dependency graph, architecture decision log, open decisions `DEC-001`–`004`, risk register, definition of done |
+
+---
+
+## Document control
+
+| Field | Value |
+| --- | --- |
+| Owner | Engineering leadership with Platform architecture |
+| Change rule | Update as phases change state; never retro-fit a status without recording the reason in Notes |
+| Update cadence | On every status change, and reviewed at each milestone boundary in [09](09-feature-roadmap.md) |
+
+*End of 26 — Implementation Tracker.*

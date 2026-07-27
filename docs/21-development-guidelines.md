@@ -112,6 +112,18 @@ This document complements:
 
 These documents remain authoritative for their respective domains.
 
+### CRM Application Shell
+
+Contributor source of truth for the admin CRM shell (sidebar, header, nav, theme, extension guidelines): [18 — CRM §4 Application Shell](18-crm.md#4-application-shell).
+
+Rules for `apps/admin` contributors:
+
+- Navigation is configuration-driven (`nav-config`); add modules without editing sidebar/header/shell composition.
+- Icons: **Lucide React only** — do not mix React Icons, Heroicons, or other packs.
+- Styling: semantic design tokens only so light/dark themes inherit automatically.
+- Authorization UI: permission checks (`PERM-*`); never special-case `ROLE-010` as a bypass.
+- **Administrator (`ROLE-009`)** must receive matrix grants for every V1 business module; **Super Administrator** adds only platform permissions (`PERM-ADM-020`).
+
 ---
 
 # 2. Development Principles

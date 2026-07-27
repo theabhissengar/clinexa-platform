@@ -139,7 +139,7 @@ Define a production-grade, HIPAA-aware security architecture for Clinexa so that
 | **SEC-009** | Application Security | Input/output safety, upload controls, headers, dependency hygiene on interactive surfaces | This doc §5; `NFR-051`–`056` | SEC-036–050 |
 | **SEC-010** | API Security | Zone model, AuthN/AuthZ, object scope, rate limits, idempotency, webhooks, error hygiene | [11](11-api-design.md); this doc §6 | SEC-051–065 |
 | **SEC-011** | Authentication | Identity types, login/register/reset, sessions, lockout, credential storage principles | [12](12-authentication-flow.md) | `AUTH-*`; SEC-081–088 |
-| **SEC-012** | Authorization | Server-side RBAC, SoD, object-level isolation, field redaction | [08](08-role-permissions.md) | `RBAC-*`; SEC-089–095 |
+| **SEC-012** | Authorization | Server-side RBAC, SoD, object-level isolation, field redaction, application-context access, Guardian-owned destructive permission class | [08](08-role-permissions.md); [25](25-guardian.md) | `RBAC-*`; SEC-020a–020c; SEC-089–095 |
 | **SEC-013** | Data Security | Classification, encryption, retention, deletion, backup protection, no raw PAN | [10](10-database-design.md); this doc §4 | SEC-021–035 |
 | **SEC-014** | Infrastructure Security | Environment separation, segmentation, hardening, containers, config, time sync | [05](05-system-architecture.md); this doc §7 | SEC-066–080 |
 | **SEC-015** | Network Security | TLS for all client–API and internal sensitive connections; logical trust zones; no PHI on public CDN | `NFR-040`; `ARCH-019` | SEC-066–069 |
@@ -160,8 +160,9 @@ flowchart TB
     Portal[PatientPortal]
   end
 
-  subgraph staffZone [AuthenticatedCRM]
-    CRM[StaffCRM]
+  subgraph staffZone [AuthenticatedInternalPlatform]
+    CRM[CrmContext]
+    Guardian[GuardianContext]
   end
 
   subgraph trustBoundary [PlatformTrustBoundary]
@@ -183,6 +184,7 @@ flowchart TB
   Store --> Edge
   Portal --> Edge
   CRM --> Edge
+  Guardian --> Edge
   CDN -.-> Store
   Edge --> API
   API --> App
@@ -201,7 +203,10 @@ flowchart TB
 | ID | Rule |
 | --- | --- |
 | **SEC-019** | All interactive surfaces call the Backend API over HTTPS `/v1` only; clients never enforce AuthZ or clinical/payment gates. |
-| **SEC-020** | Patient tokens must not access CRM; Guest/Patient CRM access is denied; CDN must never cache private or PHI routes; Redis session cache is not the revocation source of truth (`DB-006` Sessions is). |
+| **SEC-020** | Patient tokens must not access the Internal Platform; Guest/Patient access to `/crm/*` and `/guardian/*` is denied; CDN must never cache private or PHI routes; Redis session cache is not the revocation source of truth (`DB-006` Sessions is). |
+| **SEC-020a** | **Destructive-operation ownership.** Destructive administrative operations—delete, hard delete, archive, restore, financial corrections, administrative overrides, and bulk data cleanup—are exposed **only** in the Guardian context (`ARCH-165`, `ARCH-172`). CRM, Store, Patient Portal, and future clients must not render them. |
+| **SEC-020b** | **Consumer-independent enforcement.** Authorization for destructive operations is evaluated from the principal's Guardian-owned permission grants (Class D in [08](08-role-permissions.md)) and is identical regardless of which application issued the request (`ARCH-160`). Hiding an affordance in the UI is defense-in-depth, never the control. |
+| **SEC-020c** | **Destructive-operation accountability.** Every destructive operation is attributable, audited with actor, target, and scope, and fails closed on any authorization or scope uncertainty (`SEC-005`, `SEC-036`). Bulk and hard-delete actions additionally require bounded scope and an explicit confirmation step. |
 
 ---
 
@@ -248,7 +253,7 @@ flowchart TB
 | --- | --- | --- |
 | **SEC-036** | Audit retention | Clinical/admin audit events retained **≥ 1 year** intent in staging-like/prod-like environments (`NFR-062`). |
 | **SEC-037** | Debug log retention | Application debug logs retained **≤ 90 days** unless longer retention is justified (`NFR-063`). |
-| **SEC-038** | Secure deletion | Soft-delete/archive for clinical entities per [10](10-database-design.md); hard-delete/key-disposal path documented as Should (`NFR-064`); audit rows retained when entities are removed. |
+| **SEC-038** | Secure deletion | Soft-delete/archive for clinical entities per [10](10-database-design.md); hard-delete/key-disposal path documented as Should (`NFR-064`); audit rows retained when entities are removed. Deletion, archive, restore, and hard-delete execution are Guardian-owned operations (`SEC-020a`) requiring the corresponding Class D permission (`PERM-ADM-030`–`034` and per-module equivalents). |
 | **SEC-039** | Backup protection | Backups encrypted/protected consistent with production data class; RPO **≤ 24 h**, RTO **≤ 4 h** intent; object versioning/replication where applicable ([10](10-database-design.md) §11.9; backup NFRs). |
 
 ---
@@ -343,8 +348,8 @@ Authoritative AuthN behavior: [12 — Authentication flow](12-authentication-flo
 | --- | --- | --- |
 | **SEC-081** | Server-side RBAC | Every PHI-adjacent and privileged operation checks role/permission policy on the server (`FR-AUTH-004`; `NFR-045`). |
 | **SEC-082** | Patient accounts | Self-registered patients access own Store/Portal data only (`ROLE-002`; `FR-AUTH-005`). |
-| **SEC-083** | Staff accounts | Doctor, Pharmacist, Support, Operations, Marketing, Content provisioned by Administrator; CRM requires staff capability (`PERM-CRM-020`; `AUTH-027`). |
-| **SEC-084** | Administrative accounts | Administrators manage users/roles/settings/audit; admin is governance—not default prescribe (`ROLE-009`; `RBAC` hierarchy). |
+| **SEC-083** | Staff accounts | Doctor, Pharmacist, Support, Operations, Marketing, Content provisioned by Administrator; the CRM context requires staff capability (`PERM-CRM-020`; `AUTH-027`) and the Guardian context requires `PERM-GRD-001`. One session serves both contexts; a context switch never re-authenticates. |
+| **SEC-084** | Administrative accounts | Administrators manage users/roles/settings/audit in the Guardian context; admin is governance—not default prescribe (`ROLE-009`; `RBAC` hierarchy). Destructive Class D permissions are granted explicitly and are never implied by administrative module access. |
 | **SEC-085** | Privileged access | Break-glass elevation is temporary, justified, time-bounded, and fully audited; it does not permanently grant Doctor prescribe (`RBAC-085`/`070`). |
 | **SEC-086** | Service identities | System Worker and Payment Webhook identities use zone-appropriate trust—not interactive user sessions (`AUTH-032`/`033`). |
 | **SEC-087** | Attributable actors | Shared anonymous clinical staff accounts prohibited in production-like environments (`NFR-047`; `OR-06`). |
@@ -714,6 +719,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Principal / Enterprise Security Architect (planning) | Pending | Initial security architecture: principles, domains, data protection, app/API/infra/IAM controls, incident response, compliance governance, traceability (`SEC-001`–`115`) | Draft for review |
 | 1.0 | 2026-07-23 | Principal / Enterprise Security Architect (planning) | Pending | Architectural appendices: §11.4 Security Priority Matrix, §11.5 Security Ownership Matrix, §11.6 Threat Surface Diagram, §11.7 Security Event Matrix, §11.8 Secure Development Lifecycle; status set to Approved — Implementation Ready | Approved — Implementation Ready |
+| 1.1 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Internal Platform staff zone split into CRM and Guardian contexts; added destructive-operation ownership and consumer-independent enforcement controls (`SEC-020a`–`SEC-020c`); Guardian context access (`PERM-GRD-001`) and Class D destructive permissions reflected in `SEC-012`, `SEC-083`, `SEC-084`, `SEC-038` | Draft for review |
 
 ---
 
@@ -726,6 +732,8 @@ flowchart LR
 - [10 — Database design](10-database-design.md)
 - [11 — API design](11-api-design.md)
 - [12 — Authentication flow](12-authentication-flow.md)
+- [18 — CRM](18-crm.md)
+- [25 — Guardian](25-guardian.md)
 
 ---
 

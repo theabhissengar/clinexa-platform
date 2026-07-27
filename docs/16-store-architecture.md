@@ -9,7 +9,7 @@
 | Primary market | United States |
 | Audience | Principal Frontend Architecture, Enterprise E-Commerce Architecture, React Application Architecture, Healthcare SaaS Architecture, Frontend Engineering, Product, QA, Security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md) |
+| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [06 — User personas](06-user-personas.md), [07 — User journeys](07-user-journeys.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [14 — Notifications](14-notifications.md), [15 — Payment flow](15-payment-flow.md), [18 — CRM architecture](18-crm.md), [25 — Guardian architecture](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md) |
 
 This document is the **authoritative Store (public commerce client) architecture** for Clinexa Version 1. It defines public storefront responsibilities, module boundaries, navigation and discovery architecture, shopping experience, logical frontend state ownership, API integration surfaces, and storefront performance, SEO, accessibility, and security posture—without prescribing frameworks, component libraries, styling systems, or application source code.
 
@@ -54,7 +54,9 @@ Define a production-grade public Store architecture for Clinexa so that:
 - Rx-eligible purchase paths surface questionnaires before finalize (`FR-QST-003`; `OR-01`).
 - Payment handoff remains PCI-aware and fail-safe; Store messaging never equates payment success with clinical approval or dispensing (`FR-STO-006`; `OR-03`; [15](15-payment-flow.md)).
 - SEO, accessibility, and performance targets for Store browse, intake, and checkout are architecturally accountable (`NFR-001`, `NFR-005`, `NFR-091`, `NFR-103`–`111`).
-- Module boundaries prevent Store from owning CRM clinical ops, Portal self-service, inventory truth, or coupon/CMS authoring.
+- Module boundaries prevent Store from owning clinical ops, Portal self-service, inventory truth, or coupon/CMS authoring.
+
+> **Ecosystem position.** The Store is one client in the Clinexa ecosystem alongside the Patient Portal and the Internal Platform, all over the shared Backend API (`ARCH-170`). The Store **owns no backend module**; it consumes platform modules under public and patient permissions (`ARCH-161`). The data the Store renders—products, categories, CMS pages, blogs, coupons, and merchandising configuration—is authored and published in the **Guardian** context of the Internal Platform ([25 §2.3](25-guardian.md#23-relationship-with-store)). The Store never exposes administrative or destructive operations.
 
 ### 1.2 Scope
 
@@ -76,7 +78,9 @@ Define a production-grade public Store architecture for Clinexa so that:
 | Area | Deferred to / note |
 | --- | --- |
 | Patient Portal self-service | Orders history, subscriptions manage/cancel, documents, appointments, tickets (`ARCH-012`) |
-| CRM authoring / clinical ops | Catalog publish, CMS/blog authoring, coupon create, review moderation, consult queues (`ARCH-013`) |
+| Administrative authoring | Catalog publish, CMS/blog authoring, coupon create, review moderation configuration — owned by the **Guardian** context of the Internal Platform (`ARCH-172`; [25](25-guardian.md)) |
+| Clinical operations | Consult queues, pharmacy review, fulfillment — owned by the **CRM** context of the Internal Platform (`ARCH-013`) |
+| Destructive administrative operations | Delete, archive, restore, financial correction, administrative override, bulk cleanup, hard delete — Guardian only (`ARCH-165`); the Store exposes none of these |
 | Native mobile Store app | Out of V1 (PRD §11; `NFR-102`) |
 | Guest checkout finalize without account | Future only if PRD revised (FR-CHK Future Enhancements) |
 | Wishlists / saved carts | Future (FR-CART Future Enhancements) |
@@ -751,7 +755,7 @@ Cross-reference [12](12-authentication-flow.md) and [13](13-security.md).
 | `OR-13`, `AC-BR-12` | `FR-REV-001`–`003`, `FR-STO-005` | STORE-035 | `API-137`–`138` | `PERM-REV-001` (submit) | `DB-053` |
 | Coupons Should | `FR-CPN-001`–`003` | STORE-038, STORE-072 | `API-057`/`058`, `API-142` | `PERM-CPN-002` redeem | `DB-024`–`025` |
 | `BP-11`, `AC-BR-13` | `FR-CMS-001`–`003`, `FR-BLG-*` | STORE-040–043 | `API-148`–`149`, `155`–`156` | Public read published | `DB-050`–`052` |
-| `OR-14`, `AC-BR-05` | `FR-PRD-002`, `FR-CAT-002` | STORE-014 (consume only) | CRM admin APIs | Staff CRM | Catalog entities |
+| `OR-14`, `AC-BR-05` | `FR-PRD-002`, `FR-CAT-002` | STORE-014 (consume only) | Catalog administration APIs | Guardian context staff | Catalog entities |
 | `OR-06` | `FR-AUTH-005`, `FR-SRCH-003` | STORE-151 | All patient APIs | Isolation | Patient-scoped rows |
 | SEO / a11y / perf | `FR-STO-002` + NFRs | STORE-110–137 | Read APIs | Public | SEO fields on catalog/content |
 

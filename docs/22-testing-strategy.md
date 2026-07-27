@@ -331,6 +331,21 @@ Validation areas include:
 - Secure communication
 - Access control
 
+### Internal Platform context and destructive-operation coverage
+
+The Internal Platform hosts two contexts—CRM (`/crm/*`) and Guardian (`/guardian/*`)—and destructive operations are exposed in Guardian only. Security testing must therefore cover context authorization and the destructive permission class as first-class concerns, with negative cases treated as mandatory rather than optional.
+
+| Area | Requirement |
+| --- | --- |
+| Context authorization | Every route under each prefix is verified against the presence and the absence of its context permission (`PERM-CRM-020`, `PERM-GRD-001`) |
+| Destructive authorization | Every destructive endpoint is verified to succeed with its Class D grant and to return 403 without it |
+| Consumer independence | Authorization outcomes are verified to depend on the principal's grants alone, never on the calling application, origin, or headers |
+| Absence coverage | CRM, Store, and Portal surfaces are verified to render no destructive affordance |
+| Audit coverage | Destructive successes and denials are verified to produce audit records with actor, target, and scope |
+| Safeguards | Bounded bulk scope, the last-administrator safeguard, and the absence of any clinical or audit delete path are verified explicitly |
+
+The authoritative case list is [30 §4 — Required test cases](30-migration-and-verification.md#4-required-test-cases); the checks each delivery phase must pass are in [30 §3](30-migration-and-verification.md#3-verification-strategy). Permission definitions are in [08 §4](08-role-permissions.md).
+
 ---
 
 ## 5.9 Accessibility Testing

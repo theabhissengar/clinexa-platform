@@ -1,6 +1,6 @@
 # Clinexa Platform
 
-Backend API and Internal Management application for the Clinexa healthcare ecosystem.
+Backend API and Internal Platform application for the Clinexa healthcare ecosystem.
 
 This repository is an **npm workspaces monorepo**. It does **not** include the public website, patient portal, or mobile app (those are separate repositories).
 
@@ -9,9 +9,11 @@ This repository is an **npm workspaces monorepo**. It does **not** include the p
 Clinexa is a care-commerce platform. The Platform repository owns:
 
 1. **Backend API** (`apps/api`) — NestJS modular monolith, Prisma, PostgreSQL, Swagger, Jest
-2. **Internal Management** (`apps/admin`) — Next.js App Router CRM/Admin UI (role-based Admin, Doctor, Pharmacy sections later)
+2. **Internal Platform** (`apps/admin`) — Next.js App Router application hosting two contexts: **CRM** (`/crm/*`, operational lifecycle) and **Guardian** (`/guardian/*`, administrative lifecycle)
 
-Product and architecture documentation lives in [`docs/`](./docs/) and is the source of truth for domain behavior.
+CRM and Guardian are contexts inside one authenticated application—one login, one shell, one design system. The Backend API is **application-agnostic**: its modules are platform modules that every client (Store, Patient Portal, CRM, Guardian, future apps) consumes and none of them owns.
+
+Product and architecture documentation lives in [`docs/`](./docs/) and is the source of truth for domain behavior. Start with [05 — System architecture](./docs/05-system-architecture.md), [18 — CRM](./docs/18-crm.md), [25 — Guardian](./docs/25-guardian.md), and [26 — Implementation tracker](./docs/26-implementation-tracker.md).
 
 ## Repository structure
 
@@ -19,7 +21,7 @@ Product and architecture documentation lives in [`docs/`](./docs/) and is the so
 clinexa-platform/
 ├── apps/
 │   ├── api/                 # NestJS Backend
-│   └── admin/               # Next.js Internal CRM/Admin
+│   └── admin/               # Next.js Internal Platform (CRM + Guardian contexts)
 ├── docker/                  # Dockerfiles + Compose (PostgreSQL)
 ├── docs/                    # Product + engineering documentation
 ├── infrastructure/          # IaC placeholder
@@ -41,7 +43,7 @@ clinexa-platform/
 | App | Package name | Port | Role |
 | --- | --- | --- | --- |
 | API | `@clinexa/api` | `3001` | Domain authority, REST, Prisma, Swagger at `/api/docs` |
-| Admin | `@clinexa/admin` | `3000` | Internal management SPA (foundation only) |
+| Admin | `@clinexa/admin` | `3000` | Internal Platform shell hosting the CRM and Guardian contexts (foundation only) |
 
 ## Prerequisites
 
@@ -145,7 +147,7 @@ Without restructuring this repo, we can later add:
 - `packages/core` — shared domain logic for api + worker
 - Redis, object storage, and richer CI/CD under `docker/` / `infrastructure/`
 
-Public Store, Patient Portal, and Mobile remain separate repositories consuming the Backend API.
+Public Store, Patient Portal, and Mobile remain separate repositories consuming the Backend API. Additional future clients (Admin Mobile, Vendor Portal, Partner Portal, Public APIs) attach the same way: new permissions and registry entries, not a new backend.
 
 ## Foundation scope
 

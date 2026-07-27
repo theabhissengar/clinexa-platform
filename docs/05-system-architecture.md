@@ -9,9 +9,11 @@
 | Primary market | United States |
 | Audience | Solution architects, cloud architects, backend/frontend engineers, DevOps/SRE, security, QA, product |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [23 — Deployment](23-deployment.md) |
+| Related docs | [01 — Project overview](01-project-overview.md), [02 — Business requirements](02-business-requirements.md), [03 — Functional requirements](03-functional-requirements.md), [04 — Non-functional requirements](04-non-functional-requirements.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [12 — Authentication flow](12-authentication-flow.md), [13 — Security](13-security.md), [18 — CRM](18-crm.md), [23 — Deployment](23-deployment.md), [25 — Guardian](25-guardian.md), [26 — Implementation tracker](26-implementation-tracker.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md) |
 
 This document is the **System Architecture** charter for Clinexa Version 1. It explains **how** every major platform component fits together—clients, modular Backend API, persistence, async processing, integrations, security boundaries, and deployment topology. It expands [PRD §14](00-product-requirements-document.md#14-high-level-architecture) under constraints from [03 — Functional requirements](03-functional-requirements.md) and [04 — Non-functional requirements](04-non-functional-requirements.md).
+
+> **Ecosystem note:** Clinexa is an **ecosystem** of client applications over one shared Backend API. The internal staff surface is the **Clinexa Internal Platform**—a single authenticated application hosting two contexts: **CRM** (operational lifecycle) and **Guardian** (administrative lifecycle). See [§3.5 Clinexa Ecosystem](#35-clinexa-ecosystem-arch-170), [§4.4 Guardian](#44-guardian-arch-172), and [25 — Guardian](25-guardian.md).
 
 It does **not** define database schemas ([10](10-database-design.md)), API endpoint catalogs ([11](11-api-design.md)), detailed auth sequences ([12](12-authentication-flow.md)), threat models ([13](13-security.md)), or environment runbooks ([23](23-deployment.md)). It does **not** contain implementation code.
 
@@ -49,7 +51,7 @@ It does **not** define database schemas ([10](10-database-design.md)), API endpo
 
 Define the production-grade system architecture for Clinexa so that:
 
-- Architects and engineers share one structural model for Store, Patient Portal, CRM, Backend API, workers, and integrations.
+- Architects and engineers share one structural model for the Clinexa Ecosystem: Store, Patient Portal, the Internal Platform (CRM + Guardian contexts), Backend API, workers, and integrations.
 - Clinical and payment gates remain server-enforced and consistent across all clients.
 - Non-functional targets (latency, availability, security, observability) have a clear topological home.
 - Downstream design docs (database, API, security, deployment) refine—not reinvent—this structure.
@@ -60,7 +62,7 @@ Define the production-grade system architecture for Clinexa so that:
 
 | Area | Coverage |
 | --- | --- |
-| Client applications | Store Web, Patient Portal, CRM |
+| Client applications | Store Web, Patient Portal, Internal Platform (CRM + Guardian contexts) |
 | Shared platform | Modular Backend API, background workers, notification dispatch |
 | Persistence | Managed PostgreSQL (system of record), S3-compatible object storage |
 | Shared runtime services | Redis-compatible store (sessions, cache, job broker), CDN |
@@ -99,6 +101,13 @@ Aligned with [PRD §11](00-product-requirements-document.md#11-out-of-scope): na
 | ARCH-008 | HIPAA-aware without overclaim | Minimization, access control, audit, encryption—not certification or Covered Entity claims |
 | ARCH-009 | Async off the request path | Renewals, notifications, and large reports run on dedicated workers |
 | ARCH-010 | Portable and demo-friendly | Prefer OSS for core domain; justify proprietary commodity services; free-tier-aware degradation |
+| ARCH-160 | **Application-agnostic backend** | The Backend API knows only authentication, authorization, business rules, permissions, and domain logic. It must not branch on whether the caller is CRM, Guardian, Store, Patient Portal, or a future client |
+| ARCH-161 | **Platform modules are consumed, never owned by clients** | Users, Orders, Products, Subscriptions, Payments, Questionnaires, Blogs, Reports and peers are *platform* modules owned by the Backend API; client applications consume them with different permissions and UX |
+| ARCH-162 | **Future flexibility** | Introducing a new application must require configuration, RBAC grants, Module Registry consumers, and Ownership Matrix columns—not architectural redesign |
+| ARCH-163 | **One Internal Platform, two contexts** | CRM and Guardian are contexts inside one authenticated application sharing auth, sessions, RBAC, shell, design system, and API client—not two products |
+| ARCH-164 | **Administrative vs operational lifecycle ownership** | Guardian owns the administrative lifecycle (provisioning, master data, governance); CRM owns the operational lifecycle (clinical, fulfillment, support execution) |
+| ARCH-165 | **Destructive administrative operations are Guardian-only** | Delete, archive, restore, financial corrections, administrative overrides, bulk cleanup, and hard delete are exposed only in Guardian and gated by Guardian-owned permissions server-side |
+| ARCH-166 | **Internal Platform visual unity** | Navigation, permissions, and workflows differ per context; chrome, tokens, and component patterns do not |
 
 ### 1.5 References
 
@@ -141,7 +150,7 @@ Aligned with [PRD §11](00-product-requirements-document.md#11-out-of-scope): na
 | --- | --- | --- |
 | ARCH-011 | Store Web Application | Public discovery, SEO content, commerce entry, questionnaire on purchase path |
 | ARCH-012 | Patient Portal | Authenticated patient self-service |
-| ARCH-013 | CRM | Clinical and operational control plane for staff |
+| ARCH-013 | CRM (Internal Platform context) | Operational control plane for staff: clinical review, pharmacy, fulfillment, support execution |
 | ARCH-014 | Backend API | Modular monolith: domain logic, AuthZ, integrations, audit |
 | ARCH-015 | Background Workers | Renewals, notifications, reports, cleanup, reindex |
 | ARCH-016 | PostgreSQL | System of record for transactional domain data |
@@ -156,10 +165,14 @@ Aligned with [PRD §11](00-product-requirements-document.md#11-out-of-scope): na
 | ARCH-025 | Logging | Structured application logs with correlation IDs and redaction |
 | ARCH-026 | Monitoring | Health probes, metrics, alerts (latency, errors, queue depth, payment/renewal failures) |
 | ARCH-027 | Future Mobile | Additional client of the same Backend API (not V1 delivery) |
+| ARCH-170 | Clinexa Ecosystem | Container view: all client applications plus the shared Backend API and data plane (§3.5) |
+| ARCH-171 | Clinexa Internal Platform | One authenticated staff application (`apps/admin`) hosting the CRM (ARCH-013) and Guardian (ARCH-172) contexts |
+| ARCH-172 | Guardian (Internal Platform context) | Master platform administration plane: catalog, content, marketing, platform settings, user/order/subscription administration, destructive operations |
+| ARCH-173 | Future application port | Integration slot for Mobile, Admin Mobile, Vendor Portal, Partner Portal, and Public APIs against the same API and AuthZ engine (§3.7) |
 
 ### 3.2 System context
 
-All interactive surfaces communicate exclusively with the Backend API over HTTPS. The API orchestrates PostgreSQL, object storage, Redis, PSP, and email. Workers consume the same domain model and infrastructure. Future Mobile attaches to the same API without a parallel clinical backend.
+All interactive surfaces communicate exclusively with the Backend API over HTTPS. The API orchestrates PostgreSQL, object storage, Redis, PSP, and email. Workers consume the same domain model and infrastructure. Future Mobile attaches to the same API without a parallel clinical backend. The API treats every surface identically: it authorizes the **identity and permissions** behind a request, never the application that sent it (ARCH-160).
 
 ### 3.3 System architecture diagram
 
@@ -168,7 +181,10 @@ flowchart TB
   subgraph clients [ClientApplications]
     store[StoreWeb]
     portal[PatientPortal]
-    crm[CRM]
+    subgraph internal [InternalPlatform]
+      crm[CrmContext]
+      guardian[GuardianContext]
+    end
     mobile[FutureMobile]
   end
 
@@ -197,6 +213,7 @@ flowchart TB
   store --> lb
   portal --> lb
   crm --> lb
+  guardian --> lb
   mobile -.-> lb
   lb --> api
   api --> pg
@@ -226,6 +243,87 @@ flowchart TB
 | Backend API / Workers | PSP | Outbound HTTPS + inbound webhooks (idempotent) |
 | Notification path | Email provider | Outbound HTTPS via workers |
 | Store browsers | CDN | Static assets; HTML still indexable per SEO NFRs |
+
+---
+
+### 3.5 Clinexa Ecosystem (ARCH-170)
+
+The Internal Platform is **one part** of a larger ecosystem. Client applications are separate deployables (and may live in separate repositories); the domain lives once, in the shared Backend API.
+
+```text
+Clinexa Ecosystem
+├── Internal Platform (ARCH-171)      ← one authenticated staff application, two contexts
+│   ├── CRM context (ARCH-013)        → operational lifecycle
+│   └── Guardian context (ARCH-172)   → administrative lifecycle
+│
+├── Store (ARCH-011)                  ← patient-facing commerce client
+│
+├── Patient Portal (ARCH-012)         ← authenticated patient self-service client
+│
+└── Shared Backend API (ARCH-014)     ← system of record; application-agnostic
+```
+
+#### Ecosystem rules
+
+| ID | Rule | Statement |
+| --- | --- | --- |
+| ECO-1 | Separate applications | Store, Patient Portal, and the Internal Platform are distinct deployable clients and may live in separate repositories |
+| ECO-2 | Shared backend | Every client consumes the **same** Backend API, domain model, and system of record (ARCH-003) |
+| ECO-3 | No parallel clinical backends | Future clients attach to the same API instead of inventing a second clinical/commerce domain (ARCH-131) |
+| ECO-4 | Internal Platform unity | CRM and Guardian are two **contexts** inside one authenticated application—never two products (ARCH-163) |
+| ECO-5 | Application-agnostic AuthZ | The API authorizes by identity, role, and permission—never by which client made the call (ARCH-160) |
+
+#### Application-agnostic backend (ARCH-160, ARCH-161)
+
+Backend modules are **platform modules**. Applications consume them; applications never own them.
+
+| Incorrect framing | Correct framing |
+| --- | --- |
+| “CRM owns the Orders backend module” | Orders is a platform module (ARCH-047); CRM, Guardian, Portal, and Store consume it with different permissions and UX |
+| “Store owns Products” | Products is a platform module (ARCH-042); Guardian authors and publishes, Store reads the published catalog |
+| “Guardian needs its own admin backend” | Guardian is a client of the same API with administrative permissions |
+| Frontend-specific domain rules in UI | Domain rules live in the Domain and Business layers (ARCH-030–031, ARCH-140) |
+
+Consumer lists per module are maintained in [27 — Module registry](27-module-registry.md); per-entity action ownership across applications is maintained in [28 — Ownership matrix](28-ownership-matrix.md).
+
+### 3.6 Internal Platform contexts (ARCH-171)
+
+```text
+Clinexa Internal Platform (apps/admin)
+├── Shared foundation (auth, sessions, RBAC, shell, design system, services, API client)
+├── Context: CRM        → /crm/*
+└── Context: Guardian   → /guardian/*
+```
+
+| Layer | Shared across contexts? | Notes |
+| --- | --- | --- |
+| Authentication / sessions | Yes | One login, one session store; switching context never re-authenticates |
+| RBAC | Yes | One engine; different grants per role and context (see [08](08-role-permissions.md)) |
+| Backend / database / APIs | Yes | One modular monolith; application-agnostic |
+| Design system / theme / shell | Yes | Identical chrome, tokens, tables, forms, dialogs |
+| Navigation catalog | Per context | Context-tagged and permission-filtered (see [29](29-navigation-blueprint.md)) |
+| Modules / workflows | Per context | Shared entities may appear in both; backend modules remain platform-owned |
+
+| Plane | Owner | Meaning |
+| --- | --- | --- |
+| Administrative lifecycle | **Guardian** (ARCH-172) | Provisioning, master data, governance, destructive operations, financial corrections, overrides |
+| Operational lifecycle | **CRM** (ARCH-013) | Day-to-day processing, clinical and operational workflows, fulfillment, support execution |
+
+Both contexts may update many fields of the **same** entity; the *purpose* of the update differs. Store and Patient Portal consume the same entities with patient- and public-facing scopes.
+
+### 3.7 Future applications (ARCH-173)
+
+Future clients integrate through configuration, RBAC grants, Module Registry consumer entries, and Ownership Matrix columns—not structural redesign (ARCH-162).
+
+| Candidate application | Integration posture | Status |
+| --- | --- | --- |
+| Mobile App (patient) | Same API, patient-scoped permissions | Not V1 (ARCH-027, ARCH-131) |
+| Admin Mobile App | Same API, staff permissions; Guardian-only destructive rules still apply | Future |
+| Vendor Portal | Same API, vendor-scoped permissions; depends on future vendor management in Guardian | Future |
+| Partner Portal | Same API, partner-scoped permissions | Future |
+| Public APIs | Same API surface with API-key/OAuth zone and explicit scopes | Future |
+
+No implementation is required now; the architecture must not preclude any of them.
 
 ---
 
@@ -302,15 +400,18 @@ Staff CRM workflows, catalog/clinical configuration, other patients’ data (FR-
 
 ---
 
-### 4.3 CRM (ARCH-013)
+### 4.3 CRM context (ARCH-013)
+
+> CRM is the **operational** context of the Internal Platform (ARCH-171), not the whole staff control plane. Administrative and destructive responsibilities belong to Guardian (§4.4). Authoritative detail: [18 — CRM](18-crm.md).
 
 #### Responsibilities
 
-- Role-scoped staff control plane: clinical review, pharmacy, fulfillment, support, marketing, content, administration.
+- Role-scoped operational control plane: clinical review, pharmacy, fulfillment, support execution.
 - Consultation queue: approve, decline, or request additional information.
 - Prescription create/update after doctor approval; pharmacist review before fulfillment readiness.
-- Catalog, questionnaire, treatment plan, subscription, and consultation workflow configuration (admin).
-- Inventory, orders, coupons, CMS/blogs, analytics dashboards, reports, support triage.
+- Order operational workflow: timeline, documents, internal notes, fulfillment progression.
+- Operational subscription actions (renew / pause / resume where permitted), operational reports.
+- View and edit of **operational**, **clinical**, and **support** fields on shared entities.
 
 #### Major modules (client-side)
 
@@ -318,11 +419,9 @@ Staff CRM workflows, catalog/clinical configuration, other patients’ data (FR-
 | --- | --- |
 | Clinical queue | Doctors |
 | Pharmacy review | Pharmacists |
-| Orders / inventory / fulfillment | Operations |
+| Orders (operational) / inventory / fulfillment | Operations |
 | Support desk | Support |
-| Coupons / marketing analytics | Marketing |
-| CMS / blogs | Content |
-| Admin / settings | Administrators |
+| Operational reports and dashboards | All operational roles |
 
 #### Internal clinical–ops workflow
 
@@ -355,7 +454,49 @@ Backend API (CRM, ORD, QST, INV, DOC, SUP, ADM, SET, ANL, RPT, NTF, AUTH).
 
 #### Explicit non-ownership
 
-Public SEO storefront rendering; Marketing/Content default access to clinical notes or full questionnaire answers (FR-CRM-006); Support must never approve prescriptions (FR-SUP-004).
+Public SEO storefront rendering; Marketing/Content default access to clinical notes or full questionnaire answers (FR-CRM-006); Support must never approve prescriptions (FR-SUP-004). **Destructive administrative operations** (delete, archive, restore, financial corrections, administrative overrides, bulk cleanup, hard delete) are never exposed in CRM (ARCH-165).
+
+---
+
+### 4.4 Guardian (ARCH-172)
+
+> Guardian is the **administrative** context of the same Internal Platform application (ARCH-171)—a master platform management plane, not a settings panel. Authoritative detail: [25 — Guardian](25-guardian.md).
+
+#### Responsibilities
+
+- Catalog administration: products, categories, variants, pricing, images, DIN, dosage, inventory policy, media.
+- Content and marketing administration: pages, blogs, homepage, FAQs, coupons, campaigns, templates.
+- Platform administration: settings, feature flags, taxes, shipping, payment providers and keys, webhooks, integrations, API keys.
+- Administrative lifecycle for shared entities: users (full admin lifecycle), orders (administrative and financial), subscriptions (administrative lifecycle).
+- Governance surfaces: audit trail, activity, system logs, administrative reports and exports.
+- Sole exposure of destructive operations (ARCH-165).
+- Future areas: Security (2FA, trusted devices, sessions, security logs), vendor management, and Store/Portal-driven modules such as SEO, search configuration, and merchandising.
+
+#### Major modules (client-side)
+
+| Navigation group | Staff focus |
+| --- | --- |
+| Dashboard | Administrators, platform owners |
+| Commerce | Products, categories, inventory, orders (admin), subscriptions (admin), pricing, taxes, shipping |
+| Content | Pages, blogs, media, homepage, FAQs |
+| Users | Full user administrative lifecycle |
+| Marketing | Coupons, campaigns, templates |
+| Platform | Settings, feature flags, integrations |
+| Developer | API keys, webhooks, developer tools |
+| Analytics | Administrative analytics and reports |
+| Security (future) | 2FA, trusted devices, sessions, security logs |
+
+#### Communication
+
+HTTPS to the Backend API with the **same** staff session as CRM. Context switching changes navigation and URL prefix only; it never issues a second session. Every destructive action is authorized server-side against Guardian-owned permissions (ARCH-165, [08](08-role-permissions.md)).
+
+#### Dependencies
+
+Backend API (ADM, SET, PRD, CAT, INV, CPN, BLG, CMS, ORD, SUB, USR/ADM users, ANL, RPT, AUTH). Guardian consumes these as platform modules (ARCH-161).
+
+#### Explicit non-ownership
+
+Guardian does not own backend modules, does not perform clinical decisions (no prescribing or consult approval—those remain CRM clinical roles under FR-CRM/FR-SUP separation of duties), and does not render public storefront content.
 
 ---
 
@@ -375,7 +516,7 @@ V1 delivers a **single Backend API deployable** organized as domain modules with
 | Repository Layer | ARCH-032 | Persistence abstractions; patient-scoped queries; no business rules leakage to SQL-only “truth” |
 | Infrastructure Layer | ARCH-033 | PSP/email/object-storage/Redis/queue adapters; clock/scheduler; logging/metrics exporters |
 
-Clinical and payment gates live in Domain and Business layers—not in Store/Portal/CRM UI logic.
+Clinical and payment gates live in Domain and Business layers—not in Store, Portal, CRM, or Guardian UI logic. No layer may branch on the calling application; authorization decisions depend on identity and permissions only (ARCH-160).
 
 ### 5.3 Layered architecture diagram
 
@@ -421,7 +562,7 @@ flowchart TB
 
 ## 6. Domain Modules
 
-> Each module below is a Backend API domain capability. Client UIs consume them via the shared API. Prescriptions remain embedded across QST, ORD, Doctors/CRM, PRT, DOC, and NTF.
+> Each module below is a Backend API domain capability—a **platform module** (ARCH-161). Client UIs (Store, Patient Portal, CRM context, Guardian context, and future applications) consume them via the shared API with different permissions and UX; no client owns a module. Prescriptions remain embedded across QST, ORD, Doctors/CRM, PRT, DOC, and NTF. Per-module consumer lists live in [27 — Module registry](27-module-registry.md).
 
 ### 6.1 Authentication (ARCH-040)
 
@@ -1064,7 +1205,7 @@ sequenceDiagram
 | Tier | Components |
 | --- | --- |
 | Edge | CDN (Store static), TLS termination / load balancer |
-| Web | Store (SSR-capable), Patient Portal, CRM |
+| Web | Store (SSR-capable), Patient Portal, Internal Platform (one deployable serving `/crm/*` and `/guardian/*`) |
 | Application | Backend API instances (≥2), Background Workers (independent scale) |
 | Data | Managed PostgreSQL primary (+ standby replication where supported), Redis-compatible, object storage |
 | External | PSP, Email provider |
@@ -1083,7 +1224,7 @@ flowchart TD
   lb[LoadBalancer]
   storeApp[StoreApp]
   portalApp[PortalApp]
-  crmApp[CrmApp]
+  crmApp[InternalPlatformApp]
   apiA[ApiInstanceA]
   apiB[ApiInstanceB]
   workers[BackgroundWorkers]
@@ -1186,6 +1327,10 @@ flowchart TD
 | ARCH-110 | PostgreSQL FTS for V1 search | Adequate for nominal catalog; avoids extra search cluster early | May need dedicated search engine at higher scale |
 | ARCH-111 | First-party analytics aggregates | PHI minimization; marketing-safe dashboards | Less out-of-box product analytics; acceptable for V1 |
 | ARCH-112 | Language/framework not mandated | NFR-140; patterns portable | Teams must still pick one stack in implementation repos |
+| ARCH-113 | One Internal Platform with two contexts (CRM + Guardian) rather than two applications | One login, one shell, one design system; avoids duplicated auth, chrome, and component drift | Requires context-aware routing, navigation, and permission filtering inside one app |
+| ARCH-114 | Guardian is the sole exposure point for destructive administrative operations | Concentrates high-risk actions behind one context and one permission class; keeps operational surfaces safe | Some staff must switch context to complete an escalation |
+| ARCH-115 | Application-agnostic backend with platform-module ownership | Any number of clients can be added without forking domain logic; AuthZ stays uniform | Clients must accept API-shaped contracts instead of bespoke endpoints |
+| ARCH-116 | Context prefix routing (`/crm/*`, `/guardian/*`) | Makes context a first-class, inspectable boundary for navigation, breadcrumbs, and guards | Legacy internal paths need redirects during migration |
 
 ---
 
@@ -1194,7 +1339,7 @@ flowchart TD
 | ID | Assumption |
 | --- | --- |
 | ARCH-120 | PRD remains the single source of truth; this doc does not invent product scope |
-| ARCH-121 | Store, Portal, and CRM are separate V1 web applications sharing one Backend API |
+| ARCH-121 | Store, Portal, and the Internal Platform are separate V1 web applications sharing one Backend API |
 | ARCH-122 | Email is the primary V1 notification channel |
 | ARCH-123 | Document/media bytes live in object storage; transactional metadata in PostgreSQL |
 | ARCH-124 | Demo catalog categories are seed data, not hard-wired product identity |
@@ -1205,6 +1350,9 @@ flowchart TD
 | ARCH-129 | Application source code lives in repositories other than this planning repo |
 | ARCH-130 | PSP and email providers offer sandbox/test modes for demos |
 | ARCH-131 | Future Mobile reuses this API without a separate clinical domain model |
+| ARCH-132 | Store and Patient Portal may be developed in separate repositories while remaining ecosystem members of the same Backend API |
+| ARCH-133 | Guardian is the configuration and administration plane for Store- and Portal-facing data (catalog, content, marketing, settings); those clients read the resulting published state |
+| ARCH-134 | Store and Patient Portal implementation remain out of scope for the current Internal Platform phase; their dependencies are pre-declared in the Module Registry and Ownership Matrix |
 
 ---
 
@@ -1223,6 +1371,10 @@ flowchart TD
 | ARCH-148 | API must remain mobile-ready (client-agnostic auth and versioning) |
 | ARCH-149 | Feature flags must not bypass clinical or payment gates |
 | ARCH-150 | This planning repository contains documentation only—no application implementation code here |
+| ARCH-151 | Backend modules must not be named, structured, or branched per consuming application |
+| ARCH-152 | Destructive administrative operations must be exposed only in Guardian and gated by Guardian-owned permissions server-side |
+| ARCH-153 | CRM and Guardian must share one authentication flow, one session, one shell, and one design system |
+| ARCH-154 | Adding a new client application must not require changes to domain logic—only configuration, permissions, and registry/matrix documentation |
 
 ---
 
@@ -1232,7 +1384,10 @@ flowchart TD
 | --- | --- | --- |
 | Hard-coding demo categories into schema/UI | Breaks reusability / BO-5 | Config-driven Products/Categories; ADR ARCH-001 |
 | Treating payment success as Rx clearance | Clinical/compliance failure | Order clinical states + Doctors module gates |
-| Divergent rules in Store/Portal/CRM | Inconsistent money/clinical behavior | Thin clients; Domain Layer ownership |
+| Divergent rules in Store/Portal/CRM/Guardian | Inconsistent money/clinical behavior | Thin clients; Domain Layer ownership |
+| Backend module coupled to one client application | Blocks new clients; forks domain logic | Application-agnostic backend (ARCH-160); platform-module ownership (ARCH-161); registry consumers |
+| Destructive operation hidden in UI but open on the API | Silent data loss from a non-Guardian surface | Guardian-owned permission class enforced server-side (ARCH-165, ARCH-152) + AuthZ tests |
+| CRM and Guardian drifting into two products | Confusing staff experience, duplicated components | Shared shell and design system (ARCH-166, ARCH-153) |
 | Shared anonymous staff accounts | Auditability loss | Attributable users; NFR-047 |
 | Over-complex configurability delaying MVP | Delivery slip | Opinionated V1 config model; defer extreme branching |
 | Over-broad CRM access | PHI leakage | Default-deny RBAC; marketing/content boundaries |
@@ -1253,7 +1408,9 @@ Maps architecture components → functional modules → representative NFR requi
 | --- | --- | --- |
 | Store (ARCH-011) | STO, PRD, CAT, SRCH, CART, CHK, BLG, CMS, REV, CPN, AUTH | NFR-001, NFR-005, NFR-103–111, NFR-091 |
 | Patient Portal (ARCH-012) | PRT, ORD, SUB, DOC, APT, SUP, AUTH | NFR-002, NFR-046, NFR-091, NFR-098 |
-| CRM (ARCH-013) | CRM, ADM, SET, ANL, RPT, INV, SUP | NFR-003, NFR-008, NFR-045, NFR-100 |
+| Internal Platform (ARCH-171) | CRM + ADM shells, AUTH, RBAC | NFR-003, NFR-041–047, NFR-091 |
+| CRM context (ARCH-013) | CRM, ORD (operational), QST, INV, DOC, SUP, RPT | NFR-003, NFR-008, NFR-045, NFR-100 |
+| Guardian context (ARCH-172) | ADM, SET, PRD, CAT, INV, CPN, BLG, CMS, ORD (admin), SUB (admin), ANL, RPT | NFR-003, NFR-045, NFR-057, NFR-100 |
 | Backend API (ARCH-014, ARCH-028–033) | All domain modules | NFR-015–016, NFR-066–068, NFR-112–120 |
 | Authentication / Users (ARCH-040–041) | AUTH, ADM | NFR-041–047, NFR-052 |
 | Products / Categories (ARCH-042–043) | PRD, CAT | NFR-019, NFR-068 |
@@ -1293,6 +1450,13 @@ Maps architecture components → functional modules → representative NFR requi
 | Auth sequences | [12 — Authentication flow](12-authentication-flow.md) |
 | Security depth | [13 — Security](13-security.md) |
 | Environments and release | [23 — Deployment](23-deployment.md) |
+| CRM operational context | [18 — CRM](18-crm.md) |
+| Guardian administrative context | [25 — Guardian](25-guardian.md) |
+| Delivery phases and governance | [26 — Implementation tracker](26-implementation-tracker.md) |
+| Module catalog and consumers | [27 — Module registry](27-module-registry.md) |
+| Per-entity action ownership | [28 — Ownership matrix](28-ownership-matrix.md) |
+| Navigation and shell behavior | [29 — Navigation blueprint](29-navigation-blueprint.md) |
+| Migration steps and verification | [30 — Migration and verification](30-migration-and-verification.md) |
 
 ---
 
@@ -1311,6 +1475,7 @@ Maps architecture components → functional modules → representative NFR requi
 | Version | Date | Author | Reviewer | Changes | Approval Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | — | Initial System Architecture draft for review | Pending review |
+| 1.1 | 2026-07-27 | Architecture (Clinexa planning) | — | Added Clinexa Ecosystem view (ARCH-170–173), Internal Platform contexts (CRM + Guardian), application-agnostic backend and platform-module principles (ARCH-160–166), Guardian client section (§4.4), ADRs ARCH-113–116, assumptions ARCH-132–134, constraints ARCH-151–154 | Pending review |
 
 ---
 

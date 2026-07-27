@@ -209,10 +209,38 @@ Clinexa exposes a **single modular-monolith Backend API** (`ARCH-028`) with an H
 | --- | --- | --- | --- |
 | **Public APIs** | Store guests (and unauthenticated browse) | None (rate-limited) | Published products, categories, CMS, blogs, Store search, moderated reviews, auth entry |
 | **Authenticated APIs** | Patients (Portal + Store checkout) | Patient session/token | Profile, cart merge, checkout finalize, orders, subscriptions, QST submit, documents, appointments, support, NTF prefs |
-| **CRM APIs** | Staff roles | Staff session/token + `PERM-CRM-020` | Consultations, pharmacy, fulfillment, inventory, support triage, catalog config, reports, admin |
+| **Staff APIs** | Staff roles, from either Internal Platform context (CRM or Guardian) | Staff session/token + the permission for the operation | Consultations, pharmacy, fulfillment, inventory, support triage, catalog config, reports, administration |
+| **Administrative / destructive APIs** | Staff roles holding the relevant destructive grant | Staff session/token + a **Class D** permission ([08 §4.2](08-role-permissions.md#42-destructive-permission-class-rbac-010)) | Delete, archive, restore, financial correction, administrative override, bulk cleanup, hard-delete procedure |
 | **Internal APIs** | Platform operators / probes | Network or service auth | Health live/ready |
 | **Worker APIs** | Background workers (`ARCH-015`) | Internal job trust; same domain services | Subscription renewals, NTF dispatch, report export, search reindex, low-stock alerts |
 | **Webhook endpoints** | PSP | Provider signature verification; not user JWT | Payment events → order/subscription state (`FR-PAY-002`) |
+
+> **Zones are permission scopes, not client identities.** A zone describes the credential and grants an endpoint demands, never which application may call it. The API authorizes the **principal**, so any authorized client reaching a staff or administrative endpoint with sufficient grants is served identically, and any client lacking them is refused identically (`ARCH-160`, `RBAC-011`, `DEV-022`). Context permissions (`PERM-CRM-020`, `PERM-GRD-001`) gate the Internal Platform *shells*; the API additionally requires the operation's own permission on every call.
+
+### 3.2a Destructive endpoints (Class D)
+
+Destructive operations are exposed in the Guardian context only (`ARCH-165`), but that is a **UI exposure rule**. On the API they are protected by permission, not by origin.
+
+| Rule | Statement |
+| --- | --- |
+| `API-020` | Every destructive endpoint requires an explicit Class D permission; no view, edit, manage, or publish grant implies one |
+| `API-021` | Authorization never reads a client-supplied application, context, or surface claim; a forged `Origin`, header, or referrer changes nothing |
+| `API-022` | Destructive endpoints fail closed: absent or unresolvable grants yield **403** `ERR-AUTHZ-001` |
+| `API-023` | Destructive endpoints are idempotency-aware and write an audit record with actor, target, scope, and justification where required |
+| `API-024` | Bulk cleanup requires a bounded, explicit selector; unbounded destructive scope is rejected with **422** |
+| `API-025` | Hard delete is not a routine endpoint; it follows the documented database procedure ([10](10-database-design.md)) under `PERM-ADM-034` |
+| `API-026` | Clinical records and audit logs have no delete endpoint outside retention policy execution |
+
+| Operation family | Permission | Notes |
+| --- | --- | --- |
+| User delete / archive / restore | `PERM-ADM-030`–`032` | Last-admin safeguard refuses the removal of the final administrator |
+| Bulk cleanup / hard-delete execution | `PERM-ADM-033`, `PERM-ADM-034` | Super Administrator; bounded scope; audited |
+| Order delete / archive / restore | `PERM-ORD-010`–`012` | Commerce and clinical history retained |
+| Order financial correction | `PERM-ORD-013` | Distinct from policy-scoped operational refund (`PERM-PAY-003`) |
+| Order administrative override | `PERM-ORD-014` | Never silently bypasses a clinical or payment gate; always audited |
+| Subscription delete / archive / restore | `PERM-SUB-010`–`012` | — |
+| Catalog / content / coupon delete | `PERM-PRD-010`, `PERM-CAT-010`, `PERM-CMS-010`, `PERM-BLG-010`, `PERM-CPN-010` | Refused where dependent history requires retention |
+| Report artifact purge | `PERM-RPT-010` | Retention-policy scoped |
 
 ### 3.3 Hard surface denies
 
@@ -223,6 +251,10 @@ Clinexa exposes a **single modular-monolith Backend API** (`ARCH-028`) with an H
 | Marketing/Content default-deny clinical notes and full QST answers | `FR-CRM-006`, OR-07 |
 | Support never clinically approves prescriptions | `FR-SUP-004`, `PERM-CRM-002` Doctor only |
 | Ops must not fulfill Rx before doctor + pharmacist gates | `FR-ORD-003`, `PERM-ORD-003` |
+| Patient tokens must not reach the Guardian context shell | `PERM-GRD-001` deny (`RBAC-009`) |
+| Destructive operations without an explicit Class D grant | 403 fail-closed (`API-020`, `API-022`) |
+| Administrative override or financial correction from an operational grant | `PERM-ORD-013`/`014` required; `PERM-PAY-003` is insufficient (`RBAC-034`) |
+| Clinical approval from an administrative permission | `PERM-CRM-002` Doctor only; no administrative grant substitutes (`RBAC-031`) |
 
 ### 3.4 Architecture diagram
 
@@ -230,7 +262,12 @@ Clinexa exposes a **single modular-monolith Backend API** (`ARCH-028`) with an H
 flowchart LR
   Store[StoreWeb] --> API[BackendAPIv1]
   Portal[PatientPortal] --> API
-  CRM[CRM] --> API
+  subgraph InternalPlatform[InternalPlatform]
+    CRM[CrmContext]
+    Guardian[GuardianContext]
+  end
+  CRM --> API
+  Guardian --> API
   PSP[PSP] -->|verifiedWebhooks| API
   Workers[BackgroundWorkers] --> Domain[DomainServices]
   API --> Domain
@@ -255,8 +292,10 @@ flowchart LR
 
 - **Store** is a thin public + commerce client; it never owns clinical approval messaging as “payment success = dispensed” (`FR-STO-006`).
 - **Patient Portal** composes patient-scoped modules only (`FR-PRT-001`–`006`).
-- **CRM** composes staff modules behind role permissions (`FR-CRM-001`–`007`).
+- **Internal Platform — CRM context** composes operational staff modules behind role permissions (`FR-CRM-001`–`007`).
+- **Internal Platform — Guardian context** composes administrative modules and is the only surface that renders destructive affordances ([25](25-guardian.md)).
 - Prescriptions are **not** a standalone FR module but are first-class API resources spanning ORD/CRM/QST/DOC.
+- No API module belongs to a composition surface. Modules are **platform modules** consumed by whichever client holds the grants (`ARCH-161`); adding a client adds no module ownership and forks no business rule.
 
 ---
 
@@ -297,7 +336,7 @@ Authentication **implementation** (token format, cookie flags, hashing) is owned
 ### 4.6 Session validation
 
 - `GET /v1/auth/session` (or equivalent) confirms active session and returns non-sensitive identity summary for clients.
-- Staff CRM shell requires `PERM-CRM-020`; Patient Portal shell requires Patient role (`PERM-PRT-010`).
+- The Internal Platform CRM context shell requires `PERM-CRM-020`; the Guardian context shell requires `PERM-GRD-001`; the Patient Portal shell requires Patient role (`PERM-PRT-010`). One staff session serves both Internal Platform contexts; switching context never re-authenticates and never widens grants.
 - Dual-role identities (if ever assigned) still re-resolve permissions server-side; never trust client permission lists for AuthZ.
 
 ---
@@ -331,7 +370,7 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 | Field | Detail |
 | --- | --- |
 | Purpose | Staff/patient user administration and role assignment |
-| Consumers | CRM Administrator; limited self via Profile |
+| Consumers | Guardian context (administrative lifecycle), CRM context (operational and clinical fields within scope); limited self via Profile |
 | Authorization | `PERM-ADM-001`/`002`; patients cannot list other users |
 | Primary Resources | `DB-001`, `DB-002`, `DB-005`, `DB-009` |
 | Referenced FRs | `FR-ADM-001`, `FR-ADM-004`, `FR-AUTH-004` |
@@ -350,8 +389,8 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Published catalog browse; Admin CRM catalog manage/publish |
-| Consumers | Store (read), CRM Admin (write) |
+| Purpose | Published catalog browse; administrative catalog manage and publish |
+| Consumers | Store (read published), Guardian context (write and publish) |
 | Authorization | `PERM-PRD-001` view published; `PERM-PRD-002` manage |
 | Primary Resources | `DB-011`–`DB-014`, `DB-015`–`DB-016` |
 | Referenced FRs | `FR-PRD-001`–`005`, `FR-STO-001`/`002`/`004` |
@@ -360,8 +399,8 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Category navigation and CRM configuration |
-| Consumers | Store, CRM Admin |
+| Purpose | Category navigation and administrative configuration |
+| Consumers | Store (read published), Guardian context (write and publish) |
 | Authorization | `PERM-CAT-001`/`002` |
 | Primary Resources | `DB-010`, `DB-014` |
 | Referenced FRs | `FR-CAT-001`–`004` |
@@ -431,8 +470,8 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 | Field | Detail |
 | --- | --- |
 | Purpose | Plans, patient subscriptions, cancel, renewal side effects |
-| Consumers | Portal, CRM Admin/Support, workers |
-| Authorization | `PERM-SUB-001`–`003` |
+| Consumers | Portal, CRM context (operational assist), Guardian context (plan and record administration), workers |
+| Authorization | `PERM-SUB-001`–`003`; destructive actions `PERM-SUB-010`–`012` |
 | Primary Resources | `DB-032`–`DB-034` |
 | Referenced FRs | `FR-SUB-001`–`005` |
 
@@ -510,8 +549,8 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Patient prefs; Admin templates; delivery is worker-driven |
-| Consumers | Portal, CRM Admin, workers |
+| Purpose | Patient preferences; administrative templates; delivery is worker-driven |
+| Consumers | Portal (own preferences), Guardian context (templates), workers |
 | Authorization | `PERM-NTF-001`–`003` |
 | Primary Resources | `DB-054`–`DB-056` |
 | Referenced FRs | `FR-NTF-001`–`004` |
@@ -580,9 +619,9 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Roles/permissions, workflow/catalog publish governance, audit |
-| Consumers | CRM Administrator |
-| Authorization | `PERM-ADM-001`–`010` |
+| Purpose | Roles/permissions, workflow/catalog publish governance, audit, destructive administrative operations |
+| Consumers | Administrator and Super Administrator, working in the Guardian context |
+| Authorization | `PERM-ADM-001`–`010`, `PERM-ADM-020`; destructive operations require Class D `PERM-ADM-030`–`034` (§3.2a) |
 | Primary Resources | `DB-002`–`DB-005`, `DB-021`, `DB-057` |
 | Referenced FRs | `FR-ADM-001`–`004`, `FR-CRM-007` |
 
@@ -591,7 +630,7 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 | Field | Detail |
 | --- | --- |
 | Purpose | Platform policy settings (oversell, review moderation defaults, NTF hooks) |
-| Consumers | CRM Administrator |
+| Consumers | Administrator and Super Administrator, working in the Guardian context |
 | Authorization | `PERM-SET-001`/`002` |
 | Primary Resources | `DB-058` |
 | Referenced FRs | `FR-SET-001`–`004` |
@@ -1379,6 +1418,8 @@ Async acceptance should return quickly (&lt; 2 s) with job status resources wher
 
 - Roles `ROLE-001`–`010` and permissions `PERM-*` from [08](08-role-permissions.md) are the AuthZ contract. `ROLE-010` is a normal RBAC role (includes `PERM-ADM-020`); it never bypasses AuthN/AuthZ.
 - Feature flags must not bypass clinical gates (`ARCH-149`).
+- Authorization is **consumer-independent**: the decision uses identity, roles, permissions, and object scope only. Application, context, and surface claims supplied by a client are never authorization inputs (`RBAC-011`, `API-021`).
+- Destructive operations require a segregated Class D grant and fail closed (§3.2a, `RBAC-010`).
 
 ### 12.3 Patient isolation
 
@@ -1395,6 +1436,7 @@ Async acceptance should return quickly (&lt; 2 s) with job status resources wher
 | Payments | No raw PAN; token vault via PSP |
 | Documents | ACL + audited download |
 | Audit logs | Admin only; append-only |
+| Destructive endpoints | Class D permission; bounded scope; audited actor, target, and scope (§3.2a) |
 
 ### 12.5 PHI handling
 
@@ -1414,7 +1456,7 @@ Async acceptance should return quickly (&lt; 2 s) with job status resources wher
 
 ### 12.8 Audit events
 
-Emit audit for: clinical decisions, pharmacy review, role/permission changes, settings, PHI document access, sensitive report exports, config publish (`FR-ADM-004`, `FR-DOC-004`, `DB-057`).
+Emit audit for: clinical decisions, pharmacy review, role/permission changes, settings, PHI document access, sensitive report exports, config publish (`FR-ADM-004`, `FR-DOC-004`, `DB-057`), and every Class D destructive operation including delete, archive, restore, financial correction, administrative override, bulk cleanup, and hard-delete execution (`API-023`).
 
 ### 12.9 Idempotency
 
@@ -1666,6 +1708,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Initial API design: principles, architecture, modules, endpoint catalog API-001–176, errors, versioning, performance, security, traceability | Draft for review |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Architectural appendix: §13.6 lifecycle classification, §13.7 idempotency matrix, §13.8 ownership matrix, §13.9 dependency flow, §13.10 HTTP status reference; status set to Approved — Implementation Ready | Approved — Implementation Ready |
+| 1.1 | 2026-07-27 | Platform Engineering | TBD | Consumer-agnostic zones (staff APIs replace CRM-labelled zone); new §3.2a destructive endpoints with `API-020`–`026` and Class D permission map; hard-deny rows for Guardian context and destructive grants; Internal Platform contexts in architecture diagram and composition surfaces; `PERM-GRD-001` in session validation; Administration/Settings consumers restated as Guardian-context roles; audit and authorization notes in §12 | Draft for review |
 
 ---
 
@@ -1679,6 +1722,8 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 - [12 — Authentication flow](12-authentication-flow.md) (forward)
 - [13 — Security](13-security.md) (forward)
 - [15 — Payment flow](15-payment-flow.md) (forward)
+- [18 — CRM architecture](18-crm.md) (operational context consumer)
+- [25 — Guardian architecture](25-guardian.md) (administrative context consumer)
 
 ---
 

@@ -21,6 +21,8 @@ export const Permissions = {
   CRM_PHARMACY_REVIEW: 'PERM-CRM-006',
   CRM_PHARMACY_READY: 'PERM-CRM-007',
   CRM_ACCESS_SHELL: 'PERM-CRM-020',
+  /** Guardian administrative context shell (`/guardian/*`). */
+  GRD_ACCESS_SHELL: 'PERM-GRD-001',
 
   PRT_VIEW_OWN_PROFILE: 'PERM-PRT-001',
   PRT_UPDATE_OWN_PROFILE: 'PERM-PRT-002',
@@ -230,8 +232,17 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.CRM_ACCESS_SHELL,
     module: 'CRM',
     name: 'Access CRM shell',
-    description: 'Enter the staff CRM application shell.',
+    description: 'Enter the CRM operational context shell (`/crm/*`).',
     resource: 'crm',
+    action: 'access_shell',
+  },
+  {
+    code: Permissions.GRD_ACCESS_SHELL,
+    module: 'GRD',
+    name: 'Access Guardian context',
+    description:
+      'Enter the Guardian administrative context shell (`/guardian/*`).',
+    resource: 'guardian',
     action: 'access_shell',
   },
   {

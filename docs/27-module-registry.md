@@ -94,9 +94,9 @@ Consumer keys are used in the registry tables below.
 | **Authentication** | Registration, sign-in, reset, session lifecycle | — (shared foundation) | Every client | Neither — shared platform foundation | All clients authenticate through the same flows; one staff session serves both Internal Platform contexts | None | `PERM-AUTH-001`–`003` | In delivery |
 | **Patient management** (`CRM-032`) | Staff view of patient records and case context | CRM | `CRM` | Operational | CRM staff read and update within need-to-know scope | None — patient record destruction is a Users administrative operation in Guardian | `PERM-CRM-001`, `PERM-CRM-010` | In delivery |
 | **Clinical review** (`CRM-034`) | Consultation queue, approve and decline decisions | CRM | `CRM` | Operational and clinical | Doctors decide; no other role and no other context may substitute | None | `PERM-CRM-002`–`003` | In delivery |
-| **Prescriptions** (`CRM-035`) | Prescription records spanning orders, questionnaires, and documents | CRM | `CRM`, `PRT` (status only), `SYS` | Operational and clinical | Doctors create through approval; pharmacists review; operations read fulfillment context; patients see status | None — clinical retention applies; no delete surface exists in any context | `PERM-CRM-002`–`004` | In delivery |
+| **Prescriptions** (`CRM-035`) | Prescription records spanning orders, questionnaires, and documents | CRM | `CRM`, `PRT` (status only), `SYS` | Operational and clinical | Doctors create through approval; pharmacists review; operations read fulfillment context; patients see status. **Not exposed in Guardian.** | None — clinical retention applies; no delete surface exists in any context | `PERM-CRM-002`–`004` | In delivery |
 | **Pharmacy** (`CRM-036`) | Pharmacist review and readiness | CRM | `CRM` | Operational and clinical | Pharmacists mark readiness after clinical approval | None | `PERM-CRM-004` | In delivery |
-| **Questionnaires** (`GRD-046`, `CRM-040`) | Definitions, versions, and submitted responses | Both | `GRD` (definitions), `CRM` (clinician case view), `PRT`, `STO` (purchase path), later `MOB` | Split — definitions administrative, responses clinical | Guardian authors and versions definitions; patients submit; clinicians read responses in case context | Delete of unbound definitions only; answered versions are retained | `PERM-QST-*`; deletion is Class D | Planned |
+| **Questionnaires** (`CRM-040`) | Definitions, versions, and submitted responses | CRM | `CRM` (definitions + clinician case view), `PRT`, `STO` (purchase path), later `MOB` | CRM-only Internal Platform UI | CRM authors/versions definitions and shows clinician case views; patients submit via Store/Portal; **Guardian has no nav or pages for this module** | Delete of unbound definitions only (CRM surface when implemented); answered versions are retained | `PERM-QST-*`; deletion is Class D | Planned |
 | **Appointments** (`GRD-057`, `CRM-041`) | Appointment types, slots, and bookings | Both | `GRD` (types and slots), `CRM` (staff scheduling), `PRT`, later `MOB` | Split — configuration administrative, scheduling operational | Guardian configures types and availability; CRM manages staff scheduling; patients book, cancel, and reschedule own appointments | Delete types | `PERM-APT-*`; type deletion is Class D | Planned |
 | **Documents** (`CRM-043`) | Clinical and commercial document storage and access | CRM | `CRM`, `PRT`, `SYS`, `GRD` (retention administration) | Operational, with administrative retention | CRM staff attach and read within case scope; patients download own documents; Guardian executes retention policy | Retention-policy deletion only; audit of access retained | `PERM-DOC-*`; retention execution is Class D | Planned |
 | **Support** (`CRM-044`) | Tickets, triage, and resolution | CRM | `CRM`, `PRT`, later `MOB` | Operational | Patients raise tickets; support triages and resolves; history retained on close | None | `PERM-SUP-*` | Planned |
@@ -113,7 +113,7 @@ Consumer keys are used in the registry tables below.
 | **Media library** (`GRD-039`) | Shared image and asset metadata | Guardian | `GRD`, `STO` | Administrative | Guardian uploads and organizes; Store and Guardian surfaces reference assets | Delete media assets | `PERM-CMS-002` scope; deletion is Class D | Future (Store-driven) |
 | **Homepage and FAQs** (`GRD-040`) | Storefront composition blocks | Guardian | `GRD`, `STO` | Administrative | Guardian composes; Store renders | Delete blocks | `PERM-CMS-002` | Planned |
 | **Reviews** (`GRD-041`) | Product review submission and moderation | Guardian (moderation) | `GRD`, `STO`, `PRT` | Split — submission patient-facing, moderation administrative | Patients submit; Guardian approves, rejects, and configures moderation defaults; Store shows moderated reviews | Delete reviews | `PERM-REV-001`–`002`; deletion is Class D | Planned |
-| **Reports** (`GRD-056`, `CRM-048`) | Operational and administrative reporting, exports | Both | `CRM`, `GRD`, `SYS` | Split — operational reports in CRM, administrative reports and exports in Guardian | Both contexts run role-scoped reports; Guardian purges artifacts | Report artifact purge | `PERM-RPT-*`; `PERM-RPT-010` (Class D) | Planned |
+| **Reports** (`CRM-048`; `GRD-056` deferred) | Operational and clinical-ops reporting, exports | CRM | `CRM`, `PRT`, `STO` (as applicable), later `MOB` | CRM-only Internal Platform UI | CRM runs role-scoped reports; **Guardian has no nav or pages for this module in foundation** | Report artifact purge (Class D; future Guardian platform tool, not a Reports nav) | `PERM-RPT-*`; `PERM-RPT-010` (Class D) | Planned |
 | **Analytics** | Aggregate marketing and platform metrics | Both | `GRD`, `CRM` | Administrative emphasis; PHI minimized | Read-only aggregates by role scope | None | `PERM-ANL-*` | Planned |
 | **Settings** (`GRD-047`) | Platform policy configuration | Guardian | `GRD`, `SYS` | Administrative | Guardian configures; the API and workers enforce | None — changes are audited, not destructive | `PERM-SET-001`–`002` | Planned |
 | **Feature flags** (`GRD-048`) | Capability toggles | Guardian | `GRD`, `SYS` | Administrative | Guardian toggles; flags never bypass clinical or payment gates (`ARCH-149`) | Delete flags | `PERM-SET-002` | Planned |
@@ -160,14 +160,15 @@ Every future module definition — whether a new Guardian module, a new CRM modu
 
 ## 7. Shared modules across contexts
 
-Four modules are surfaced in both Internal Platform contexts. They are the most common source of confusion, so their split is stated plainly here.
+Three modules are surfaced in both Internal Platform contexts. They are the most common source of confusion, so their split is stated plainly here.
 
 | Module | In CRM (operational) | In Guardian (administrative) | Never |
 | --- | --- | --- | --- |
 | **Users** | Find a patient, read case-relevant detail, update operational, clinical, or support fields within permission | Provision staff accounts, assign roles, edit administrative fields, delete, archive, restore, run bounded bulk cleanup | CRM deleting, archiving, or restoring a user; Guardian reading clinical notes as a matter of course |
 | **Orders** | Work the queue: advance states, fulfill gate-cleared orders, assist policy-scoped refunds and cancellations, read timeline and documents | Correct financial records, apply audited overrides, delete, archive, restore | CRM performing a financial correction or override; Guardian deciding clinical eligibility |
 | **Subscriptions** | Renew, pause, resume, assist a patient's operational request | Administer plans and records, delete, archive, restore | CRM deleting a subscription; Guardian using administrative access to bypass a clinical gate |
-| **Reports** | Run and export role-scoped operational reports | Run administrative reports, manage exports, purge artifacts | CRM purging artifacts; either context exporting PHI beyond role scope |
+
+**CRM-only Internal Platform modules** (not dual-mounted): Prescriptions, Questionnaires, Reports. Guardian must not list them in navigation.
 
 The same rule generalizes: **the record is one; the purpose is two**. Both contexts read the same truth through the same API, and the API authorizes the principal in both cases (`REG-005`, `RBAC-011`).
 
@@ -196,6 +197,8 @@ A module that skips step 5 or step 8 is not a module; it is an unguarded surface
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Module Registry: rules `REG-001`–`009`, consumer catalog with extension keys, registry entries for commerce, clinical, content, and platform modules, Module Blueprint standard, shared-module split across contexts, module addition procedure |
+| 1.1 | 2026-07-28 | Platform Engineering | Questionnaires and Prescriptions recorded as CRM-only Internal Platform context; Guardian no longer a consumer of staff UI for those modules |
+| 1.2 | 2026-07-28 | Platform Engineering | Reports recorded as CRM-only Internal Platform UI; shared dual-mount modules reduced to Users, Orders, Subscriptions |
 
 ---
 

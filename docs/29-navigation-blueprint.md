@@ -108,9 +108,9 @@ Initial mapping from the current foundation catalog:
 | `/users` | `/guardian/users` |
 | `/orders` | `/crm/orders` (administrative order surfaces at `/guardian/orders`) |
 | `/prescriptions` | `/crm/prescriptions` |
-| `/questionnaires` | `/crm/questionnaires` (configuration at `/guardian/questionnaires`) |
+| `/questionnaires` | `/crm/questionnaires` |
 | `/activity-log` | `/guardian/activity-log` |
-| `/reports` | `/crm/reports` (administrative reports at `/guardian/reports`) |
+| `/reports` | `/crm/reports` |
 | `/settings` | `/guardian/settings` |
 | `/administration` | `/guardian/administration` |
 
@@ -175,15 +175,15 @@ Guardian uses **grouped enterprise navigation**. Group membership comes from the
 | `content` | Content | Content and media administration | Pages, blogs, media library, homepage, FAQs, review moderation |
 | `users` | Users | Identity administration | Users, roles and permissions |
 | `marketing` | Marketing | Growth configuration | Coupons, campaigns, templates |
-| `platform` | Platform | Configuration and governance | Settings, feature flags, integrations, questionnaires and workflows, appointment types, audit log, activity log, system logs, data cleanup |
+| `platform` | Platform | Configuration and governance | Settings, feature flags, integrations, appointment types, audit log, activity log, system logs, data cleanup |
 | `security` | Security | Account and session security | Future (`GRD-058`) |
 | `developer` | Developer | Programmatic access | API keys, webhooks |
-| `analytics` | Analytics | Administrative reporting | Administrative reports and exports |
+| `analytics` | Analytics | Deferred | Reports are CRM-only (`CRM-048`); no Guardian Analytics group in foundation |
 | `support` | Support | Administrative visibility into support operations | Optional; CRM owns triage |
 
 | ID | Rule |
 | --- | --- |
-| NAV-060 | Group order is stable and deliberate: Dashboard, Commerce, Content, Users, Marketing, Platform, Security, Developer, Analytics, Support |
+| NAV-060 | Group order is stable and deliberate: Dashboard, Commerce, Content, Users, Marketing, Platform, Security, Developer, Support (Analytics deferred — Reports live under CRM only) |
 | NAV-061 | A new Guardian module joins an existing group where one fits. Creating a group requires a Module Registry update and a note in the Implementation Tracker |
 | NAV-062 | Group labels are nouns describing a domain, never verbs or role names |
 | NAV-063 | The module catalog evolves with Store and Portal requirements (SEO, search configuration, merchandising, landing pages); those arrive as entries inside existing groups wherever possible (`GRD-013`) |
@@ -339,6 +339,7 @@ Detailed test cases live in [22 — Testing strategy](22-testing-strategy.md); p
 | Version | Date | Author | Reviewer | Changes | Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Initial Navigation Blueprint: philosophy, routing contract and legacy redirects, context-aware catalog model, sidebar capabilities, Guardian groups, CRM ordering, breadcrumbs, visibility rules, context switching, responsive behavior, future capabilities, anti-patterns, verification (`NAV-001`–`NAV-131`) | Draft for review |
+| 1.1 | 2026-07-28 | Platform Engineering | Pending | Legacy `/questionnaires` redirects only to CRM; Platform group no longer lists questionnaires | Draft for review |
 
 ---
 

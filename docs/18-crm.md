@@ -307,7 +307,7 @@ Guardian (`ARCH-172`) is the **administrative** context of the same application.
 | Aspect | CRM (`/crm/*`) | Guardian (`/guardian/*`) |
 | --- | --- | --- |
 | Lifecycle | Operational: process, review, fulfill, support | Administrative: provision, configure, govern, correct |
-| Shared entities (Users, Orders, Subscriptions, Reports) | Operational, clinical, and support fields | Administrative fields, financial corrections, lifecycle state |
+| Shared entities (Users, Orders, Subscriptions) | Operational, clinical, and support fields | Administrative fields, financial corrections, lifecycle state |
 | Destructive operations | Never exposed | Sole exposure point (`ARCH-165`) |
 | Navigation model | Role-scoped operational queues | Grouped enterprise navigation (Commerce, Content, Users, Marketing, Platform, …) |
 | Session and shell | Same session, same shell, same design tokens | Same session, same shell, same design tokens |
@@ -329,7 +329,7 @@ Guardian (`ARCH-172`) is the **administrative** context of the same application.
 | Inventory | `CRM-037` | CRM operational balances; Guardian policy/master data | Oversell policy is a Guardian setting |
 | Products | `CRM-038` | Guardian | Catalog authoring and publish |
 | Categories | `CRM-039` | Guardian | Catalog taxonomy |
-| Questionnaires | `CRM-040` | Both | Guardian owns definitions, versions, bindings; CRM owns clinician case view |
+| Questionnaires | `CRM-040` | CRM | CRM-only Internal Platform surface: clinician case view and definition/configuration |
 | Appointments | `CRM-041` | CRM operational; Guardian types/slots configuration | Scheduling only |
 | Subscriptions | `CRM-042` | Both | CRM renew/pause/resume; Guardian plans and administrative lifecycle |
 | Documents | `CRM-043` | CRM | Case-scoped attachment |
@@ -337,7 +337,7 @@ Guardian (`ARCH-172`) is the **administrative** context of the same application.
 | Coupons | `CRM-045` | Guardian | Marketing administration |
 | CMS (pages, blogs, review moderation) | `CRM-046` | Guardian | Content administration |
 | Notifications (templates) | `CRM-047` | Guardian | Template administration |
-| Reports | `CRM-048` | Both | CRM operational reports; Guardian administrative reports and exports |
+| Reports | `CRM-048` | CRM | CRM-only Internal Platform surface for operational and clinical-ops reports |
 | Audit Logs | `CRM-049` | Guardian | Governance surface |
 | System Settings | `CRM-050` | Guardian | Platform policy |
 
@@ -365,7 +365,7 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 | CRM-037 | Inventory | Both | Must | `FR-INV-001`–`005`, `FR-CRM-005` | `JRN-016`; `OR-12` |
 | CRM-038 | Products | Guardian | Must | `FR-PRD-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
 | CRM-039 | Categories | Guardian | Must | `FR-CAT-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
-| CRM-040 | Questionnaires | Both | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | Guardian config; doctor case view |
+| CRM-040 | Questionnaires | CRM | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | CRM-only; case view and definitions |
 | CRM-041 | Appointments | Both | Should | `FR-APT-002`/`003` | `JRN-022` |
 | CRM-042 | Subscriptions | Both | Must | `FR-SUB-003`/`004`, `OR-10` | `JRN-020` assist |
 | CRM-043 | Documents | CRM | Must | `FR-DOC-003`/`004` | Clinical/ops attach |
@@ -373,7 +373,7 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 | CRM-045 | Coupons | Guardian | Should | `FR-CPN-001`/`003` | `JRN-032` |
 | CRM-046 | CMS | Guardian | Should | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003` | `JRN-033`; moderation |
 | CRM-047 | Notifications | Guardian | Must | `FR-NTF-002` | Admin templates |
-| CRM-048 | Reports | Both | Should | `FR-RPT-*`, `FR-ANL-*` | Ops/clinical-ops/marketing-safe |
+| CRM-048 | Reports | CRM | Should | `FR-RPT-*`, `FR-ANL-*` | Ops/clinical-ops/marketing-safe; CRM-only Internal Platform UI |
 | CRM-049 | Audit Logs | Guardian | Must | `FR-ADM-004` | Admin accountability |
 | CRM-050 | System Settings | Guardian | Must | `FR-SET-001`–`004` | `JRN-031`; publish/oversell policy |
 
@@ -461,9 +461,9 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 
 | Aspect | Detail |
 | --- | --- |
-| Responsibilities | Admin: definitions, versions, bindings, consultation workflow config. Clinician: full answers in case context |
+| Responsibilities | Definitions, versions, bindings, consultation workflow config, and clinician full answers in case context — all on CRM |
 | Ownership | Admin config (`FR-QST-001`/`002`, `FR-CRM-007`); Doctor (and Pharmacist scoped) case view (`FR-QST-005`) |
-| Boundaries | Marketing/Content denied full answers by default (`FR-CRM-006`); prior versions with answers immutable |
+| Boundaries | **CRM-only Internal Platform UI** — not navigated or hosted under Guardian. Marketing/Content denied full answers by default (`FR-CRM-006`); prior versions with answers immutable |
 
 ### 3.13 Appointments (`CRM-041`)
 
@@ -809,7 +809,7 @@ CRM consumes documented APIs only ([11](11-api-design.md)). CRM must not invent 
 | Inventory | `API-105`–`109` | Balances, adjust, movements, low-stock |
 | Products | `API-021`–`030` | Admin products/variants/media/publish |
 | Categories | `API-033`–`037` | Admin categories publish |
-| Questionnaires / workflows | `API-046`–`052`, `API-095`–`096` | Clinician answers view; Admin definitions/bindings/workflows |
+| Questionnaires / workflows | `API-046`–`052`, `API-095`–`096` | Definitions/bindings and clinician answers view — CRM context only |
 | Appointments | `API-120`–`124` | Staff manage; Admin types/slots |
 | Documents | `API-113` | Staff upload/attach |
 | Support | `API-129`–`132` | Triage, reply, resolve |
@@ -1103,6 +1103,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.1 | 2026-07-27 | Platform Engineering | Pending | Application Shell SoT (§4); ROLE-010 / PERM-ADM-020; rewrite CRM-056; renumber sections | Draft for review |
 | 1.2 | 2026-07-27 | Platform Engineering | Pending | Administrator default business-module access; Super Admin platform-only exclusivity | Draft for review |
 | 1.3 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Re-scoped CRM as the Internal Platform **operational** context: administrative modules and all destructive operations reassigned to Guardian (§2.8 relocation table), context column added to the module map, shell section generalized to the shared Internal Platform shell with the Application Switcher, context-aware routing/navigation controls (`CRM-160`–`CRM-167`, `CRM-152`–`CRM-153`) | Draft for review |
+| 1.4 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`CRM-040`) are CRM-only Internal Platform UI (definitions + case view); not dual-mounted with Guardian | Draft for review |
 
 ---
 

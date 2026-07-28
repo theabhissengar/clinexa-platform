@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: publicEnv.appName,
   description:
-    "Staff CRM and operational control plane for the Clinexa healthcare platform.",
+    "Clinexa Internal Platform — CRM and Guardian contexts for staff operations and platform administration.",
 };
 
 export default function RootLayout({

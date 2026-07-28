@@ -66,8 +66,8 @@ Current foundation routes and their targets:
 | `/users` | `/guardian/users` | User lifecycle is administrative (`GRD-042`) |
 | `/orders` | `/crm/orders` | Order work is operational; administrative order surfaces live at `/guardian/orders` |
 | `/prescriptions` | `/crm/prescriptions` | Clinical and operational only |
-| `/questionnaires` | `/crm/questionnaires` | Clinician case view; definitions at `/guardian/questionnaires` |
-| `/reports` | `/crm/reports` | Operational reporting; administrative reporting at `/guardian/reports` |
+| `/questionnaires` | `/crm/questionnaires` | CRM-only (definitions and case view) |
+| `/reports` | `/crm/reports` | Reports are CRM-only |
 | `/activity-log` | `/guardian/activity-log` | Governance surface |
 | `/settings` | `/guardian/settings` | Platform configuration |
 | `/administration` | `/guardian/administration` | Platform administration |

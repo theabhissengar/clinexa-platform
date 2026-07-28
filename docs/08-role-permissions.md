@@ -583,7 +583,8 @@ The matrix above answers *which role* may perform an action. This table answers 
 | Subscriptions | Both | Both | Guardian (administrative), CRM (operational: renew, pause, resume) | Guardian only | `PERM-SUB-010`–`012` |
 | Products, Categories, CMS, Blogs, Coupons | Guardian | Both (published content readable from Store) | Guardian | Guardian only | `PERM-PRD/CAT/CMS/BLG/CPN-010` |
 | Prescriptions, Clinical notes | CRM | CRM | CRM | Neither — clinical records are retained, never deleted | `GRD-020` |
-| Reports | Both (role-scoped runs) | Both | — | Guardian only (artifact purge, `PERM-RPT-010`) | — |
+| Questionnaires (definitions and case view) | CRM | CRM | CRM | Unbound definition delete only when implemented (CRM); answered versions retained | `PERM-QST-*` |
+| Reports | CRM (role-scoped runs) | CRM | — | Guardian only when implemented (artifact purge, `PERM-RPT-010`; not via a Reports nav in foundation) | — |
 | Settings, Roles, Audit logs | Guardian | Guardian | Guardian | Guardian only, audit logs never deleted outside retention | `PERM-ADM-020` |
 
 Full entity-by-consumer ownership, including Store and Patient Portal columns, lives in the [Ownership Matrix](28-ownership-matrix.md).
@@ -908,6 +909,7 @@ flowchart TB
 | 1.2 | 2026-07-27 | Platform Engineering | — | Introduce ROLE-010 Super Administrator and PERM-ADM-020 (Administration Access); clarify no AuthN/AuthZ/guard/permission bypass | Draft for review |
 | 1.3 | 2026-07-27 | Platform Engineering | — | Administrator default business-module access (incl. Prescriptions); Super Admin platform-only exclusivity | Draft for review |
 | 1.4 | 2026-07-27 | Platform Engineering | — | Internal Platform context RBAC: `PERM-GRD-001` Guardian context access, `RBAC-009`–`011` principles, segregated destructive **Class D** dictionary (`PERM-ADM-030`–`034`, `PERM-ORD-010`–`014`, `PERM-SUB-010`–`012`, `PERM-PRD/CAT/CMS/BLG/CPN/RPT-010`), §4.1–4.2 context and Class D definitions, §6.1 context ownership of CRUD, SoD rules `RBAC-031`–`036`, hard-deny and screen-matrix context notes | Draft for review |
+| 1.5 | 2026-07-28 | Platform Engineering | — | Prescriptions and Questionnaires are CRM-only Internal Platform surfaces; screen-matrix and §6.1 updated | Draft for review |
 
 ---
 
@@ -915,7 +917,7 @@ flowchart TB
 
 UI/screen access derived from §5 Permission Matrix and §3 Role Catalog. This matrix is a **navigation affordance guide**; the Backend API remains the authoritative enforcement point (`FR-AUTH-004`, `RBAC-086`).
 
-> **Context note.** Internal Platform screens live in either the CRM context (`/crm/*`, `PERM-CRM-020`) or the Guardian context (`/guardian/*`, `PERM-GRD-001`); §6.1 records which context owns each entity's actions. Administrative screens—Products, Categories, CMS, Blogs, Coupons, Questionnaire definitions, Users & Roles, Settings, Audit Logs—render only in Guardian, so a ✓ for Marketing, Content, Admin, or Super Admin on those rows is contingent on `PERM-GRD-001`. Destructive affordances never render on a CRM screen regardless of the marks below.
+> **Context note.** Internal Platform screens live in either the CRM context (`/crm/*`, `PERM-CRM-020`) or the Guardian context (`/guardian/*`, `PERM-GRD-001`); §6.1 records which context owns each entity's actions. Administrative screens—Products, Categories, CMS, Blogs, Coupons, Users & Roles, Settings, Audit Logs—render only in Guardian (contingent on `PERM-GRD-001`). **Prescriptions and Questionnaires (including definitions) are CRM-only** and never appear under `/guardian/*`. Destructive affordances never render on a CRM screen regardless of the marks below.
 
 ### Legend
 

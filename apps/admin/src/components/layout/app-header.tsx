@@ -1,14 +1,15 @@
 "use client";
 
 import { AppBreadcrumbs } from "@/components/layout/app-breadcrumbs";
+import { ApplicationSwitcher } from "@/components/layout/application-switcher";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { UserMenu } from "@/components/layout/user-menu";
-import { VendorSwitcher } from "@/components/layout/vendor-switcher";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 
 /**
  * Permanent application header — owns chrome slots only.
+ * Shared by CRM and Guardian (UI-011).
  */
 export function AppHeader() {
   return (
@@ -19,7 +20,7 @@ export function AppHeader() {
         <AppBreadcrumbs />
       </div>
       <div className="flex items-center gap-1.5">
-        <VendorSwitcher />
+        <ApplicationSwitcher />
         <ThemeToggle />
         <UserMenu />
       </div>

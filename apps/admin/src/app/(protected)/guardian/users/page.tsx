@@ -2,16 +2,19 @@
 
 import { Users } from "lucide-react";
 
-import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
+import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
 
-export default function UsersPage() {
+/**
+ * Guardian Users — Create / View / Edit / Delete / Archive / Restore.
+ */
+export default function GuardianUsersPage() {
   return (
     <RequirePagePermission permission={Permissions.ADM_MANAGE_USERS}>
       <ModuleComingSoon
         title="Users"
-        description="User Management will be delivered in a future phase."
+        description="Administrative user lifecycle: create, view, edit, delete, archive, and restore. Destructive actions are Class D gated and never appear in CRM."
         icon={Users}
       />
     </RequirePagePermission>

@@ -146,7 +146,6 @@ Define the Guardian context so that:
 | Users | Full administrative lifecycle: create, edit administrative fields, role assignment, delete, archive, restore | Users/RBAC persistence, last-admin safeguard, audit (`FR-ADM-001`, `FR-ADM-002`) |
 | Orders (administrative) | Administrative detail, exports, reconciliation, refunds as corrections, overrides, delete/archive/restore | Lifecycle, payment integrity, idempotency, audit (`FR-ORD-*`, `FR-PAY-003`) |
 | Subscriptions (administrative) | Plan configuration, administrative lifecycle, delete/archive/restore | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`) |
-| Questionnaires and workflows | Definitions, versions, bindings, consultation workflow configuration | Versioning immutability and binding validation (`FR-QST-001`/`002`, `FR-CRM-007`) |
 | Platform | Settings, feature flags, taxes, shipping, payment providers and keys, webhooks, integrations, API keys | Server-applied settings; secrets never returned to clients (`FR-SET-*`, `SEC-*`) |
 | Governance | Audit trail, activity, system logs, administrative reports and exports | Append-only audit; export AuthZ and PHI minimization (`FR-ADM-004`, `FR-RPT-*`) |
 | Destructive operations | The only UI that renders them | Guardian-owned permission enforcement on every call (§7) |
@@ -182,7 +181,7 @@ Define the Guardian context so that:
 | Aspect | Guardian | Patient Portal |
 | --- | --- | --- |
 | Orders, subscriptions, documents | Administrative lifecycle and corrections | Own-record visibility and policy-scoped self-service |
-| Questionnaires | Definitions and bindings | Patient submission and status |
+| Questionnaires | Not a Guardian Internal Platform surface — CRM owns staff UI; Store/Portal consume patient paths | Patient submission and status |
 | Access | Staff only | Patient only |
 
 **GRD-019** — Patient-facing surfaces never receive administrative or destructive affordances, regardless of the underlying platform module.
@@ -287,7 +286,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-043 | Roles and permissions | Users | No | `FR-ADM-002` | Delete custom role assignments |
 | GRD-044 | Coupons | Marketing | No | `FR-CPN-001` | Delete, archive |
 | GRD-045 | Campaigns and templates | Marketing | No | `FR-NTF-002` | Delete templates |
-| GRD-046 | Questionnaires and workflows | Platform | Shared (CRM owns clinician case view) | `FR-QST-001`/`002`, `FR-CRM-007` | Delete unbound definitions only |
+| GRD-046 | Questionnaires and workflows | — | **No — CRM-only Internal Platform UI** | `FR-QST-001`/`002`, `FR-CRM-007` | Definitions and case view live under `/crm/questionnaires` only; Guardian does not navigate or expose this module |
 | GRD-047 | Settings | Platform | No | `FR-SET-001`–`004` | — (changes are audited, not destructive) |
 | GRD-048 | Feature flags | Platform | No | `FR-SET-*`; `ARCH-149` | Delete flags |
 | GRD-049 | Payment providers | Platform | No | `FR-PAY-*` | Rotate/delete credentials |
@@ -297,7 +296,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-053 | Audit log | Platform | No | `FR-ADM-004` | None — append-only |
 | GRD-054 | Activity log | Platform | No | `FR-ADM-004` | None |
 | GRD-055 | System logs | Platform | No | `NFR-074`–`082` | Retention-policy purge only |
-| GRD-056 | Administrative reports and exports | Analytics | Shared (CRM owns operational reports) | `FR-RPT-*`, `FR-ANL-*` | Report-job artifact cleanup |
+| GRD-056 | Administrative reports and exports | Analytics | **CRM-only Internal Platform UI** (`CRM-048`); Guardian has no Reports nav in foundation | `FR-RPT-*`, `FR-ANL-*` | Report-job artifact cleanup (Class D; no dedicated Analytics nav until later) |
 | GRD-057 | Appointment types and slots | Platform | Shared (CRM owns staff scheduling views) | `FR-APT-002`/`003` | Delete types |
 | GRD-058 | Security (future) | Security | No | Deferred (§14) | Session revocation, device removal |
 | GRD-059 | Vendor management (future) | Platform | No | Deferred | Deferred |
@@ -310,7 +309,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | Products / Categories (`GRD-031`/`032`) | Unsafe Rx configurations are blocked at publish (`OR-14`); Store shows published state only |
 | Orders administration (`GRD-034`) | Operational refund assist and policy cancel remain in CRM under existing support FRs; **financial corrections, administrative overrides, archive, delete, and restore are Guardian-only** |
 | Users administration (`GRD-042`) | Last-admin safeguard applies; role changes bump session/token version; deletion is soft by default (`GRD-007`) |
-| Questionnaires (`GRD-046`) | Versions bound to submitted answers are immutable and never deletable |
+| Questionnaires (`GRD-046`) | **CRM-only Internal Platform UI.** Definitions, bindings, and clinician case view are under `/crm/questionnaires`. Guardian does not list or host this module. Versions bound to submitted answers remain immutable and never deletable in the API. |
 | Audit / activity logs (`GRD-053`/`054`) | Guardian can query but never mutate; retention ≥ 1 year (`SEC-036`) |
 | Data cleanup (`GRD-060`) | Highest-risk module: requires the strongest permission grant, explicit confirmation, and audit; scope is always bounded and previewable before execution |
 | Security (`GRD-058`) | Deferred (§14); architecture must not preclude it |
@@ -328,10 +327,10 @@ Guardian navigation uses **grouped enterprise navigation**. Full behavior—nest
 | Content | Content and media administration | `GRD-037`–`GRD-041` |
 | Users | Identity administration | `GRD-042`, `GRD-043` |
 | Marketing | Growth configuration | `GRD-044`, `GRD-045` |
-| Platform | Configuration and governance | `GRD-046`–`GRD-050`, `GRD-053`–`GRD-055`, `GRD-057`, `GRD-059`, `GRD-060` |
+| Platform | Configuration and governance | `GRD-047`–`GRD-050`, `GRD-053`–`GRD-055`, `GRD-057`, `GRD-059`, `GRD-060` |
 | Security (future) | Account and session security | `GRD-058` |
 | Developer | Programmatic access | `GRD-051`, `GRD-052` |
-| Analytics | Administrative reporting | `GRD-056` |
+| Analytics | Deferred — Reports live under CRM only (`CRM-048`); no Guardian Analytics group in foundation | — |
 | Support | Administrative visibility into support operations, if required | — (CRM owns triage) |
 
 **GRD-070** — Group membership is metadata on the navigation catalog entry, not a component hierarchy. Adding a module means adding an entry, a page, and a permission gate.
@@ -431,10 +430,10 @@ These are **authoritative product rules** for the Internal Platform. Cross-appli
 | Delete | Yes | **No — delete remains Guardian-only** |
 | Archive / restore | Yes | No |
 
-### 6.4 Reports and other shared modules
+### 6.4 Reports (CRM-only) and Guardian-only modules
 
-- Both contexts may view and run role-scoped reports for their own plane.
-- Destructive report-job cleanup and administrative exports follow Guardian permissions.
+- Reports (`CRM-048`) are a **CRM-only** Internal Platform surface. Guardian does not list Analytics or Reports in foundation navigation.
+- Report-job artifact purge (`PERM-RPT-010`) remains a Class D capability for a later Guardian platform tool if needed — not a dual-mounted Reports module.
 - Catalog, content, marketing, and platform configuration entities are Guardian-only for all CRUD actions; CRM has no create, edit, or delete path to them.
 
 ---
@@ -539,13 +538,13 @@ Guardian consumes documented APIs only ([11](11-api-design.md)); it never invent
 | Auth | `API-004`–`008` | Shared staff session (`AUTH-027`) |
 | Users / roles / audit | `API-009`–`015`, `API-168`–`171` | Administrative user lifecycle, role assignment, audit query |
 | Products / categories / media | `API-021`–`037` | Catalog authoring and publish |
-| Questionnaires / workflows / plans | `API-046`–`052`, `API-095`–`096`, `API-172`–`174` | Definitions, bindings, workflow and plan configuration |
+| Plans / workflows | `API-095`–`096`, `API-172`–`174` | Plan and consultation workflow configuration (questionnaire staff UI is CRM-only) |
 | Orders / refunds / subscriptions | `API-072`–`076`, `API-067`, `API-083`–`087` | Administrative orders, corrections, subscription administration |
 | Inventory | `API-105`–`109` | Policy and administrative adjustment |
 | Coupons | `API-143`–`147` | Marketing configuration |
 | CMS / blogs / reviews | `API-150`–`160`, `API-139`–`141` | Content authoring, publish, moderation |
 | Notifications | `API-135`–`136` | Template administration |
-| Reports / analytics | `API-161`–`167` | Administrative reports and exports |
+| Reports / analytics | — (CRM-only UI; `API-161`–`167` via CRM when delivered) | No Guardian Reports nav in foundation |
 | Settings | `API-175`–`176` | Platform settings |
 | Appointments | `API-120`–`124` | Types and slot configuration |
 
@@ -643,7 +642,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 3. Context-tag the navigation catalog and add group metadata.
 4. Add `PERM-GRD-001` and the Class D destructive permissions; grant them narrowly.
 5. Gate administrative and destructive API endpoints on the new permissions.
-6. Dual-mount shared modules (Users, Orders, Subscriptions, Reports) with distinct action sets per context.
+6. Dual-mount shared modules (Users, Orders, Subscriptions) with distinct action sets per context. Reports, Prescriptions, and Questionnaires are CRM-only.
 7. Replace the Vendor Switcher placeholder with the Application Switcher.
 8. Update the Module Registry consumers and Ownership Matrix columns for Store/Portal readiness.
 9. Verify visual unity, context routing, RBAC boundaries, and backend agnosticism.
@@ -671,6 +670,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | Version | Date | Author | Reviewer | Changes | Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Initial Guardian architecture: context boundary, modules (`GRD-030`–`GRD-060`), navigation groups, `/guardian/*` routing and module page hierarchy, CRUD product rules, destructive-operation ownership and enforcement, shared shell rules, security posture, future Security area, Store/Portal dependencies, migration and traceability (`GRD-001`–`GRD-160`) | Draft for review |
+| 1.1 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`GRD-046`) and Prescriptions are not Guardian Internal Platform surfaces; staff UI is CRM-only | Draft for review |
 
 ---
 

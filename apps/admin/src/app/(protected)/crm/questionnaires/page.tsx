@@ -2,11 +2,15 @@
 
 import { ClipboardList } from "lucide-react";
 
-import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
+import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
 
-export default function QuestionnairesPage() {
+/**
+ * CRM Questionnaires — CRM-only Internal Platform surface.
+ * Covers clinician case view and definition/configuration (no Guardian nav).
+ */
+export default function CrmQuestionnairesPage() {
   return (
     <RequirePagePermission
       permission={[
@@ -16,7 +20,7 @@ export default function QuestionnairesPage() {
     >
       <ModuleComingSoon
         title="Questionnaires"
-        description="Questionnaires management will be delivered in a future phase."
+        description="CRM-only module: clinician case views and questionnaire definition/configuration. Not exposed in Guardian."
         icon={ClipboardList}
       />
     </RequirePagePermission>

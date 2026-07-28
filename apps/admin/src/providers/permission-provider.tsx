@@ -22,6 +22,7 @@ type PermissionContextValue = {
   canAny: (permissions: readonly (PermissionCode | string)[]) => boolean;
   hasRole: (role: RoleCode | string) => boolean;
   hasCrmShellAccess: boolean;
+  hasGuardianShellAccess: boolean;
 };
 
 const PermissionContext = createContext<PermissionContextValue | null>(null);
@@ -50,6 +51,7 @@ export function PermissionProvider({ children }: PermissionProviderProps) {
       canAny: (required) => required.some((p) => permissionSet.has(p)),
       hasRole: (role) => roleSet.has(role),
       hasCrmShellAccess: can(Permissions.CRM_ACCESS_SHELL),
+      hasGuardianShellAccess: can(Permissions.GRD_ACCESS_SHELL),
     };
   }, [user]);
 

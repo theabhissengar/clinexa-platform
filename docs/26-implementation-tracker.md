@@ -88,10 +88,10 @@ Every phase record in §5 carries these fields.
 | --- | --- | --- | --- |
 | **P0** | Ecosystem and terminology established across planning documents | Complete | — |
 | **P1** | Navigation Blueprint and context-aware navigation catalog model | Complete (design) | P0 |
-| **P2** | Context prefix routing (`/crm/*`, `/guardian/*`) and the Application Switcher | Not started | P1 |
+| **P2** | Context prefix routing (`/crm/*`, `/guardian/*`) and the Application Switcher | Complete | P1 |
 | **P3** | RBAC: Guardian context access and the segregated destructive permission class | Complete (design) | P0 |
-| **P4** | CRM relocated under `/crm/*` with operational scope only | Not started | P2, P3 |
-| **P5** | Guardian module skeletons under `/guardian/*` | Not started | P2, P3, P4 |
+| **P4** | CRM relocated under `/crm/*` with operational scope only | Complete (foundation placeholders) | P2, P3 |
+| **P5** | Guardian module skeletons under `/guardian/*` | In progress | P2, P3, P4 |
 | **P6** | API enforcement for destructive operations | Not started | P3 |
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
@@ -139,16 +139,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Introduce `/crm/*` and `/guardian/*` as first-class route prefixes and replace the Vendor Switcher placeholder with a permission-aware Application Switcher |
-| **Status** | Not started |
-| **Owner** | TBD |
-| **Branch** | — |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/guardian-foundation` |
 | **PR** | — |
 | **Dependencies** | P1; open decision `DEC-001` (default post-login context) |
 | **Scope** | Route groups for both prefixes in `apps/admin`; context resolution from pathname; `nav-config` context tagging; legacy path redirects per [29 §2.3](29-navigation-blueprint.md); Application Switcher in the header; context-scoped breadcrumb roots; route guards for `PERM-CRM-020` and `PERM-GRD-001` |
 | **Architecture changes** | Implements `ARCH-116`, `GRD-072`–`074`, `NAV-010`–`021`, `NAV-100`–`110` |
-| **Documentation updates** | [29](29-navigation-blueprint.md) if mappings change; `apps/admin/README.md`; [21](21-development-guidelines.md) if conventions shift |
-| **Notes** | Switching context must reuse the session. A second login, a lost theme, or a reset shell state is a defect, not a trade-off |
-| **Verification** | Legacy paths redirect once, without loops; a principal lacking `PERM-GRD-001` receives no Guardian navigation and is refused every `/guardian/*` route; a principal lacking `PERM-CRM-020` is refused every `/crm/*` route; the switcher hides contexts the principal cannot enter; deep links land in the correct context after login |
+| **Documentation updates** | [26](26-implementation-tracker.md) (this record); `apps/admin/README.md` structure |
+| **Notes** | Foundation delivered on `feature/guardian-foundation`. Default landing follows `DEC-001` recommendation (role-based: admin/marketing/content → Guardian; clinical/ops → CRM). `PERM-GRD-001` added to API permission dictionary and granted to Marketing, Content, Administrator, and Super Administrator — re-seed required after merge. Vendor Switcher removed; Application Switcher is the header control. Module bodies remain placeholders (`ModuleComingSoon`). |
+| **Verification** | Legacy paths redirect once via `next.config` redirects; context layouts refuse `/crm/*` without `PERM-CRM-020` and `/guardian/*` without `PERM-GRD-001`; switcher lists only accessible contexts; `/` resolves to role-based default landing; typecheck and lint pass |
 
 ### P3 — RBAC: context access and destructive class
 
@@ -171,32 +171,32 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Relocate CRM screens under the CRM context prefix and remove administrative and destructive affordances from them |
-| **Status** | Not started |
-| **Owner** | TBD |
-| **Branch** | — |
+| **Status** | Complete (foundation placeholders) |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/guardian-foundation` |
 | **PR** | — |
 | **Dependencies** | P2, P3 |
 | **Scope** | Move existing operational screens; retain operational actions only; replace administrative affordances with escalation links into Guardian per [29 §9.2](29-navigation-blueprint.md); update catalog entries; update in-app links and tests |
-| **Architecture changes** | Implements `CRM-160`–`166`, `NAV-070`–`073` |
-| **Documentation updates** | [18](18-crm.md) module map if relocation details change; [27](27-module-registry.md) status fields |
-| **Notes** | The module relocation table in [18 §2.8](18-crm.md#28-relationship-with-guardian) is the authoritative source for what moves and what stays |
-| **Verification** | No CRM screen renders delete, archive, restore, financial correction, or override; escalation links carry the user into the correct Guardian route; operational workflows are unchanged in behavior |
+| **Architecture changes** | Implements `CRM-160`–`166`, `NAV-070`–`073` (foundation subset) |
+| **Documentation updates** | [26](26-implementation-tracker.md) (this record) |
+| **Notes** | Foundation placeholders relocated: CRM hosts Dashboard, Orders, Prescriptions, Questionnaires (case view), Reports. Administrative surfaces (Users, Settings, Administration, Activity Log, questionnaire config, order admin) live under `/guardian/*`. Escalation links and destructive-absence audits apply when real module UIs ship. |
+| **Verification** | No CRM placeholder renders delete/archive/restore; legacy `/orders` etc. redirect to CRM or Guardian targets; typecheck and lint pass |
 
 ### P5 — Guardian skeletons under `/guardian/*`
 
 | Field | Value |
 | --- | --- |
 | **Objective** | Stand up Guardian navigation groups and module shells so administrative modules have a home to grow into |
-| **Status** | Not started |
-| **Owner** | TBD |
-| **Branch** | — |
+| **Status** | In progress |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/guardian-foundation` |
 | **PR** | — |
 | **Dependencies** | P2, P3, P4 |
 | **Scope** | Guardian dashboard; navigation groups per [29 §5](29-navigation-blueprint.md); module shells following the page hierarchy in [25 §5.3](25-guardian.md); destructive action treatment per [20 §2.1](20-ui-design-system.md) `UI-012`; confirmation patterns for destructive operations |
-| **Architecture changes** | Implements `GRD-070`–`075`, `GRD-091`–`095`, `NAV-060`–`063` |
-| **Documentation updates** | [25](25-guardian.md) module map; [27](27-module-registry.md) per-module status |
-| **Notes** | Skeletons before features. A Guardian module ships its destructive affordances only once the corresponding API gate from P6 is enforced |
-| **Verification** | Guardian and CRM are visually indistinguishable in chrome, tokens, and layout; groups render only when the principal can see at least one child; destructive confirmations name the record and the consequence |
+| **Architecture changes** | Implements `GRD-070`–`075`, `GRD-091`–`095`, `NAV-060`–`063` (foundation subset) |
+| **Documentation updates** | [26](26-implementation-tracker.md) (this record) |
+| **Notes** | Foundation tranche delivered with P2. **Nav correction (v1.4):** shared modules Users, Orders, Subscriptions only. **CRM-only:** Prescriptions, Questionnaires, Reports (Analytics/Reports removed from Guardian nav). Guardian Commerce/Content/Users/Platform placeholders. Destructive actions documented as Guardian-only in placeholders; no Class D UI yet. |
+| **Verification** | Guardian and CRM share one shell and tokens; empty groups do not render; typecheck and lint pass |
 
 ### P6 — API enforcement for destructive operations
 
@@ -298,7 +298,7 @@ Non-blocking for design; each must be resolved before the phase that consumes it
 
 | ID | Decision | Recommendation | Needed by |
 | --- | --- | --- | --- |
-| `DEC-001` | Default post-login Internal Platform context | Role-based: clinical and operational roles land in CRM, administrative and platform roles land in Guardian; deep links always win over the default ([29 §9.3](29-navigation-blueprint.md)) | P2 |
+| `DEC-001` | Default post-login Internal Platform context | **Resolved for foundation:** role-based — clinical and operational roles land in CRM; administrative roles (Administrator, Super Administrator, Marketing, Content) land in Guardian; deep links always win ([29 §9.3](29-navigation-blueprint.md)). Implemented in `resolveDefaultLanding`. | P2 |
 | `DEC-002` | Whether operational refund assist remains in CRM under existing support requirements | Yes. Policy-scoped refund assist is operational; financial correction is administrative and stays in Guardian ([08 §6.1](08-role-permissions.md)) | P4 |
 | `DEC-003` | Which Class D permissions Administrator holds by default versus by explicit grant | Administrator holds delete, archive, and restore for commerce and content; bulk cleanup and hard delete remain Super Administrator only | P6 |
 | `DEC-004` | Whether Guardian gets its own dashboard metrics or reuses CRM analytics widgets | Guardian dashboard shows administrative health (publish state, pending governance, recent administrative activity) rather than clinical throughput | P5 |
@@ -340,6 +340,9 @@ A phase is complete when all of the following hold.
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Implementation Tracker: usage rules `TRK-001`–`007`, field definitions, status model, phase overview and records P0–P7 and PF, dependency graph, architecture decision log, open decisions `DEC-001`–`004`, risk register, definition of done |
+| 1.1 | 2026-07-28 | Platform Engineering | Mark P2 Complete, P4 Complete (foundation placeholders), and P5 In progress for Guardian Foundation (`feature/guardian-foundation`); resolve `DEC-001` role-based default landing |
+| 1.2 | 2026-07-28 | Platform Engineering | Foundation nav correction: shared modules in both contexts; CRM Users + Activity Log + Subscriptions; Guardian Clinical/Content/Commerce placeholders; Questionnaires under Clinical |
+| 1.3 | 2026-07-28 | Platform Engineering | Prescriptions and Questionnaires are CRM-only — removed from Guardian nav/pages; aligned CRM, Guardian, Module Registry, Ownership Matrix, Navigation Blueprint, RBAC context note |
 
 ---
 

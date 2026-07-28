@@ -71,6 +71,7 @@ After seeding the API with env vars:
 | --- | --- |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | `ROLE-009` Administrator |
 | `SEED_SUPER_ADMIN_EMAIL` / `SEED_SUPER_ADMIN_PASSWORD` | `ROLE-010` Super Administrator (`PERM-ADM-020`) |
+| `SEED_DEMO_STAFF=true` / `SEED_DEMO_STAFF_PASSWORD` | Doctor, Pharmacist, Support, Operations, Marketing, Content (`{role}@example.com` by default) |
 
 Super Administrator is a normal RBAC role — never an AuthZ bypass. **Re-run `npm run prisma:seed -w @clinexa/api`** after RBAC matrix changes, then sign out and sign in again so session permissions refresh.
 
@@ -86,15 +87,21 @@ Super Administrator is a normal RBAC role — never an AuthZ bypass. **Re-run `n
 ```text
 src/
 ├── app/
+│   ├── (protected)/
+│   │   ├── crm/           # Operational context (`/crm/*`)
+│   │   └── guardian/      # Administrative context (`/guardian/*`)
+│   ├── login/
+│   ├── forbidden/
+│   └── unauthorized/
 ├── components/
 │   ├── auth/
-│   ├── layout/          # AppShell, sidebar, header, nav-config
-│   └── ui/              # shadcn primitives
+│   ├── layout/            # AppShell, sidebar, header, switcher, nav-config
+│   └── ui/                # shadcn primitives
 ├── config/
 │   └── env.ts
 ├── features/
 ├── hooks/
-├── lib/
+├── lib/                   # platform-context, legacy-redirects
 ├── providers/
 └── services/
 ```

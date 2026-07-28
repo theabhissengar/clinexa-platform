@@ -13,7 +13,7 @@ type AppProvidersProps = {
 };
 
 /**
- * Root client providers for the Internal Management application.
+ * Root client providers for the Internal Platform application.
  */
 export function AppProviders({ children }: AppProvidersProps) {
   const [queryClient] = useState(

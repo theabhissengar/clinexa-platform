@@ -119,7 +119,7 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Consultation** | — | View, Transition (approve, decline) | — | View own status | Create from paid intake | — |
 | **Prescription** | — | View, Create (through clinical approval), Edit (clinical update path), Transition (pharmacy readiness) | — | View own status | Create on approval | Mobile: View own status |
 | **Clinical note** | — | View, Create, Edit (Doctor only) | — | — | — | — |
-| **Questionnaire definition** | View, Create, Edit, Publish, Version, Delete (unbound versions only) | View active definitions | Present on purchase path | Present assigned form | — | — |
+| **Questionnaire definition** | — | View, Create, Edit, Publish, Version, Delete (unbound versions only) | Present on purchase path | Present assigned form | — | — |
 | **Questionnaire response** | — | View (case context) | Create (purchase path) | Create own, Edit own while in progress, View own | Lock on submit | Mobile: Create own |
 | **Appointment type and availability** | View, Create, Edit, Delete | View | — | View bookable slots | — | — |
 | **Appointment** | — | View, Create (staff assist), Edit, Transition | — | Create own, Edit own, Cancel own | Remind, Expire | Mobile: Create own, Cancel own |
@@ -153,8 +153,8 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Integration** | View, Create, Edit, Delete | — | — | — | Consume | — |
 | **API key** | View, Create, Revoke, Delete | — | — | — | Verify | Public API: authenticate with |
 | **Webhook endpoint** | View, Create, Edit, Delete | — | — | — | Receive, Verify | — |
-| **Report definition** | View, Create, Edit | View, Create (operational) | — | — | Execute | — |
-| **Report artifact / export** | View, Export, Purge | View, Export (role-scoped) | — | Export own data where offered | Generate, Expire | — |
+| **Report definition** | View (future Class D tooling only) | View, Create (operational) | — | — | Execute | — |
+| **Report artifact / export** | Purge only when implemented (no Reports UI) | View, Export (role-scoped) | — | Export own data where offered | Generate, Expire | — |
 | **Activity log** | View | — | — | — | Append | — |
 | **System log** | View, Purge (retention policy only) | — | — | — | Append, Rotate | — |
 | **Vendor record** (future) | View, Create, Edit, Delete | — | — | — | — | Vendor portal: View own, Edit own |
@@ -206,6 +206,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Ownership Matrix: reading rules `OWN-001`–`008`, application columns for Guardian, CRM, Store, Portal, System, and Future, action vocabulary with destructive classification, entity matrices for identity, commerce, clinical, content, and platform, consolidated destructive summary, procedure for adding an application |
+| 1.1 | 2026-07-28 | Platform Engineering | Questionnaire definitions moved to CRM column only; Guardian no longer exposes definition CRUD |
 
 ---
 

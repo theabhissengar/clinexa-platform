@@ -2,11 +2,11 @@
 
 import { FileText } from "lucide-react";
 
-import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
+import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
 
-export default function PrescriptionsPage() {
+export default function CrmPrescriptionsPage() {
   return (
     <RequirePagePermission
       permission={[
@@ -17,7 +17,7 @@ export default function PrescriptionsPage() {
     >
       <ModuleComingSoon
         title="Prescriptions"
-        description="Prescriptions management will be delivered in a future phase."
+        description="Clinical and pharmacy prescription workflows will be delivered in a later phase."
         icon={FileText}
       />
     </RequirePagePermission>

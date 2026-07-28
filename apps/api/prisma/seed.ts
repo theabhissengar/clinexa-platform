@@ -12,10 +12,10 @@ import {
   ROLE_SEED_ROWS,
   SEEDED_ROLE_CODES,
 } from './data/rbac-catalog';
-import { Roles } from '../src/modules/rbac/constants/roles';
+import { Roles, type RoleCode } from '../src/modules/rbac/constants/roles';
 
 /**
- * Canonical RBAC seed + optional staff Administrator and Super Administrator users.
+ * Canonical RBAC seed + optional local staff users for role testing.
  * RolePermission rows for seeded roles are replaced to match the matrix.
  */
 async function seedRbacCatalog(prisma: PrismaClient): Promise<void> {
@@ -111,29 +111,34 @@ async function seedRbacCatalog(prisma: PrismaClient): Promise<void> {
   );
 }
 
-async function seedAdminUser(prisma: PrismaClient): Promise<void> {
-  const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
-  const password = process.env.SEED_ADMIN_PASSWORD;
-
-  if (!email || !password) {
-    console.log(
-      'Admin user seed skipped: set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD to create a local Administrator.',
-    );
-    return;
-  }
-
-  if (password.length < 12) {
-    throw new Error(
-      'SEED_ADMIN_PASSWORD must be at least 12 characters (AUTH-034).',
-    );
-  }
-
-  const passwordHash = await argon2.hash(password, {
+async function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password, {
     type: argon2.argon2id,
     memoryCost: parseInt(process.env.ARGON2_MEMORY_COST ?? '65536', 10),
     timeCost: parseInt(process.env.ARGON2_TIME_COST ?? '3', 10),
     parallelism: parseInt(process.env.ARGON2_PARALLELISM ?? '4', 10),
   });
+}
+
+async function seedStaffUser(
+  prisma: PrismaClient,
+  options: {
+    email: string;
+    password: string;
+    roleCode: RoleCode;
+    label: string;
+  },
+): Promise<void> {
+  const email = options.email.trim().toLowerCase();
+  const { password, roleCode, label } = options;
+
+  if (password.length < 12) {
+    throw new Error(
+      `${label} password must be at least 12 characters (AUTH-034).`,
+    );
+  }
+
+  const passwordHash = await hashPassword(password);
 
   const user = await prisma.user.upsert({
     where: { email },
@@ -148,21 +153,21 @@ async function seedAdminUser(prisma: PrismaClient): Promise<void> {
     },
   });
 
-  const adminRole = await prisma.role.findUnique({
-    where: { code: Roles.ADMINISTRATOR },
+  const role = await prisma.role.findUnique({
+    where: { code: roleCode },
   });
-  if (!adminRole) {
-    throw new Error('Administrator role missing after catalog seed');
+  if (!role) {
+    throw new Error(`${label} role ${roleCode} missing after catalog seed`);
   }
 
   await prisma.userRoleAssignment.upsert({
     where: {
-      userId_roleId: { userId: user.id, roleId: adminRole.id },
+      userId_roleId: { userId: user.id, roleId: role.id },
     },
     create: {
       id: randomUUID(),
       userId: user.id,
-      roleId: adminRole.id,
+      roleId: role.id,
       revokedAt: null,
     },
     update: {
@@ -171,9 +176,26 @@ async function seedAdminUser(prisma: PrismaClient): Promise<void> {
     },
   });
 
-  console.log(
-    `Seeded Administrator user: ${user.email} (${user.id}) with ${Roles.ADMINISTRATOR}`,
-  );
+  console.log(`Seeded ${label} user: ${user.email} (${user.id}) with ${roleCode}`);
+}
+
+async function seedAdminUser(prisma: PrismaClient): Promise<void> {
+  const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
+  const password = process.env.SEED_ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    console.log(
+      'Admin user seed skipped: set SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD to create a local Administrator.',
+    );
+    return;
+  }
+
+  await seedStaffUser(prisma, {
+    email,
+    password,
+    roleCode: Roles.ADMINISTRATOR,
+    label: 'Administrator',
+  });
 }
 
 async function seedSuperAdminUser(prisma: PrismaClient): Promise<void> {
@@ -187,58 +209,90 @@ async function seedSuperAdminUser(prisma: PrismaClient): Promise<void> {
     return;
   }
 
-  if (password.length < 12) {
+  await seedStaffUser(prisma, {
+    email,
+    password,
+    roleCode: Roles.SUPER_ADMINISTRATOR,
+    label: 'Super Administrator',
+  });
+}
+
+/**
+ * Optional local demo accounts for every non-admin staff role.
+ * Enable with SEED_DEMO_STAFF=true and SEED_DEMO_STAFF_PASSWORD (≥12 chars).
+ * Emails default to {role}@example.com unless overridden per role.
+ */
+async function seedDemoStaffUsers(prisma: PrismaClient): Promise<void> {
+  const enabled = process.env.SEED_DEMO_STAFF?.trim().toLowerCase();
+  if (enabled !== 'true' && enabled !== '1') {
+    console.log(
+      'Demo staff seed skipped: set SEED_DEMO_STAFF=true and SEED_DEMO_STAFF_PASSWORD to create Doctor/Pharmacist/Support/Operations/Marketing/Content users.',
+    );
+    return;
+  }
+
+  const password = process.env.SEED_DEMO_STAFF_PASSWORD;
+  if (!password) {
     throw new Error(
-      'SEED_SUPER_ADMIN_PASSWORD must be at least 12 characters (AUTH-034).',
+      'SEED_DEMO_STAFF_PASSWORD is required when SEED_DEMO_STAFF is enabled.',
     );
   }
 
-  const passwordHash = await argon2.hash(password, {
-    type: argon2.argon2id,
-    memoryCost: parseInt(process.env.ARGON2_MEMORY_COST ?? '65536', 10),
-    timeCost: parseInt(process.env.ARGON2_TIME_COST ?? '3', 10),
-    parallelism: parseInt(process.env.ARGON2_PARALLELISM ?? '4', 10),
-  });
+  const accounts: Array<{
+    envEmail: string;
+    defaultEmail: string;
+    roleCode: RoleCode;
+    label: string;
+  }> = [
+    {
+      envEmail: 'SEED_DOCTOR_EMAIL',
+      defaultEmail: 'doctor@example.com',
+      roleCode: Roles.DOCTOR,
+      label: 'Doctor',
+    },
+    {
+      envEmail: 'SEED_PHARMACIST_EMAIL',
+      defaultEmail: 'pharmacist@example.com',
+      roleCode: Roles.PHARMACIST,
+      label: 'Pharmacist',
+    },
+    {
+      envEmail: 'SEED_SUPPORT_EMAIL',
+      defaultEmail: 'support@example.com',
+      roleCode: Roles.SUPPORT,
+      label: 'Support',
+    },
+    {
+      envEmail: 'SEED_OPERATIONS_EMAIL',
+      defaultEmail: 'operations@example.com',
+      roleCode: Roles.OPERATIONS,
+      label: 'Operations',
+    },
+    {
+      envEmail: 'SEED_MARKETING_EMAIL',
+      defaultEmail: 'marketing@example.com',
+      roleCode: Roles.MARKETING,
+      label: 'Marketing',
+    },
+    {
+      envEmail: 'SEED_CONTENT_EMAIL',
+      defaultEmail: 'content@example.com',
+      roleCode: Roles.CONTENT,
+      label: 'Content',
+    },
+  ];
 
-  const user = await prisma.user.upsert({
-    where: { email },
-    create: {
+  for (const account of accounts) {
+    const email =
+      process.env[account.envEmail]?.trim().toLowerCase() ||
+      account.defaultEmail;
+    await seedStaffUser(prisma, {
       email,
-      passwordHash,
-      status: UserStatus.ACTIVE,
-    },
-    update: {
-      passwordHash,
-      status: UserStatus.ACTIVE,
-    },
-  });
-
-  const superAdminRole = await prisma.role.findUnique({
-    where: { code: Roles.SUPER_ADMINISTRATOR },
-  });
-  if (!superAdminRole) {
-    throw new Error('Super Administrator role missing after catalog seed');
+      password,
+      roleCode: account.roleCode,
+      label: account.label,
+    });
   }
-
-  await prisma.userRoleAssignment.upsert({
-    where: {
-      userId_roleId: { userId: user.id, roleId: superAdminRole.id },
-    },
-    create: {
-      id: randomUUID(),
-      userId: user.id,
-      roleId: superAdminRole.id,
-      revokedAt: null,
-    },
-    update: {
-      revokedAt: null,
-      assignedAt: new Date(),
-    },
-  });
-
-  console.log(
-    `Seeded Super Administrator user: ${user.email} (${user.id}) with ${Roles.SUPER_ADMINISTRATOR}`,
-  );
 }
 
 async function main(): Promise<void> {
@@ -254,6 +308,7 @@ async function main(): Promise<void> {
     await seedRbacCatalog(prisma);
     await seedAdminUser(prisma);
     await seedSuperAdminUser(prisma);
+    await seedDemoStaffUsers(prisma);
   } finally {
     await prisma.$disconnect();
   }

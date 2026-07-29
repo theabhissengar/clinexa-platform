@@ -105,6 +105,12 @@ export function ProductsListPage() {
   const [draftCategoryId, setDraftCategoryId] = useState(appliedCategoryId);
   const [draftProductType, setDraftProductType] = useState(appliedProductType);
   const [draftBrandName, setDraftBrandName] = useState(appliedBrandName);
+  const [syncedFilters, setSyncedFilters] = useState({
+    q: appliedQ,
+    categoryId: appliedCategoryId,
+    productType: appliedProductType,
+    brand: appliedBrandName,
+  });
 
   const [items, setItems] = useState<Product[]>([]);
   const [total, setTotal] = useState(0);
@@ -124,6 +130,25 @@ export function ProductsListPage() {
     appliedQ || appliedCategoryId || appliedProductType || appliedBrandName,
   );
 
+  // Sync draft filters when URL applied filters change (back/forward/clear).
+  if (
+    appliedQ !== syncedFilters.q ||
+    appliedCategoryId !== syncedFilters.categoryId ||
+    appliedProductType !== syncedFilters.productType ||
+    appliedBrandName !== syncedFilters.brand
+  ) {
+    setSyncedFilters({
+      q: appliedQ,
+      categoryId: appliedCategoryId,
+      productType: appliedProductType,
+      brand: appliedBrandName,
+    });
+    setDraftQ(appliedQ);
+    setDraftCategoryId(appliedCategoryId);
+    setDraftProductType(appliedProductType);
+    setDraftBrandName(appliedBrandName);
+  }
+
   const writeParams = useCallback(
     (patch: Record<string, string | null | undefined>) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -138,36 +163,22 @@ export function ProductsListPage() {
     [pathname, router, searchParams],
   );
 
-  // Keep draft fields in sync when URL changes (refresh / back / clear).
-  useEffect(() => {
-    setDraftQ(appliedQ);
-    setDraftCategoryId(appliedCategoryId);
-    setDraftProductType(appliedProductType);
-    setDraftBrandName(appliedBrandName);
-  }, [appliedQ, appliedCategoryId, appliedProductType, appliedBrandName]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
+  const refreshList = useCallback(async () => {
+    const result = await listAdminProducts({
+      q: appliedQ || undefined,
+      status: appliedStatus === "ALL" ? undefined : appliedStatus,
+      categoryId: appliedCategoryId || undefined,
+      productType: (appliedProductType as ProductType) || undefined,
+      brandName: appliedBrandName || undefined,
+      skip: page * PAGE_SIZE,
+      take: PAGE_SIZE,
+    });
+    setItems(result.items);
+    setTotal(result.total);
+    if (result.statusCounts) setStatusCounts(result.statusCounts);
+    setSelected(new Set());
     setError(null);
-    try {
-      const result = await listAdminProducts({
-        q: appliedQ || undefined,
-        status: appliedStatus === "ALL" ? undefined : appliedStatus,
-        categoryId: appliedCategoryId || undefined,
-        productType: (appliedProductType as ProductType) || undefined,
-        brandName: appliedBrandName || undefined,
-        skip: page * PAGE_SIZE,
-        take: PAGE_SIZE,
-      });
-      setItems(result.items);
-      setTotal(result.total);
-      if (result.statusCounts) setStatusCounts(result.statusCounts);
-      setSelected(new Set());
-    } catch {
-      setError("Unable to load products.");
-    } finally {
-      setLoading(false);
-    }
+    setLoading(false);
   }, [
     appliedQ,
     appliedStatus,
@@ -178,13 +189,54 @@ export function ProductsListPage() {
   ]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    async function run() {
+      try {
+        const result = await listAdminProducts({
+          q: appliedQ || undefined,
+          status: appliedStatus === "ALL" ? undefined : appliedStatus,
+          categoryId: appliedCategoryId || undefined,
+          productType: (appliedProductType as ProductType) || undefined,
+          brandName: appliedBrandName || undefined,
+          skip: page * PAGE_SIZE,
+          take: PAGE_SIZE,
+        });
+        if (cancelled) return;
+        setItems(result.items);
+        setTotal(result.total);
+        if (result.statusCounts) setStatusCounts(result.statusCounts);
+        setSelected(new Set());
+        setError(null);
+      } catch {
+        if (cancelled) return;
+        setError("Unable to load products.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    appliedQ,
+    appliedStatus,
+    appliedCategoryId,
+    appliedProductType,
+    appliedBrandName,
+    page,
+  ]);
 
   useEffect(() => {
+    let cancelled = false;
     void listAdminCategories()
-      .then((r) => setCategories(r.items))
+      .then((r) => {
+        if (!cancelled) setCategories(r.items);
+      })
       .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const allSelected = useMemo(
@@ -259,7 +311,7 @@ export function ProductsListPage() {
         );
       }
       setBulkAction("");
-      await load();
+      await refreshList();
     } catch {
       setError("Bulk action failed.");
     }
@@ -277,7 +329,7 @@ export function ProductsListPage() {
   async function onTrash(id: string) {
     try {
       await transitionProduct(id, "ARCHIVED");
-      await load();
+      await refreshList();
     } catch {
       setError("Unable to move product to trash.");
     }
@@ -435,7 +487,7 @@ export function ProductsListPage() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[1200px] text-left text-sm">
+          <table className="w-full min-w-300 text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -549,7 +601,7 @@ export function ProductsListPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="max-w-[220px] px-3 py-3">
+                    <td className="max-w-55 px-3 py-3">
                       <code
                         className="block truncate text-xs text-muted-foreground"
                         title={product.id}
@@ -592,7 +644,9 @@ export function ProductsListPage() {
                             : "text-muted-foreground/40 hover:text-amber-400"
                         }
                         onClick={() =>
-                          void toggleProductFeatured(product.id).then(load)
+                          void toggleProductFeatured(product.id).then(
+                            refreshList,
+                          )
                         }
                       >
                         ★

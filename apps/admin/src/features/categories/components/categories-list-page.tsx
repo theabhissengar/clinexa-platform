@@ -31,6 +31,7 @@ export function CategoriesListPage() {
   const page = parsePage(searchParams.get("page"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
+  const [syncedQ, setSyncedQ] = useState(appliedQ);
   const [items, setItems] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,12 @@ export function CategoriesListPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+  // Sync draft search when URL applied filters change (back/forward/clear).
+  if (appliedQ !== syncedQ) {
+    setSyncedQ(appliedQ);
+    setDraftQ(appliedQ);
+  }
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const appliedFiltersActive = Boolean(appliedQ);
@@ -55,35 +62,49 @@ export function CategoriesListPage() {
     [pathname, router, searchParams],
   );
 
-  useEffect(() => {
-    setDraftQ(appliedQ);
-  }, [appliedQ]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Load matching set (hierarchy-aware), then paginate client-side so
-      // parent/child indentation stays intact across pages.
-      const result = await listAdminCategories({
-        q: appliedQ || undefined,
-        skip: 0,
-        take: 200,
-      });
-      setTotal(result.items.length);
-      const start = page * PAGE_SIZE;
-      setItems(result.items.slice(start, start + PAGE_SIZE));
-      setSelected(new Set());
-      setError(null);
-    } catch {
-      setError("Unable to load categories.");
-    } finally {
-      setLoading(false);
-    }
+  const refreshList = useCallback(async () => {
+    const result = await listAdminCategories({
+      q: appliedQ || undefined,
+      skip: 0,
+      take: 200,
+    });
+    const start = page * PAGE_SIZE;
+    setTotal(result.items.length);
+    setItems(result.items.slice(start, start + PAGE_SIZE));
+    setSelected(new Set());
+    setError(null);
+    setLoading(false);
   }, [appliedQ, page]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    async function run() {
+      try {
+        // Load matching set (hierarchy-aware), then paginate client-side so
+        // parent/child indentation stays intact across pages.
+        const result = await listAdminCategories({
+          q: appliedQ || undefined,
+          skip: 0,
+          take: 200,
+        });
+        if (cancelled) return;
+        const start = page * PAGE_SIZE;
+        setTotal(result.items.length);
+        setItems(result.items.slice(start, start + PAGE_SIZE));
+        setSelected(new Set());
+        setError(null);
+      } catch {
+        if (cancelled) return;
+        setError("Unable to load categories.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedQ, page]);
 
   function applySearch() {
     writeParams({ q: draftQ.trim() || null, page: "1" });
@@ -101,7 +122,7 @@ export function CategoriesListPage() {
         [...selected].map((id) => deleteCategory(id).catch(() => null)),
       );
       setBulkAction("");
-      await load();
+      await refreshList();
     } catch {
       setError("Bulk delete failed. Unlink products / children first.");
     }
@@ -174,7 +195,7 @@ export function CategoriesListPage() {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[1000px] text-left text-sm">
+          <table className="w-full min-w-250 text-left text-sm">
             <thead className="bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="w-10 px-3 py-2">
@@ -275,7 +296,7 @@ export function CategoriesListPage() {
                           className="text-destructive hover:underline"
                           onClick={() =>
                             void deleteCategory(category.id)
-                              .then(() => load())
+                              .then(() => refreshList())
                               .catch(() =>
                                 setError(
                                   "Delete failed. Unlink products and children first.",
@@ -292,7 +313,7 @@ export function CategoriesListPage() {
                             className="hover:underline"
                             onClick={() =>
                               void publishCategory(category.id).then(() =>
-                                load(),
+                                refreshList(),
                               )
                             }
                           >
@@ -305,7 +326,7 @@ export function CategoriesListPage() {
                         )}
                       </div>
                     </td>
-                    <td className="max-w-[220px] px-3 py-3">
+                    <td className="max-w-55 px-3 py-3">
                       <code
                         className="block truncate text-xs text-muted-foreground"
                         title={category.id}
@@ -313,7 +334,7 @@ export function CategoriesListPage() {
                         {category.id}
                       </code>
                     </td>
-                    <td className="max-w-[180px] truncate px-3 py-3 text-muted-foreground">
+                    <td className="max-w-45 truncate px-3 py-3 text-muted-foreground">
                       {category.description || "—"}
                     </td>
                     <td className="px-3 py-3 text-muted-foreground">

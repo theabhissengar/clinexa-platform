@@ -62,8 +62,7 @@ export class AdminProductsController {
       status,
       isRxEligible:
         isRxEligible === undefined ? undefined : isRxEligible === 'true',
-      isFeatured:
-        isFeatured === undefined ? undefined : isFeatured === 'true',
+      isFeatured: isFeatured === undefined ? undefined : isFeatured === 'true',
       productType,
       categoryId,
       brandName,
@@ -115,10 +114,7 @@ export class AdminProductsController {
   @RequirePermissions(Permissions.PRD_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Duplicate product as a new draft' })
-  duplicate(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  duplicate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.duplicate(id, user.id);
   }
 
@@ -149,10 +145,7 @@ export class AdminProductsController {
   @RequirePermissions(Permissions.PRD_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Publish product (OR-14)' })
-  publish(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  publish(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.transition(
       id,
       ProductLifecycleStatus.PUBLISHED,
@@ -164,10 +157,7 @@ export class AdminProductsController {
   @RequirePermissions(Permissions.PRD_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Unpublish product' })
-  unpublish(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  unpublish(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.transition(
       id,
       ProductLifecycleStatus.UNPUBLISHED,
@@ -179,10 +169,7 @@ export class AdminProductsController {
   @RequirePermissions(Permissions.PRD_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Archive product' })
-  archive(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  archive(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.transition(
       id,
       ProductLifecycleStatus.ARCHIVED,
@@ -194,10 +181,7 @@ export class AdminProductsController {
   @RequirePermissions(Permissions.PRD_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Restore archived product to unpublished' })
-  restore(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  restore(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.transition(
       id,
       ProductLifecycleStatus.UNPUBLISHED,
@@ -208,10 +192,7 @@ export class AdminProductsController {
   @Delete(':id')
   @RequirePermissions(Permissions.PRD_DELETE)
   @ApiOperation({ summary: 'Soft-delete product (Class D)' })
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.products.softDelete(id, user.id);
   }
 

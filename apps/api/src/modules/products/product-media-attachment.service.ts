@@ -52,10 +52,7 @@ export class ProductMediaAttachmentService {
     return row;
   }
 
-  async reorder(
-    productId: string,
-    orderedIds: string[],
-  ) {
+  async reorder(productId: string, orderedIds: string[]) {
     await this.products.getAdminById(productId);
     await this.prisma.$transaction(
       orderedIds.map((id, index) =>

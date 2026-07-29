@@ -70,7 +70,8 @@ export class CreateCategoryDto {
   groupOf?: number | null;
 
   @ApiPropertyOptional({
-    description: 'Store display type: Default | Products | Subcategories | Both',
+    description:
+      'Store display type: Default | Products | Subcategories | Both',
   })
   @IsOptional()
   @IsString()

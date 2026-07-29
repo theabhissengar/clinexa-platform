@@ -86,7 +86,12 @@ export class CategoriesService {
         productLinks: {
           include: {
             product: {
-              select: { id: true, name: true, slug: true, lifecycleStatus: true },
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                lifecycleStatus: true,
+              },
             },
           },
         },
@@ -143,7 +148,9 @@ export class CategoriesService {
         ...(input.seoDescription !== undefined
           ? { seoDescription: input.seoDescription }
           : {}),
-        ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
+        ...(input.sortOrder !== undefined
+          ? { sortOrder: input.sortOrder }
+          : {}),
         ...(input.thumbnailMediaAssetId !== undefined
           ? { thumbnailMediaAssetId: input.thumbnailMediaAssetId }
           : {}),

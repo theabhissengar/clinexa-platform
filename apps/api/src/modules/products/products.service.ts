@@ -63,7 +63,10 @@ const RELATION_CROSS_SELL = 'cross_sell';
 const RELATION_BUNDLE_SELL = 'bundle_sell';
 
 const productAdminInclude = {
-  variants: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' as const } },
+  variants: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: 'asc' as const },
+  },
   categoryLinks: { include: { category: true } },
   media: { orderBy: { sortOrder: 'asc' as const } },
   relationsFrom: {
@@ -84,7 +87,7 @@ function jsonOrDbNull(
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull | undefined {
   if (value === undefined) return undefined;
   if (value === null) return Prisma.JsonNull;
-  return value as Prisma.InputJsonValue;
+  return value;
 }
 
 function productDataFields(input: CreateProductInput | UpdateProductInput) {
@@ -299,7 +302,12 @@ export class ProductsService {
     await this.recordHistory(product.id, actorId, 'create', {
       after: { name: product.name, slug: product.slug },
     });
-    await this.recordActivity(product.id, actorId, 'created', 'Product created');
+    await this.recordActivity(
+      product.id,
+      actorId,
+      'created',
+      'Product created',
+    );
 
     return this.getAdminById(product.id);
   }
@@ -331,7 +339,9 @@ export class ProductsService {
           ? { productType: input.productType }
           : {}),
         ...(input.brandId !== undefined ? { brandId: input.brandId } : {}),
-        ...(input.brandName !== undefined ? { brandName: input.brandName } : {}),
+        ...(input.brandName !== undefined
+          ? { brandName: input.brandName }
+          : {}),
         ...(input.featuredMediaAssetId !== undefined
           ? { featuredMediaAssetId: input.featuredMediaAssetId }
           : {}),
@@ -413,14 +423,15 @@ export class ProductsService {
         oneTimeShipping: source.oneTimeShipping,
         bundleSellsTitle: source.bundleSellsTitle,
         bundleSellsDiscount: source.bundleSellsDiscount,
-        defaultVariationOptions:
-          source.defaultVariationOptions as Prisma.InputJsonValue | undefined,
+        defaultVariationOptions: source.defaultVariationOptions as
+          Prisma.InputJsonValue | undefined,
         purchaseNote: source.purchaseNote,
         menuOrder: source.menuOrder,
         enableReviews: source.enableReviews,
         limitSubscription: source.limitSubscription,
         stripeButtonPosition: source.stripeButtonPosition,
-        stripeGateways: source.stripeGateways as Prisma.InputJsonValue | undefined,
+        stripeGateways: source.stripeGateways as
+          Prisma.InputJsonValue | undefined,
         lifecycleStatus: ProductLifecycleStatus.DRAFT,
         categoryLinks: {
           create: source.categoryLinks.map((link) => ({
@@ -471,9 +482,15 @@ export class ProductsService {
         data: categoryIds.map((categoryId) => ({ productId: id, categoryId })),
       }),
     ]);
-    await this.recordActivity(id, actorId, 'categories_set', 'Category links updated', {
-      categoryIds,
-    });
+    await this.recordActivity(
+      id,
+      actorId,
+      'categories_set',
+      'Category links updated',
+      {
+        categoryIds,
+      },
+    );
     return this.getAdminById(id);
   }
 

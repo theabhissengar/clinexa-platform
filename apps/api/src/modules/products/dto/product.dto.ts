@@ -12,7 +12,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { ProductLifecycleStatus, ProductType } from '../../../../generated/prisma';
+import {
+  ProductLifecycleStatus,
+  ProductType,
+} from '../../../../generated/prisma';
 
 export class CreateProductDto {
   @ApiProperty()
@@ -92,8 +95,7 @@ export class CreateProductDto {
   medicalInfo?: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description:
-      'Catalog attributes array: [{ name, values, forVariation }]',
+    description: 'Catalog attributes array: [{ name, values, forVariation }]',
   })
   @IsOptional()
   attributes?: unknown;

@@ -21,9 +21,7 @@ export class AuthorizationService {
     private readonly prisma: PrismaService,
   ) {}
 
-  loadPrincipalAuthorization(
-    userId: string,
-  ): Promise<PrincipalAuthorization> {
+  loadPrincipalAuthorization(userId: string): Promise<PrincipalAuthorization> {
     return this.permissionLoader.loadByUserId(userId);
   }
 

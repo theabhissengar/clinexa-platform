@@ -6,6 +6,8 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './infrastructure/prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { ProductsModule } from './modules/products/products.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 
 @Module({
@@ -21,6 +23,8 @@ import { RbacModule } from './modules/rbac/rbac.module';
     HealthModule,
     AuthModule,
     RbacModule,
+    ProductsModule,
+    CategoriesModule,
   ],
 })
 export class AppModule implements NestModule {

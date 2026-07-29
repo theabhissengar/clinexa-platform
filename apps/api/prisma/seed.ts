@@ -295,6 +295,180 @@ async function seedDemoStaffUsers(prisma: PrismaClient): Promise<void> {
   }
 }
 
+async function seedDemoCatalog(prisma: PrismaClient): Promise<void> {
+  const demoCategories = [
+    {
+      slug: 'weight-management',
+      name: 'Weight Management',
+      description: 'Demo seed category for weight management treatments.',
+    },
+    {
+      slug: 'hair-loss',
+      name: 'Hair Loss',
+      description: 'Demo seed category for hair loss treatments.',
+    },
+    {
+      slug: 'mens-health',
+      name: "Men's Health",
+      description: 'Demo seed category for men’s health treatments.',
+    },
+    {
+      slug: 'skincare',
+      name: 'Skincare',
+      description: 'Demo seed category for skincare offerings.',
+    },
+  ] as const;
+
+  for (const [index, category] of demoCategories.entries()) {
+    await prisma.category.upsert({
+      where: { slug: category.slug },
+      create: {
+        id: randomUUID(),
+        name: category.name,
+        slug: category.slug,
+        description: category.description,
+        seoTitle: category.name,
+        seoDescription: category.description,
+        sortOrder: index,
+        lifecycleStatus: 'PUBLISHED',
+      },
+      update: {
+        name: category.name,
+        description: category.description,
+        seoTitle: category.name,
+        seoDescription: category.description,
+        sortOrder: index,
+        lifecycleStatus: 'PUBLISHED',
+        deletedAt: null,
+      },
+    });
+  }
+
+  const weight = await prisma.category.findUnique({
+    where: { slug: 'weight-management' },
+  });
+  const skin = await prisma.category.findUnique({ where: { slug: 'skincare' } });
+
+  if (weight) {
+    const product = await prisma.product.upsert({
+      where: { slug: 'demo-weight-program' },
+      create: {
+        id: randomUUID(),
+        name: 'Demo Weight Program',
+        slug: 'demo-weight-program',
+        description: 'Seed Rx-eligible demo product for Weight Management.',
+        isRxEligible: true,
+        seoTitle: 'Demo Weight Program',
+        seoDescription: 'Seed catalog product for AC-BR-06 demos.',
+        questionnaireBindingRef: 'seed-qst-weight-v1',
+        lifecycleStatus: 'PUBLISHED',
+        tags: ['demo', 'seed'],
+      },
+      update: {
+        name: 'Demo Weight Program',
+        description: 'Seed Rx-eligible demo product for Weight Management.',
+        isRxEligible: true,
+        seoTitle: 'Demo Weight Program',
+        questionnaireBindingRef: 'seed-qst-weight-v1',
+        lifecycleStatus: 'PUBLISHED',
+        deletedAt: null,
+      },
+    });
+
+    const existingVariant = await prisma.productVariant.findFirst({
+      where: { sku: 'DEMO-WEIGHT-30' },
+    });
+    if (!existingVariant) {
+      await prisma.productVariant.create({
+        data: {
+          id: randomUUID(),
+          productId: product.id,
+          sku: 'DEMO-WEIGHT-30',
+          label: '30-day supply',
+          priceCents: 19900,
+          currency: 'USD',
+          isFulfillable: true,
+        },
+      });
+    }
+
+    await prisma.productCategoryLink.upsert({
+      where: {
+        productId_categoryId: {
+          productId: product.id,
+          categoryId: weight.id,
+        },
+      },
+      create: {
+        id: randomUUID(),
+        productId: product.id,
+        categoryId: weight.id,
+      },
+      update: {},
+    });
+  }
+
+  if (skin) {
+    const product = await prisma.product.upsert({
+      where: { slug: 'demo-daily-moisturizer' },
+      create: {
+        id: randomUUID(),
+        name: 'Demo Daily Moisturizer',
+        slug: 'demo-daily-moisturizer',
+        description: 'Seed non-Rx demo product for Skincare.',
+        isRxEligible: false,
+        seoTitle: 'Demo Daily Moisturizer',
+        seoDescription: 'Non-prescription seed catalog product.',
+        lifecycleStatus: 'PUBLISHED',
+        tags: ['demo', 'seed', 'non-rx'],
+      },
+      update: {
+        name: 'Demo Daily Moisturizer',
+        isRxEligible: false,
+        seoTitle: 'Demo Daily Moisturizer',
+        lifecycleStatus: 'PUBLISHED',
+        deletedAt: null,
+      },
+    });
+
+    const existingVariant = await prisma.productVariant.findFirst({
+      where: { sku: 'DEMO-SKIN-50ML' },
+    });
+    if (!existingVariant) {
+      await prisma.productVariant.create({
+        data: {
+          id: randomUUID(),
+          productId: product.id,
+          sku: 'DEMO-SKIN-50ML',
+          label: '50 ml',
+          priceCents: 2900,
+          currency: 'USD',
+          isFulfillable: true,
+        },
+      });
+    }
+
+    await prisma.productCategoryLink.upsert({
+      where: {
+        productId_categoryId: {
+          productId: product.id,
+          categoryId: skin.id,
+        },
+      },
+      create: {
+        id: randomUUID(),
+        productId: product.id,
+        categoryId: skin.id,
+      },
+      update: {},
+    });
+  }
+
+  console.log(
+    'Seeded demo catalog: 4 categories + sample Weight Management and Skincare products (AC-BR-06).',
+  );
+}
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -306,6 +480,7 @@ async function main(): Promise<void> {
 
   try {
     await seedRbacCatalog(prisma);
+    await seedDemoCatalog(prisma);
     await seedAdminUser(prisma);
     await seedSuperAdminUser(prisma);
     await seedDemoStaffUsers(prisma);

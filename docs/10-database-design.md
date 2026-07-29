@@ -317,8 +317,9 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- |
 | Purpose | Configurable Store categories with SEO metadata |
 | Primary key | `id` |
-| Relationships | M:N Products via ProductCategoryLinks; optional Blog associations |
-| Business rules | Create/update/publish via CRM without deploy (`FR-CAT-001/002`); only published visible on Store (`FR-CAT-003`); demo categories are seed data (`FR-CAT-004`) |
+| Relationships | M:N Products via ProductCategoryLinks; optional self-parent hierarchy (`parent_id`); optional Blog associations |
+| Notable columns | `thumbnail_media_asset_id`, `min_quantity` / `max_quantity` / `group_of`, `display_type`, header align/image, `content_permission_roles` |
+| Business rules | Create/update/publish via Guardian without deploy (`FR-CAT-001/002`); only published visible on Store (`FR-CAT-003`); demo categories are seed data (`FR-CAT-004`) |
 | Retention | Unpublish/archive preferred |
 | Trace | FR-CAT-001–004, ARCH-043, ROAD-004 |
 
@@ -328,7 +329,8 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- |
 | Purpose | Sellable catalog offerings with Rx-eligibility, pricing base, media, SEO, publish state |
 | Primary key | `id` |
-| Relationships | 1:N ProductVariants, ProductMedia; M:N Categories; bindings to questionnaires/treatment plans |
+| Relationships | 1:N ProductVariants, ProductMedia, ProductRelation; M:N Categories; bindings to questionnaires/treatment plans |
+| Notable columns | `short_description`, `is_featured`, `brand_id`/`brand_name`, `featured_media_asset_id`, `product_type`, `tags`, `medical_info` (summary), `attributes` JSON attribute defs with per-attribute `din`/`dose`, inventory catalog (`gtin`, `sold_individually`), shipping dims/class, linked bundle copy, `default_variation_options`, advanced (`purchase_note`, `menu_order`, `enable_reviews`, `limit_subscription`), Stripe prefs (`stripe_button_position`, `stripe_gateways`) |
 | Business rules | Rx flag drives clinical intake and order states (`FR-PRD-004`); only published on Store (`FR-PRD-003`); Admin publish without code (`FR-PRD-002`) |
 | Retention | Archive/unpublish; retain for historical order FKs |
 | Trace | FR-PRD-001–005, ARCH-042, ROAD-004 |
@@ -340,6 +342,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Purpose | SKU-level variants (size/strength/pack) with price and fulfillability |
 | Primary key | `id` |
 | Relationships | N:1 Product; 0:1 InventoryBalance; referenced by CartItems, OrderItems, StockMovements |
+| Notable columns | `price_cents`, optional `sale_price_cents`, `sku`, `is_fulfillable` |
 | Business rules | Inventory tracked per fulfillable SKU (`FR-INV-001`); checkout revalidates published state |
 | Retention | Archive with product; historical order lines keep snapshot + variant FK |
 | Trace | FR-PRD-001, FR-INV-001 |

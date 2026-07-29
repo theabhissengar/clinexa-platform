@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Engineering leadership, architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md) |
 
 This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
 
@@ -94,6 +94,9 @@ Every phase record in §5 carries these fields.
 | **P5** | Guardian module skeletons under `/guardian/*` | In progress | P2, P3, P4 |
 | **P6** | API enforcement for destructive operations | Not started | P3 |
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
+| **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
+| **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P8 |
+| **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
 > **Design versus code.** P0, P1, and P3 are documentation phases and are complete as *design*. Their code counterparts land inside P2, P4, P5, and P6; each of those phases verifies the design it implements.
@@ -230,6 +233,38 @@ Every phase record in §5 carries these fields.
 | **Notes** | A phase that cannot be verified is not complete, however finished it looks |
 | **Verification** | Every check in [30](30-migration-and-verification.md) passes; registry and matrix reflect delivered state; no open decision blocks a shipped surface |
 
+### P8 — Products Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Products and Categories as the first major business platform module: schema, domain services, admin and public catalog APIs, Class D delete, Guardian mini-apps, demo seed |
+| **Status** | In progress |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/products-platform-module` |
+| **PR** | — |
+| **Dependencies** | P5 shell; Class D codes and server gates (align with P6); blueprint [31](31-products-module.md) |
+| **Scope** | Prisma `DB-010`–`014` + hierarchy/merchandising fields + lifecycle; Nest `products`/`categories`; `PERM-PRD-010`/`PERM-CAT-010`; public published reads; Guardian catalog list/editor UX (status tabs, hover actions, shared create/edit); seed four demo categories; media attach only (no upload ownership); inventory summary stub only |
+| **Architecture changes** | Implements `GRD-031`/`032`, `FR-PRD-*`, `FR-CAT-*`, `API-018`–`037` + archive/restore/delete/duplicate/featured/bulk-delete |
+| **Documentation updates** | [31](31-products-module.md), [27](27-module-registry.md), [26](26-implementation-tracker.md) (this record), [11](11-api-design.md) admin wording as endpoints land |
+| **Notes** | Products never owns Inventory mutations, Media upload, or Store presentation. Product Settings, AI, Brands entity module, and Phase 10 platform-wide UX remain out of scope. Bounded list bulk/archive and catalog editor UX are in P8. |
+| **Verification** | Class D delete denied without grant; published-only public APIs; `OR-14` blocks unsafe Rx publish; seed categories present; typecheck/lint/unit tests pass |
+
+### P10 — Internal Platform UX/UI Modernization
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Modernize the complete Guardian and CRM user experience after major functional modules are complete |
+| **Status** | Deferred |
+| **Owner** | Platform architecture / Frontend |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | Major Guardian and CRM functional modules delivered (not gated on P8 alone) |
+| **Scope** | Navigation improvements, dashboard redesign, table/form polish, global search, favorites, pinned modules, keyboard shortcuts, responsive, accessibility, design polish, animations, loading states, usability — **no detailed UI plan in P8** |
+| **Architecture changes** | Additive UX only; must not fork the shared shell (`UI-011`) |
+| **Documentation updates** | Tracker status when started; design-system notes as needed |
+| **Notes** | Completely independent from Products functional delivery. Products must not invent custom UX patterns that conflict with the shared platform |
+| **Verification** | Shared shell remains one product; no module-private design systems |
+
 ### PF — Future work
 
 | Field | Value |
@@ -240,10 +275,10 @@ Every phase record in §5 carries these fields.
 | **Branch** | — |
 | **PR** | — |
 | **Dependencies** | P7 |
-| **Scope** | Guardian Security area (two-factor authentication, trusted devices, active sessions, login history, recovery codes, security logs) per [25 §14](25-guardian.md); Store and Patient Portal clients; navigation conveniences (global search, pinned modules, favorites, recent); vendor switching; additional consumers (mobile, admin mobile, vendor portal, partner portal, public APIs) |
+| **Scope** | Guardian Security area (two-factor authentication, trusted devices, active sessions, login history, recovery codes, security logs) per [25 §14](25-guardian.md); Store and Patient Portal clients; navigation conveniences (global search, pinned modules, favorites, recent) — note P10 may absorb some UX conveniences; vendor switching; additional consumers (mobile, admin mobile, vendor portal, partner portal, public APIs) |
 | **Architecture changes** | Must be additive. Any future client that requires redesign of the ecosystem model is a violation of `ARCH-162` |
 | **Documentation updates** | [27](27-module-registry.md) consumers, [28](28-ownership-matrix.md) columns, [29 §11](29-navigation-blueprint.md) |
-| **Notes** | Deferred scope is designed for, not designed now. The architecture must not preclude any item listed here |
+| **Notes** | Deferred scope is designed for, not designed now. The architecture must not preclude any item listed here. UX modernization is tracked as **P10**, not only under PF |
 | **Verification** | Adding a future consumer requires new configuration, permissions, and documentation rows only—no change to module ownership or business rules |
 
 ---
@@ -260,6 +295,8 @@ flowchart TD
   P5[P5_Guardian_skeletons]
   P6[P6_API_destructive_enforcement]
   P7[P7_Verification_and_signoff]
+  P8[P8_Products_platform_module]
+  P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
   P0 --> P3
@@ -272,6 +309,8 @@ flowchart TD
   P4 --> P7
   P5 --> P7
   P6 --> P7
+  P5 --> P8
+  P8 --> P10
   P7 --> PF
 ```
 
@@ -343,6 +382,7 @@ A phase is complete when all of the following hold.
 | 1.1 | 2026-07-28 | Platform Engineering | Mark P2 Complete, P4 Complete (foundation placeholders), and P5 In progress for Guardian Foundation (`feature/guardian-foundation`); resolve `DEC-001` role-based default landing |
 | 1.2 | 2026-07-28 | Platform Engineering | Foundation nav correction: shared modules in both contexts; CRM Users + Activity Log + Subscriptions; Guardian Clinical/Content/Commerce placeholders; Questionnaires under Clinical |
 | 1.3 | 2026-07-28 | Platform Engineering | Prescriptions and Questionnaires are CRM-only — removed from Guardian nav/pages; aligned CRM, Guardian, Module Registry, Ownership Matrix, Navigation Blueprint, RBAC context note |
+| 1.4 | 2026-07-29 | Platform Engineering | P8 Products platform module in progress; P10 Internal Platform UX/UI Modernization reserved; blueprint [31](31-products-module.md) |
 
 ---
 

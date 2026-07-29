@@ -29,6 +29,15 @@ export const ErrorCodes = {
   AUTHZ_CRM_SHELL_DENIED: 'ERR-AUTHZ-003',
   /** Clinical data denied for Marketing/Content. */
   AUTHZ_CLINICAL_DENIED: 'ERR-AUTHZ-004',
+
+  /** Catalog publish safety failed (OR-14). */
+  PRD_PUBLISH_UNSAFE: 'ERR-PRD-001',
+  /** Invalid product lifecycle transition. */
+  PRD_INVALID_TRANSITION: 'ERR-PRD-002',
+  /** Destructive catalog action refused (retention). */
+  PRD_RETENTION_BLOCK: 'ERR-PRD-003',
+  /** Duplicate slug or SKU. */
+  PRD_CONFLICT: 'ERR-PRD-004',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

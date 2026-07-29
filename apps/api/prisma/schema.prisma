@@ -113,3 +113,244 @@ model Session {
   @@index([absoluteExpiresAt])
   @@map("sessions")
 }
+
+// ---------------------------------------------------------------------------
+// Catalog (DB-010–014) — Products platform module
+// ---------------------------------------------------------------------------
+
+enum ProductLifecycleStatus {
+  DRAFT
+  REVIEW
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+}
+
+enum ProductType {
+  STANDARD
+  VARIABLE
+  BUNDLE
+  KIT
+  DIGITAL
+  SIMPLE_SUBSCRIPTION
+  VARIABLE_SUBSCRIPTION
+}
+
+enum CategoryLifecycleStatus {
+  DRAFT
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+}
+
+/// Configurable Store categories with SEO metadata (DB-010).
+model Category {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  name                 String
+  slug                 String
+  description          String?
+  parentId             String?                 @map("parent_id") @db.Uuid
+  lifecycleStatus      CategoryLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  seoTitle             String?                 @map("seo_title")
+  seoDescription       String?                 @map("seo_description")
+  sortOrder            Int                     @default(0) @map("sort_order")
+  /// Opaque Media Library asset id for category thumbnail.
+  thumbnailMediaAssetId String?                @map("thumbnail_media_asset_id")
+  minQuantity          Int?                    @map("min_quantity")
+  maxQuantity          Int?                    @map("max_quantity")
+  groupOf              Int?                    @map("group_of")
+  displayType          String?                 @map("display_type")
+  headerContentAlign   String?                 @map("header_content_align")
+  headerTextAlign      String?                 @map("header_text_align")
+  headerImageAssetId   String?                 @map("header_image_asset_id")
+  /// Role codes that may view this category on Store; empty = everyone.
+  contentPermissionRoles String[]              @default([]) @map("content_permission_roles")
+  deletedAt            DateTime?               @map("deleted_at") @db.Timestamptz(3)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  parent       Category?             @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]            @relation("CategoryTree")
+  productLinks ProductCategoryLink[]
+
+  @@unique([slug])
+  @@index([lifecycleStatus])
+  @@index([parentId])
+  @@map("categories")
+}
+
+/// Sellable catalog offerings (DB-011).
+model Product {
+  id                       String                 @id @default(uuid()) @db.Uuid
+  name                     String
+  slug                     String
+  description              String?
+  shortDescription         String?                @map("short_description")
+  productType              ProductType            @default(STANDARD) @map("product_type")
+  lifecycleStatus          ProductLifecycleStatus @default(DRAFT) @map("lifecycle_status")
+  isRxEligible             Boolean                @default(false) @map("is_rx_eligible")
+  isFeatured               Boolean                @default(false) @map("is_featured")
+  brandId                  String?                @map("brand_id") @db.Uuid
+  /// Display label until Brands module owns records.
+  brandName                String?                @map("brand_name")
+  tags                     String[]               @default([])
+  seoTitle                 String?                @map("seo_title")
+  seoDescription           String?                @map("seo_description")
+  seoCanonical             String?                @map("seo_canonical")
+  medicalInfo              Json?                  @map("medical_info")
+  /// Catalog attribute definitions: [{ name, values[], forVariation }].
+  attributes               Json?
+  /// Opaque featured image asset id (Media Library).
+  featuredMediaAssetId     String?                @map("featured_media_asset_id")
+  /// Opaque ref until Questionnaires module owns bindings (OR-14).
+  questionnaireBindingRef  String?                @map("questionnaire_binding_ref")
+
+  /// Inventory (catalog-side; stock balances remain Inventory module).
+  gtin                     String?
+  soldIndividually         Boolean                @default(false) @map("sold_individually")
+
+  /// Shipping dimensions (Store/fulfillment consumers; Shipping module later).
+  weightLbs                Decimal?               @map("weight_lbs") @db.Decimal(12, 4)
+  lengthIn                 Decimal?               @map("length_in") @db.Decimal(12, 4)
+  widthIn                  Decimal?               @map("width_in") @db.Decimal(12, 4)
+  heightIn                 Decimal?               @map("height_in") @db.Decimal(12, 4)
+  shippingClass            String?                @map("shipping_class")
+  oneTimeShipping          Boolean                @default(false) @map("one_time_shipping")
+
+  /// Linked / bundle merchandising copy (targets live in product_relations).
+  bundleSellsTitle         String?                @map("bundle_sells_title")
+  bundleSellsDiscount      String?                @map("bundle_sells_discount")
+
+  /// Default option picks for variable products.
+  defaultVariationOptions  Json?                  @map("default_variation_options")
+
+  /// Advanced catalog options.
+  purchaseNote             String?                @map("purchase_note")
+  menuOrder                Int                    @default(0) @map("menu_order")
+  enableReviews            Boolean                @default(true) @map("enable_reviews")
+  limitSubscription        String?                @map("limit_subscription")
+
+  /// Per-product Stripe gateway presentation (Payments owns capture; Products stores prefs).
+  stripeButtonPosition     String?                @map("stripe_button_position")
+  stripeGateways           Json?                  @map("stripe_gateways")
+
+  deletedAt                DateTime?              @map("deleted_at") @db.Timestamptz(3)
+  createdAt                DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  variants       ProductVariant[]
+  media          ProductMedia[]
+  categoryLinks  ProductCategoryLink[]
+  changeHistory  ProductChangeHistory[]
+  activities     ProductActivity[]
+  relationsFrom  ProductRelation[] @relation("ProductRelationSource")
+  relationsTo    ProductRelation[] @relation("ProductRelationTarget")
+
+  @@unique([slug])
+  @@index([lifecycleStatus])
+  @@index([isRxEligible])
+  @@index([isFeatured])
+  @@map("products")
+}
+
+/// SKU-level variants (DB-012).
+model ProductVariant {
+  id            String    @id @default(uuid()) @db.Uuid
+  productId     String    @map("product_id") @db.Uuid
+  sku           String
+  label         String?
+  optionValues  Json?     @map("option_values")
+  priceCents    Int       @map("price_cents")
+  salePriceCents Int?     @map("sale_price_cents")
+  currency      String    @default("USD")
+  isFulfillable Boolean   @default(true) @map("is_fulfillable")
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([sku])
+  @@index([productId])
+  @@map("product_variants")
+}
+
+/// Product ↔ media asset association only (DB-013). Does not own upload/storage.
+model ProductMedia {
+  id           String   @id @default(uuid()) @db.Uuid
+  productId    String   @map("product_id") @db.Uuid
+  /// Opaque Media Library asset id (no FK until Media module ships).
+  mediaAssetId String   @map("media_asset_id")
+  alt          String?
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, mediaAssetId])
+  @@index([productId])
+  @@map("product_media")
+}
+
+/// Many-to-many Products ↔ Categories (DB-014).
+model ProductCategoryLink {
+  id         String @id @default(uuid()) @db.Uuid
+  productId  String @map("product_id") @db.Uuid
+  categoryId String @map("category_id") @db.Uuid
+
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@unique([productId, categoryId])
+  @@index([productId])
+  @@index([categoryId])
+  @@map("product_category_links")
+}
+
+/// Related / cross-sell / upsell links (extension point).
+model ProductRelation {
+  id           String @id @default(uuid()) @db.Uuid
+  sourceId     String @map("source_id") @db.Uuid
+  targetId     String @map("target_id") @db.Uuid
+  relationType String @map("relation_type")
+
+  source Product @relation("ProductRelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target Product @relation("ProductRelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId, relationType])
+  @@index([sourceId])
+  @@index([targetId])
+  @@map("product_relations")
+}
+
+/// Entity change history for a product (not platform Audit Log).
+model ProductChangeHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  changes   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+  @@map("product_change_history")
+}
+
+/// User interactions related to a product (not History diffs, not Audit).
+model ProductActivity {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  kind      String
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+  @@map("product_activities")
+}

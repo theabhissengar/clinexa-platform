@@ -71,8 +71,8 @@ Consumer keys are used in the registry tables below.
 
 | Module | Capability | Context | Consumers | Ownership emphasis | CRUD and responsibilities | Destructive operations | Permissions | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **Products** (`GRD-031`, `CRM-038`) | Treatment and product catalog, publish state, pricing attributes | Guardian | `GRD`, `STO`, `SYS`, later `MOB`, `API` | Administrative — catalog is master data | Guardian creates, edits, publishes, unpublishes; Store reads published only; CRM reads for operational context | Delete, archive, restore | `PERM-PRD-001`–`002`; `PERM-PRD-010` (Class D) | Planned |
-| **Categories** (`GRD-032`, `CRM-039`) | Catalog taxonomy and navigation structure | Guardian | `GRD`, `STO`, `SYS` | Administrative | Guardian creates, edits, reorders, publishes; Store reads published | Delete, archive, restore | `PERM-CAT-001`–`002`; `PERM-CAT-010` (Class D) | Planned |
+| **Products** (`GRD-031`, `CRM-038`) | Treatment and product catalog, publish state, pricing attributes | Guardian | `GRD`, `STO`, `SYS`, later `MOB`, `API` | Administrative — catalog is master data | Guardian creates, edits, publishes, unpublishes; Store reads published only; CRM reads for operational context | Delete, archive, restore | `PERM-PRD-001`–`002`; `PERM-PRD-010` (Class D) | In delivery — see [31](31-products-module.md) |
+| **Categories** (`GRD-032`, `CRM-039`) | Catalog taxonomy and navigation structure | Guardian | `GRD`, `STO`, `SYS` | Administrative | Guardian creates, edits, reorders, publishes; Store reads published | Delete, archive, restore | `PERM-CAT-001`–`002`; `PERM-CAT-010` (Class D) | In delivery — see [31](31-products-module.md) |
 | **Search** | Catalog and content discovery indexing | — (service) | `STO`, `CRM`, `GRD`, `SYS` | Neither — derived from catalog and content | Read-only projection; reindex by workers | None — index rebuild is not destruction of truth | Inherits source-module permissions | Planned |
 | **Cart** | Pre-purchase basket | — | `STO`, `SYS` | Patient-scoped commerce | Patient creates, edits, clears own cart | None administrative | `PERM-CART-*` | Planned |
 | **Checkout** | Purchase finalize with gates | — | `STO`, `SYS` | Patient-scoped commerce | Patient finalizes; requires authentication and intake where applicable | None | `PERM-CHK-001`–`002` | Planned |
@@ -199,6 +199,7 @@ A module that skips step 5 or step 8 is not a module; it is an unguarded surface
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Module Registry: rules `REG-001`–`009`, consumer catalog with extension keys, registry entries for commerce, clinical, content, and platform modules, Module Blueprint standard, shared-module split across contexts, module addition procedure |
 | 1.1 | 2026-07-28 | Platform Engineering | Questionnaires and Prescriptions recorded as CRM-only Internal Platform context; Guardian no longer a consumer of staff UI for those modules |
 | 1.2 | 2026-07-28 | Platform Engineering | Reports recorded as CRM-only Internal Platform UI; shared dual-mount modules reduced to Users, Orders, Subscriptions |
+| 1.3 | 2026-07-29 | Platform Engineering | Products and Categories status → In delivery; blueprint [31](31-products-module.md) |
 
 ---
 

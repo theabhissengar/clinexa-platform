@@ -1,19 +1,23 @@
 "use client";
 
-import { Package } from "lucide-react";
+import { Suspense } from "react";
 
-import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
 import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
+import { ProductsListPage } from "@/features/products/components/products-list-page";
 
 export default function GuardianProductsPage() {
   return (
     <RequirePagePermission permission={Permissions.PRD_MANAGE}>
-      <ModuleComingSoon
-        title="Products"
-        description="Product catalog administration placeholder. Full CRUD and publish flows ship in a later phase."
-        icon={Package}
-      />
+      <Suspense
+        fallback={
+          <main className="px-6 py-10 text-sm text-muted-foreground">
+            Loading products…
+          </main>
+        }
+      >
+        <ProductsListPage />
+      </Suspense>
     </RequirePagePermission>
   );
 }

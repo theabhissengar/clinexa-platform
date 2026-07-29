@@ -15,7 +15,8 @@ export class AuthUserDto {
 
   @ApiProperty({
     type: [String],
-    description: 'Aggregated PERM-* codes resolved server-side (advisory for UI)',
+    description:
+      'Aggregated PERM-* codes resolved server-side (advisory for UI)',
   })
   permissions!: string[];
 }

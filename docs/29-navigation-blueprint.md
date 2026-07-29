@@ -72,15 +72,19 @@ It complements—not replaces—the shell contract in [18 — CRM §4](18-crm.md
 Each module owns a route subtree under its context. Example for a Guardian module:
 
 ```text
-/guardian/products                    → Overview
-/guardian/products/list               → List (or the overview itself)
+/guardian/products                    → List (query: status, q, categoryId, productType, brand, page)
 /guardian/products/new                → Create
-/guardian/products/:id                → View
-/guardian/products/:id/edit           → Edit
+/guardian/products/:id                → Redirect → Edit (stable deep link)
+/guardian/products/:id/edit           → Edit (canonical)
 /guardian/products/:id/history        → History
 /guardian/products/:id/activity       → Activity
-/guardian/products/logs               → Logs
-/guardian/products/settings           → Module settings
+/guardian/products/logs               → Logs (reserved)
+/guardian/products/settings           → Module settings (reserved)
+
+/guardian/categories                  → List (query: q, page)
+/guardian/categories/new              → Create
+/guardian/categories/:id              → Redirect → Edit (stable deep link)
+/guardian/categories/:id/edit         → Edit (canonical)
 ```
 
 The same shape applies in CRM, for example `/crm/orders/:id/history`.

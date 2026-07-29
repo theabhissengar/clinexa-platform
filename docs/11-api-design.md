@@ -697,16 +697,19 @@ All paths are relative to `/v1` unless noted. **Roles Allowed** use abbreviation
 | API-018 | GET | `/products` | List published products | No | G, P, Mk, Ct, Ad | FR-PRD-003, FR-STO-001 | Store: published only |
 | API-019 | GET | `/products/{slug}` | Product detail by slug | No | G, P, Mk, Ct, Ad | FR-PRD-001/003, FR-STO-002 | SEO metadata; Rx flag visible |
 | API-020 | GET | `/products/{id}` | Product by id | No* | G, P / Ad | FR-PRD-003 | Unpublished only for Ad CRM |
-| API-021 | GET | `/admin/products` | CRM product list | Yes | Ad | FR-PRD-002 | Includes drafts/unpublished |
-| API-022 | POST | `/admin/products` | Create product | Yes | Ad | FR-PRD-002, FR-ADM-002 | Config without deploy |
-| API-023 | PATCH | `/admin/products/{id}` | Update product | Yes | Ad | FR-PRD-002 | |
+| API-021 | GET | `/admin/products` | Admin product list | Yes | Ad | FR-PRD-002 | Includes drafts; filters `q`/`status`/`productType`/`categoryId`/`brandName`; returns `statusCounts` |
+| API-022 | POST | `/admin/products` | Create product | Yes | Ad | FR-PRD-002, FR-ADM-002 | Config without deploy; supports shortDescription/featured/brandName/tags/categories |
+| API-023 | PATCH | `/admin/products/{id}` | Update product | Yes | Ad | FR-PRD-002 | Includes Product Data fields + relation ids (upsell/cross/bundle) |
 | API-024 | POST | `/admin/products/{id}/publish` | Publish product | Yes | Ad | FR-PRD-002, FR-ADM-003 | Validate Rx/QST bindings before publish |
 | API-025 | POST | `/admin/products/{id}/unpublish` | Unpublish | Yes | Ad | FR-PRD-002 | Removes from Store |
 | API-026 | GET | `/admin/products/{id}/variants` | List variants | Yes | Ad | FR-PRD-001 | |
-| API-027 | POST | `/admin/products/{id}/variants` | Create variant/SKU | Yes | Ad | FR-PRD-001 | |
-| API-028 | PATCH | `/admin/products/{id}/variants/{variantId}` | Update variant | Yes | Ad | FR-PRD-001 | |
+| API-027 | POST | `/admin/products/{id}/variants` | Create variant/SKU | Yes | Ad | FR-PRD-001 | Supports `salePriceCents` |
+| API-028 | PATCH | `/admin/products/{id}/variants/{variantId}` | Update variant | Yes | Ad | FR-PRD-001 | Supports `salePriceCents` |
 | API-029 | PUT | `/admin/products/{id}/categories` | Set category links | Yes | Ad | FR-PRD-001, FR-CAT-002 | |
-| API-030 | POST | `/admin/products/{id}/media` | Attach media metadata | Yes | Ad | FR-PRD-001 | Upload binary via signed URL pattern (§7) |
+| API-030 | POST | `/admin/products/{id}/media` | Attach media asset reference | Yes | Ad | FR-PRD-001 | Association only — Media Library owns upload |
+| API-030a | POST | `/admin/products/{id}/duplicate` | Duplicate as draft | Yes | Ad | FR-PRD-002 | Copies variants/media/categories |
+| API-030b | POST | `/admin/products/{id}/toggle-featured` | Toggle featured | Yes | Ad | FR-PRD-002 | |
+| API-030c | POST | `/admin/products/bulk-delete` | Bulk soft-delete | Yes | Ad | FR-PRD-010 | Class D; per-id results |
 
 \*Unauthenticated access limited to published.
 
@@ -716,9 +719,9 @@ All paths are relative to `/v1` unless noted. **Roles Allowed** use abbreviation
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | API-031 | GET | `/categories` | List published categories | No | G, P, Mk, Ct, Ad | FR-CAT-003, FR-STO-001 | |
 | API-032 | GET | `/categories/{slug}` | Category detail | No | G, P, Mk, Ct, Ad | FR-CAT-001/003, FR-STO-002 | SEO metadata |
-| API-033 | GET | `/admin/categories` | CRM category list | Yes | Ad | FR-CAT-002 | |
-| API-034 | POST | `/admin/categories` | Create category | Yes | Ad | FR-CAT-002 | |
-| API-035 | PATCH | `/admin/categories/{id}` | Update category | Yes | Ad | FR-CAT-002 | |
+| API-033 | GET | `/admin/categories` | Admin category list | Yes | Ad | FR-CAT-002 | Hierarchical `depth`; `_count.productLinks` |
+| API-034 | POST | `/admin/categories` | Create category | Yes | Ad | FR-CAT-002 | Parent, qty rules, display/header, content permission roles |
+| API-035 | PATCH | `/admin/categories/{id}` | Update category | Yes | Ad | FR-CAT-002 | Same fields as create |
 | API-036 | POST | `/admin/categories/{id}/publish` | Publish | Yes | Ad | FR-CAT-002 | |
 | API-037 | POST | `/admin/categories/{id}/unpublish` | Unpublish | Yes | Ad | FR-CAT-002 | |
 

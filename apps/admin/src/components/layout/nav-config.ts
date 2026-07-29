@@ -12,6 +12,7 @@ import {
   Settings,
   Shield,
   ShoppingCart,
+  Tags,
   Users,
 } from "lucide-react";
 
@@ -202,6 +203,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "commerce",
     permission: Permissions.PRD_MANAGE,
     order: 20,
+  },
+  {
+    key: "guardian-categories",
+    title: "Categories",
+    route: "/guardian/categories",
+    icon: Tags,
+    context: "guardian",
+    group: "commerce",
+    permission: Permissions.CAT_MANAGE,
+    order: 25,
   },
   {
     key: "guardian-orders",

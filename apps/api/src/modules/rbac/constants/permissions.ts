@@ -30,9 +30,13 @@ export const Permissions = {
 
   PRD_VIEW_PUBLISHED: 'PERM-PRD-001',
   PRD_MANAGE: 'PERM-PRD-002',
+  /** Class D — soft-delete product in Guardian. */
+  PRD_DELETE: 'PERM-PRD-010',
 
   CAT_VIEW_PUBLISHED: 'PERM-CAT-001',
   CAT_MANAGE: 'PERM-CAT-002',
+  /** Class D — delete category in Guardian. */
+  CAT_DELETE: 'PERM-CAT-010',
 
   CART_MANAGE_LINES: 'PERM-CART-001',
   CART_STAGE_COUPON: 'PERM-CART-002',
@@ -281,9 +285,19 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.PRD_MANAGE,
     module: 'PRD',
     name: 'Manage/publish products',
-    description: 'Create, update, publish, archive products in CRM.',
+    description:
+      'Create, update, publish, archive, and restore products in Guardian.',
     resource: 'product',
     action: 'manage',
+  },
+  {
+    code: Permissions.PRD_DELETE,
+    module: 'PRD',
+    name: 'Delete product',
+    description:
+      'Soft-delete a product in Guardian; blocked where order history requires retention. Class D.',
+    resource: 'product',
+    action: 'delete',
   },
   {
     code: Permissions.CAT_VIEW_PUBLISHED,
@@ -297,9 +311,19 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.CAT_MANAGE,
     module: 'CAT',
     name: 'Manage categories',
-    description: 'Create, update, publish category structure in CRM.',
+    description:
+      'Create, update, publish, and manage category structure/SEO in Guardian.',
     resource: 'category',
     action: 'manage',
+  },
+  {
+    code: Permissions.CAT_DELETE,
+    module: 'CAT',
+    name: 'Delete category',
+    description:
+      'Delete a category in Guardian; blocked where dependent catalog structure requires retention. Class D.',
+    resource: 'category',
+    action: 'delete',
   },
   {
     code: Permissions.CART_MANAGE_LINES,

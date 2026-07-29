@@ -65,9 +65,7 @@ describe('PostgresPermissionLoader', () => {
       {
         role: {
           code: Roles.SUPPORT,
-          rolePermissions: [
-            { permission: { code: Permissions.SUP_TRIAGE } },
-          ],
+          rolePermissions: [{ permission: { code: Permissions.SUP_TRIAGE } }],
         },
       },
     ]);

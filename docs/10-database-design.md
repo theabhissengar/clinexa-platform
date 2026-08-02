@@ -1304,13 +1304,23 @@ Logical entity names in §3 map to physical tables by lowercasing and pluralizin
 
 ### 7.1 User
 
-| Stage | Behavior |
+Canonical account statuses and ownership: [32 — Users Module](32-users-module.md) §11. Users owns lifecycle status; Authentication enforces auth allow/deny and owns sessions/credentials ([12](12-authentication-flow.md)).
+
+| Status / stage | Behavior |
 | --- | --- |
-| Create | Guest registers → Patient user + Patient role (`FR-AUTH-001`); staff created by Admin |
-| Active | Sessions issued; profile updates self-service |
-| Security | Lockout via AccountSecurityStates; password reset rotates credentials and invalidates sessions |
-| Deactivate | Preferred over hard delete; block auth; retain clinical/order FKs |
-| Delete | Rare documented procedure; audit retained (NFR-064) |
+| Create | Guest registers via Auth → Patient user + Patient role (`FR-AUTH-001`); staff provisioned by Admin (`FR-ADM-001`) |
+| `pending_verification` | Registered or invited; Auth may block full login until verified (product policy) |
+| `active` | Sessions issued; profile updates self-service / staff edit within allowlists |
+| `suspended` | Temporary hold (`PERM-ADM-001`); auth blocked; reversible without Class D |
+| `inactive` | Admin deactivate (`PERM-ADM-001`); auth blocked; clinical/order FKs retained |
+| `archived` | Class D archive (`PERM-ADM-031`); hidden from active surfaces; history retained |
+| `deleted` | Soft delete (`PERM-ADM-030`); FKs retained; last-admin safeguard |
+| Security | Lockout via AccountSecurityStates (Auth); password reset rotates credentials and invalidates sessions (Auth) |
+| Hard delete | Rare documented procedure (`PERM-ADM-034`); healthcare retention gate; audit retained (`NFR-064`); orders/prescriptions never cascade-delete |
+| Avatar | Opaque `avatar_media_asset_id` only; Media Library owns binaries ([32](32-users-module.md) §1.4) |
+| Addresses | Contact fields and embedded billing/shipping snapshots on User (V1); reusable Address aggregate remains future ([§14](#14-address-architecture-future-recommendation)) |
+
+Legacy binary `ACTIVE` / `DISABLED` maps to `active` / `inactive` at implementation.
 
 ### 7.2 Order
 
@@ -1670,6 +1680,7 @@ flowchart LR
 | Version | Date | Author | Reviewer | Changes | Approval Status |
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Initial logical database design: principles, DB-001–DB-061 entity catalog, relationship matrix, split Mermaid ER diagrams, lifecycles, indexing, integrity, performance, security, and BO/OR/FR→DB→ARCH traceability | Draft for review |
+| 1.1 | 2026-08-02 | Platform Engineering | TBD | §7.1 User lifecycle expanded to platform statuses; avatar opaque ref; Address remains §14; link [32](32-users-module.md) | Draft for review |
 
 ---
 

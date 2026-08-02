@@ -17,6 +17,11 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { Public } from './decorators/public.decorator';
 import { AuthTokensDto } from './dto/auth-tokens.dto';
 import { LoginDto } from './dto/login.dto';
+import {
+  PasswordResetConfirmDto,
+  PasswordResetRequestDto,
+  RegisterDto,
+} from './dto/register.dto';
 import { SessionUserDto } from './dto/session-user.dto';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
 
@@ -27,6 +32,29 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
   ) {}
+
+  @Public()
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Patient self-registration (API-003); creates Patient role only',
+  })
+  async register(
+    @Body() dto: RegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthTokensDto> {
+    return this.authService.register(
+      dto.email,
+      dto.password,
+      {
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+      },
+      res,
+      { firstName: dto.firstName, lastName: dto.lastName },
+    );
+  }
 
   @Public()
   @Post('login')
@@ -46,6 +74,27 @@ export class AuthController {
       },
       res,
     );
+  }
+
+  @Public()
+  @Post('password-reset/request')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset (API-006)' })
+  async requestPasswordReset(
+    @Body() dto: PasswordResetRequestDto,
+  ): Promise<{ success: true; resetToken?: string }> {
+    return this.authService.requestPasswordReset(dto.email);
+  }
+
+  @Public()
+  @Post('password-reset/confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm password reset (API-007)' })
+  async confirmPasswordReset(
+    @Body() dto: PasswordResetConfirmDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<{ success: true }> {
+    return this.authService.confirmPasswordReset(dto.token, dto.password, res);
   }
 
   @Public()

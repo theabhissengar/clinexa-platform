@@ -1,15 +1,11 @@
 "use client";
 
-import { Users } from "lucide-react";
+import { Suspense } from "react";
 
-import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
 import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
+import { CrmUsersListPage } from "@/features/users/components/crm-users-list-page";
 
-/**
- * CRM Users — operational View / Edit only.
- * Create, Delete, Archive, Restore remain Guardian-only.
- */
 export default function CrmUsersPage() {
   return (
     <RequirePagePermission
@@ -18,11 +14,15 @@ export default function CrmUsersPage() {
         Permissions.ADM_MANAGE_USERS,
       ]}
     >
-      <ModuleComingSoon
-        title="Users"
-        description="Operational user and patient views with permitted field edits. Create, delete, archive, and restore are Guardian-only and will not appear here."
-        icon={Users}
-      />
+      <Suspense
+        fallback={
+          <main className="px-6 py-10 text-sm text-muted-foreground">
+            Loading users…
+          </main>
+        }
+      >
+        <CrmUsersListPage />
+      </Suspense>
     </RequirePagePermission>
   );
 }

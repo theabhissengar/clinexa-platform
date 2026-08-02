@@ -2,6 +2,9 @@ import {
   Injectable,
   UnauthorizedException,
   ForbiddenException,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -11,6 +14,8 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { UserStatus } from '../../../generated/prisma';
 import { AuthorizationService } from '../rbac/authorization.service';
+import { Roles } from '../rbac/constants/roles';
+import { AUTH_ALLOWED_STATUSES } from './constants/auth-allowed-statuses';
 import type { AuthTokensDto } from './dto/auth-tokens.dto';
 import type { SessionUserDto } from './dto/session-user.dto';
 import type { AuthenticatedUser } from './interfaces/authenticated-user.interface';
@@ -22,6 +27,10 @@ export type LoginContext = {
   userAgent?: string;
   ip?: string;
 };
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const MAX_FAILED_LOGINS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -42,16 +51,27 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
+      include: { accountSecurityState: true },
     });
 
     if (!user) {
       throw this.invalidCredentials();
     }
 
-    if (user.status === UserStatus.DISABLED) {
+    if (
+      user.accountSecurityState?.lockedUntil &&
+      user.accountSecurityState.lockedUntil.getTime() > Date.now()
+    ) {
+      throw new ForbiddenException({
+        code: ErrorCodes.AUTH_ACCOUNT_LOCKED,
+        message: 'Account temporarily locked due to failed login attempts',
+      });
+    }
+
+    if (!AUTH_ALLOWED_STATUSES.includes(user.status)) {
       throw new ForbiddenException({
         code: ErrorCodes.AUTH_UNAUTHENTICATED,
-        message: 'Account is disabled',
+        message: 'Account is not allowed to sign in',
       });
     }
 
@@ -60,8 +80,11 @@ export class AuthService {
       password,
     );
     if (!passwordValid) {
+      await this.recordFailedLogin(user.id);
       throw this.invalidCredentials();
     }
+
+    await this.clearFailedLogins(user.id);
 
     const now = new Date();
     const absoluteExpiresAt = this.computeAbsoluteExpiry(now);
@@ -77,6 +100,11 @@ export class AuthService {
         userAgent: context.userAgent,
         ip: context.ip,
       },
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastActiveAt: now },
     });
 
     const accessToken = await this.signAccessToken({
@@ -103,6 +131,201 @@ export class AuthService {
         permissions: authorization.permissions,
       },
     };
+  }
+
+  /**
+   * Patient self-registration (API-003). Always creates Patient role only.
+   * Staff never self-register via this path.
+   */
+  async register(
+    email: string,
+    password: string,
+    context: LoginContext,
+    res: Response,
+    profile?: { firstName?: string; lastName?: string },
+  ): Promise<AuthTokensDto> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: ErrorCodes.USR_EMAIL_CONFLICT,
+        message: 'Email already registered',
+      });
+    }
+
+    const patientRole = await this.prisma.role.findUnique({
+      where: { code: Roles.PATIENT },
+    });
+    if (!patientRole) {
+      throw new BadRequestException({
+        code: ErrorCodes.SYS_UNEXPECTED,
+        message: 'Patient role missing from catalog',
+      });
+    }
+
+    const passwordHash = await this.passwordHasher.hash(password);
+    await this.prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+        firstName: profile?.firstName,
+        lastName: profile?.lastName,
+        displayName:
+          [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') ||
+          null,
+        roleAssignments: {
+          create: { roleId: patientRole.id },
+        },
+        accountSecurityState: { create: {} },
+      },
+    });
+
+    return this.login(normalizedEmail, password, context, res);
+  }
+
+  /**
+   * Password reset request (API-006). Always returns success shape to avoid enumeration.
+   * In local/dev, resetToken is returned when AUTH_EXPOSE_RESET_TOKEN=true.
+   */
+  async requestPasswordReset(email: string): Promise<{
+    success: true;
+    resetToken?: string;
+  }> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user || !AUTH_ALLOWED_STATUSES.includes(user.status)) {
+      return { success: true };
+    }
+
+    return this.issuePasswordResetToken(user.id);
+  }
+
+  /**
+   * Reset entry point for the Users editor: Users resolves the record, Auth
+   * owns the credential. Unlike the public path this surfaces a missing user,
+   * because the caller already holds an administrative permission.
+   */
+  async requestPasswordResetForUser(userId: string): Promise<{
+    success: true;
+    resetToken?: string;
+  }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'User not found',
+      });
+    }
+
+    return this.issuePasswordResetToken(user.id);
+  }
+
+  private async issuePasswordResetToken(userId: string): Promise<{
+    success: true;
+    resetToken?: string;
+  }> {
+    const rawToken = generateOpaqueToken();
+    const tokenHash = this.hashRefreshToken(rawToken);
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    const expose = process.env.AUTH_EXPOSE_RESET_TOKEN === 'true';
+
+    return expose ? { success: true, resetToken: rawToken } : { success: true };
+  }
+
+  async confirmPasswordReset(
+    token: string,
+    newPassword: string,
+    res: Response,
+  ): Promise<{ success: true }> {
+    const tokenHash = this.hashRefreshToken(token);
+    const record = await this.prisma.passwordResetToken.findFirst({
+      where: {
+        tokenHash,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+    });
+
+    if (!record) {
+      throw new BadRequestException({
+        code: ErrorCodes.AUTH_RESET_INVALID,
+        message: 'Invalid or expired password reset token',
+      });
+    }
+
+    const passwordHash = await this.passwordHasher.hash(newPassword);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      });
+      await tx.user.update({
+        where: { id: record.userId },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await tx.session.updateMany({
+        where: { userId: record.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
+
+    this.clearRefreshCookie(res);
+    return { success: true };
+  }
+
+  /**
+   * Set a credential directly for the Users editor (no reset token). Bumps
+   * tokenVersion and revokes sessions so existing access tokens stop resolving.
+   */
+  async setPasswordForUser(userId: string, newPassword: string): Promise<void> {
+    if (!newPassword || newPassword.length < 12) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_INVALID_FORMAT,
+        message: 'Password must be at least 12 characters',
+      });
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'User not found',
+      });
+    }
+
+    const passwordHash = await this.passwordHasher.hash(newPassword);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          tokenVersion: { increment: 1 },
+        },
+      });
+      await tx.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
   }
 
   async refresh(
@@ -139,12 +362,12 @@ export class AuthService {
       });
     }
 
-    if (session.user.status === UserStatus.DISABLED) {
+    if (!AUTH_ALLOWED_STATUSES.includes(session.user.status)) {
       await this.revokeSession(session.id);
       this.clearRefreshCookie(res);
       throw new UnauthorizedException({
         code: ErrorCodes.AUTH_UNAUTHENTICATED,
-        message: 'Account is disabled',
+        message: 'Account is not allowed to sign in',
       });
     }
 
@@ -203,10 +426,6 @@ export class AuthService {
     };
   }
 
-  /**
-   * Validates JWT payload against the Session table (revocation authority).
-   * Authorization is loaded via AuthorizationService — not AuthN queries.
-   */
   async validateAccessTokenPayload(
     payload: JwtPayload,
   ): Promise<AuthenticatedUser | null> {
@@ -228,7 +447,7 @@ export class AuthService {
       return null;
     }
 
-    if (session.user.status === UserStatus.DISABLED) {
+    if (!AUTH_ALLOWED_STATUSES.includes(session.user.status)) {
       return null;
     }
 
@@ -278,6 +497,40 @@ export class AuthService {
       secure: this.configService.getOrThrow<boolean>('auth.cookieSecure'),
       sameSite: this.configService.getOrThrow<'lax'>('auth.cookieSameSite'),
       path: this.configService.getOrThrow<string>('auth.cookiePath'),
+    });
+  }
+
+  private async recordFailedLogin(userId: string): Promise<void> {
+    const state = await this.prisma.accountSecurityState.upsert({
+      where: { userId },
+      create: {
+        userId,
+        failedLoginCount: 1,
+        lastFailedLoginAt: new Date(),
+      },
+      update: {
+        failedLoginCount: { increment: 1 },
+        lastFailedLoginAt: new Date(),
+      },
+    });
+
+    if (state.failedLoginCount + 1 >= MAX_FAILED_LOGINS) {
+      await this.prisma.accountSecurityState.update({
+        where: { userId },
+        data: { lockedUntil: new Date(Date.now() + LOCKOUT_MS) },
+      });
+    }
+  }
+
+  private async clearFailedLogins(userId: string): Promise<void> {
+    await this.prisma.accountSecurityState.upsert({
+      where: { userId },
+      create: { userId, failedLoginCount: 0 },
+      update: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lastFailedLoginAt: null,
+      },
     });
   }
 

@@ -38,6 +38,19 @@ export const ErrorCodes = {
   PRD_RETENTION_BLOCK: 'ERR-PRD-003',
   /** Duplicate slug or SKU. */
   PRD_CONFLICT: 'ERR-PRD-004',
+
+  /** Invalid user lifecycle transition. */
+  USR_INVALID_TRANSITION: 'ERR-USR-001',
+  /** Last-admin safeguard blocked the operation. */
+  USR_LAST_ADMIN: 'ERR-USR-002',
+  /** Email already registered. */
+  USR_EMAIL_CONFLICT: 'ERR-USR-003',
+  /** Profile field allowlist / self-escalation blocked. */
+  USR_PROFILE_FORBIDDEN: 'ERR-USR-004',
+  /** Password reset token invalid or expired. */
+  AUTH_RESET_INVALID: 'ERR-AUTH-006',
+  /** Account locked (abuse protection). */
+  AUTH_ACCOUNT_LOCKED: 'ERR-AUTH-007',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

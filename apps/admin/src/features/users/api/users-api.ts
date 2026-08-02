@@ -12,6 +12,7 @@ import type {
   UpdateUserOperationalPayload,
   UserActivityEntry,
   UserHistoryEntry,
+  UserRoleRef,
   UserStatus,
 } from "../types";
 

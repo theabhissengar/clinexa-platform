@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   Image,
+  KeyRound,
   LayoutDashboard,
   Newspaper,
   Package,
@@ -247,6 +248,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "users",
     permission: Permissions.ADM_MANAGE_USERS,
     order: 50,
+  },
+  {
+    key: "guardian-roles",
+    title: "Roles & permissions",
+    route: "/guardian/roles",
+    icon: KeyRound,
+    context: "guardian",
+    group: "users",
+    permission: Permissions.ADM_ASSIGN_ROLES,
+    order: 51,
   },
   // Content
   {

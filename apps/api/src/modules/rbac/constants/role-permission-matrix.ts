@@ -198,13 +198,17 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.ADM_ASSIGN_ROLES,
     Permissions.ADM_CONFIGURE_WORKFLOWS,
     Permissions.ADM_VIEW_AUDIT,
+    Permissions.ADM_DELETE_USER,
+    Permissions.ADM_ARCHIVE_USER,
+    Permissions.ADM_RESTORE_USER,
     Permissions.SET_MANAGE,
     Permissions.SET_OVERSELL_POLICIES,
     Permissions.REV_MODERATE,
   ],
   /**
    * Super Administrator: same business-module grants as Administrator plus
-   * PERM-ADM-020 (platform Administration). Not a god mode — normal RBAC pipeline.
+   * PERM-ADM-020 (platform Administration) and full Class D including bulk/hard-delete.
+   * Not a god mode — normal RBAC pipeline.
    */
   [Roles.SUPER_ADMINISTRATOR]: [
     Permissions.AUTH_SIGN_IN,
@@ -252,6 +256,11 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.ADM_CONFIGURE_WORKFLOWS,
     Permissions.ADM_VIEW_AUDIT,
     Permissions.ADM_ACCESS_ADMINISTRATION,
+    Permissions.ADM_DELETE_USER,
+    Permissions.ADM_ARCHIVE_USER,
+    Permissions.ADM_RESTORE_USER,
+    Permissions.ADM_BULK_CLEANUP,
+    Permissions.ADM_HARD_DELETE,
     Permissions.SET_MANAGE,
     Permissions.SET_OVERSELL_POLICIES,
     Permissions.REV_MODERATE,

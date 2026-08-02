@@ -673,7 +673,9 @@ All paths are relative to `/v1` unless noted. **Roles Allowed** use abbreviation
 
 ### 6.3 Users
 
-Admin paths prefer `/v1/admin/users` at implementation for consistency with Products (`/v1/admin/products`). Logical catalog below retains historical `/users` resource names; Class D lifecycle endpoints are additive. Blueprint: [32](32-users-module.md). Password reset and credential changes from the user editor **call Auth** (`API-006`/`007`), not Users domain tables.
+Admin paths prefer `/v1/admin/users` at implementation for consistency with Products (`/v1/admin/products`). Logical catalog below retains historical `/users` resource names; Class D lifecycle endpoints are additive. Blueprint: [32](32-users-module.md). Password reset and credential changes from the user editor **call Auth** (`API-006`/`007` / admin set-password assist), not Users domain tables.
+
+**Implemented (P9):** `GET/POST /v1/admin/users`, `GET/PATCH /v1/admin/users/{id}`, `PUT /v1/admin/users/{id}/roles`, suspend/deactivate/reactivate, Class D archive/restore/delete, history/activity, `GET/PATCH /v1/crm/users`, `GET/PATCH /v1/profile`, `GET /v1/admin/roles`, `GET /v1/admin/permissions`, `PUT /v1/admin/roles/{id}/permissions`, Auth `POST /v1/auth/register` and password-reset request/confirm.
 
 | API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1718,6 +1720,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Architectural appendix: §13.6 lifecycle classification, §13.7 idempotency matrix, §13.8 ownership matrix, §13.9 dependency flow, §13.10 HTTP status reference; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-07-27 | Platform Engineering | TBD | Consumer-agnostic zones (staff APIs replace CRM-labelled zone); new §3.2a destructive endpoints with `API-020`–`026` and Class D permission map; hard-deny rows for Guardian context and destructive grants; Internal Platform contexts in architecture diagram and composition surfaces; `PERM-GRD-001` in session validation; Administration/Settings consumers restated as Guardian-context roles; audit and authorization notes in §12 | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | TBD | Users Class D archive/restore/delete endpoints (`API-013a`–`013c`); Auth callouts from user editor; link [32](32-users-module.md) | Draft for review |
+| 1.3 | 2026-08-02 | Platform Engineering | TBD | P9 implementation note: `/v1/admin/users`, CRM users, profile, roles admin, Auth register/reset delivered | Draft for review |
 
 ---
 

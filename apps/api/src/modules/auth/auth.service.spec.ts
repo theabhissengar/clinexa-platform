@@ -17,7 +17,7 @@ describe('AuthService', () => {
   const refreshSecret = 'test-refresh-secret-at-least-32-chars!!';
   let authService: AuthService;
   let prisma: {
-    user: { findUnique: jest.Mock };
+    user: { findUnique: jest.Mock; update: jest.Mock };
     session: {
       create: jest.Mock;
       findFirst: jest.Mock;
@@ -25,6 +25,7 @@ describe('AuthService', () => {
       update: jest.Mock;
       updateMany: jest.Mock;
     };
+    accountSecurityState: { upsert: jest.Mock; update: jest.Mock };
   };
   let passwordHasher: { verify: jest.Mock; hash: jest.Mock };
   let jwtService: { signAsync: jest.Mock };
@@ -56,13 +57,20 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { findUnique: jest.fn() },
+      user: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}) },
       session: {
         create: jest.fn(),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+      },
+      accountSecurityState: {
+        upsert: jest.fn().mockResolvedValue({
+          failedLoginCount: 0,
+          lockedUntil: null,
+        }),
+        update: jest.fn().mockResolvedValue({}),
       },
     };
     passwordHasher = {
@@ -123,6 +131,7 @@ describe('AuthService', () => {
         passwordHash: 'hash',
         status: UserStatus.ACTIVE,
         tokenVersion: 0,
+        accountSecurityState: null,
       });
       passwordHasher.verify.mockResolvedValue(false);
 
@@ -143,6 +152,7 @@ describe('AuthService', () => {
         passwordHash: 'hash',
         status: UserStatus.ACTIVE,
         tokenVersion: 0,
+        accountSecurityState: null,
       });
       passwordHasher.verify.mockResolvedValue(true);
       prisma.session.create.mockResolvedValue({

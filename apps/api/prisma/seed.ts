@@ -146,11 +146,25 @@ async function seedStaffUser(
       email,
       passwordHash,
       status: UserStatus.ACTIVE,
+      displayName: label,
+      staffProfile: { create: {} },
+      accountSecurityState: { create: {} },
     },
     update: {
       passwordHash,
       status: UserStatus.ACTIVE,
     },
+  });
+
+  await prisma.staffProfile.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id },
+    update: {},
+  });
+  await prisma.accountSecurityState.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id },
+    update: {},
   });
 
   const role = await prisma.role.findUnique({
@@ -292,6 +306,86 @@ async function seedDemoStaffUsers(prisma: PrismaClient): Promise<void> {
       roleCode: account.roleCode,
       label: account.label,
     });
+  }
+}
+
+async function seedDemoPatients(prisma: PrismaClient): Promise<void> {
+  const enabled = process.env.SEED_DEMO_PATIENTS?.trim().toLowerCase();
+  if (enabled !== 'true' && enabled !== '1') {
+    console.log(
+      'Demo patients seed skipped: set SEED_DEMO_PATIENTS=true and SEED_DEMO_PATIENT_PASSWORD to create sample patients.',
+    );
+    return;
+  }
+
+  const password = process.env.SEED_DEMO_PATIENT_PASSWORD;
+  if (!password) {
+    throw new Error(
+      'SEED_DEMO_PATIENT_PASSWORD is required when SEED_DEMO_PATIENTS is enabled.',
+    );
+  }
+
+  const patients = [
+    {
+      email: 'patient1@example.com',
+      firstName: 'Alex',
+      lastName: 'Patient',
+    },
+    {
+      email: 'patient2@example.com',
+      firstName: 'Jordan',
+      lastName: 'Member',
+    },
+  ] as const;
+
+  const patientRole = await prisma.role.findUnique({
+    where: { code: Roles.PATIENT },
+  });
+  if (!patientRole) {
+    throw new Error('Patient role missing after catalog seed');
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  for (const patient of patients) {
+    const email = patient.email.trim().toLowerCase();
+    const user = await prisma.user.upsert({
+      where: { email },
+      create: {
+        email,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        displayName: `${patient.firstName} ${patient.lastName}`,
+        accountSecurityState: { create: {} },
+      },
+      update: {
+        passwordHash,
+        status: UserStatus.ACTIVE,
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        displayName: `${patient.firstName} ${patient.lastName}`,
+      },
+    });
+
+    await prisma.userRoleAssignment.upsert({
+      where: {
+        userId_roleId: { userId: user.id, roleId: patientRole.id },
+      },
+      create: {
+        id: randomUUID(),
+        userId: user.id,
+        roleId: patientRole.id,
+        revokedAt: null,
+      },
+      update: {
+        revokedAt: null,
+        assignedAt: new Date(),
+      },
+    });
+
+    console.log(`Seeded demo patient: ${user.email} (${user.id})`);
   }
 }
 
@@ -484,6 +578,7 @@ async function main(): Promise<void> {
     await seedAdminUser(prisma);
     await seedSuperAdminUser(prisma);
     await seedDemoStaffUsers(prisma);
+    await seedDemoPatients(prisma);
   } finally {
     await prisma.$disconnect();
   }

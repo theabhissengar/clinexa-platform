@@ -213,6 +213,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Ownership Matrix: reading rules `OWN-001`–`008`, application columns for Guardian, CRM, Store, Portal, System, and Future, action vocabulary with destructive classification, entity matrices for identity, commerce, clinical, content, and platform, consolidated destructive summary, procedure for adding an application |
 | 1.1 | 2026-07-28 | Platform Engineering | Questionnaire definitions moved to CRM column only; Guardian no longer exposes definition CRUD |
 | 1.2 | 2026-08-02 | Platform Engineering | Users lifecycle vocabulary (Suspend/Deactivate vs Class D); contact vs future Address; link [32](32-users-module.md) |
+| 1.3 | 2026-08-02 | Platform Engineering | Users module in delivery (`feature/users-platform-module`); CRM no Class D confirmed in APIs |
 
 ---
 

@@ -99,6 +99,16 @@ export const Permissions = {
   ADM_CONFIGURE_WORKFLOWS: 'PERM-ADM-003',
   ADM_VIEW_AUDIT: 'PERM-ADM-010',
   ADM_ACCESS_ADMINISTRATION: 'PERM-ADM-020',
+  /** Class D — soft-delete user in Guardian. */
+  ADM_DELETE_USER: 'PERM-ADM-030',
+  /** Class D — archive user in Guardian. */
+  ADM_ARCHIVE_USER: 'PERM-ADM-031',
+  /** Class D — restore user in Guardian. */
+  ADM_RESTORE_USER: 'PERM-ADM-032',
+  /** Class D — bounded bulk cleanup (Super Admin). */
+  ADM_BULK_CLEANUP: 'PERM-ADM-033',
+  /** Class D — documented hard-delete procedure (Super Admin). */
+  ADM_HARD_DELETE: 'PERM-ADM-034',
 
   SET_MANAGE: 'PERM-SET-001',
   SET_OVERSELL_POLICIES: 'PERM-SET-002',
@@ -649,7 +659,8 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.ADM_MANAGE_USERS,
     module: 'ADM',
     name: 'Manage users',
-    description: 'Create and update staff/patient user records.',
+    description:
+      'Create and update staff/patient user records; suspend, deactivate, and reactivate (non–Class D lifecycle). Does not imply archive, restore, or delete.',
     resource: 'admin',
     action: 'manage_users',
   },
@@ -685,6 +696,50 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
       'Access the CRM Administration plane (platform governance console).',
     resource: 'admin',
     action: 'access_administration',
+  },
+  {
+    code: Permissions.ADM_DELETE_USER,
+    module: 'ADM',
+    name: 'Delete user',
+    description:
+      'Soft-delete a user record in Guardian; subject to the last-admin safeguard. Class D.',
+    resource: 'admin',
+    action: 'delete_user',
+  },
+  {
+    code: Permissions.ADM_ARCHIVE_USER,
+    module: 'ADM',
+    name: 'Archive user',
+    description:
+      'Archive a user record, removing it from active surfaces while retaining history. Class D.',
+    resource: 'admin',
+    action: 'archive_user',
+  },
+  {
+    code: Permissions.ADM_RESTORE_USER,
+    module: 'ADM',
+    name: 'Restore user',
+    description: 'Restore an archived or soft-deleted user record. Class D.',
+    resource: 'admin',
+    action: 'restore_user',
+  },
+  {
+    code: Permissions.ADM_BULK_CLEANUP,
+    module: 'ADM',
+    name: 'Bulk data cleanup',
+    description:
+      'Execute bounded bulk cleanup or maintenance operations across records. Class D.',
+    resource: 'admin',
+    action: 'bulk_cleanup',
+  },
+  {
+    code: Permissions.ADM_HARD_DELETE,
+    module: 'ADM',
+    name: 'Execute hard-delete procedure',
+    description:
+      'Run a documented hard-delete/retention-purge procedure with audit retention. Class D.',
+    resource: 'admin',
+    action: 'hard_delete',
   },
   {
     code: Permissions.SET_MANAGE,

@@ -104,7 +104,7 @@ describe('Auth (e2e)', () => {
 
     const refreshRes = await request(app.getHttpServer())
       .post('/v1/auth/refresh')
-      .set('Cookie', cookies as string[])
+      .set('Cookie', cookies as unknown as string[])
       .expect(200);
 
     const refreshBody = refreshRes.body as ApiSuccessResponse<AuthTokensDto>;
@@ -116,7 +116,11 @@ describe('Auth (e2e)', () => {
     await request(app.getHttpServer())
       .post('/v1/auth/logout')
       .set('Authorization', `Bearer ${refreshBody.data.accessToken}`)
-      .set('Cookie', (refreshCookies as string[]) ?? (cookies as string[]))
+      .set(
+        'Cookie',
+        (refreshCookies as unknown as string[]) ??
+          (cookies as unknown as string[]),
+      )
       .expect(200);
 
     await request(app.getHttpServer())

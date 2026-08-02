@@ -5,12 +5,14 @@
 | Document | Users Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | Planning complete (P9) |
+| Status | In progress (implementation) |
 | Audience | Architects, backend, frontend, QA, product, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [12](12-authentication-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md) |
 
 This document is the durable **Module Blueprint** instance for Users (`GRD-042`, `CRM-031`) and sibling Roles and permissions (`GRD-043`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
+
+> Implementation branch: `feature/users-platform-module`.
 
 Legacy WordPress / Ultimate Member list and editor screens are **inspiration only** (`NAV-006`, `GRD-012`). Clinexa roles, statuses, columns, and ownership follow platform docs — not a clone of plugin columns, tags, posts, or WordPress.com account fields.
 
@@ -409,5 +411,6 @@ Delivery phase: **P9 — Users Platform Module** ([26](26-implementation-tracker
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-02 | Platform Engineering | Initial Users Module Blueprint: dual-context ownership, Auth boundary, lifecycle, index/editor UX, Class D, future reserves |
+| 1.1 | 2026-08-02 | Platform Engineering | Implementation in delivery: Nest `users` module, Auth register/reset, Guardian/CRM surfaces, Class D + last-admin |
 
 *End of 32 — Users Module.*

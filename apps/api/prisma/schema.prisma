@@ -8,8 +8,19 @@ datasource db {
 }
 
 enum UserStatus {
+  PENDING_VERIFICATION
   ACTIVE
-  DISABLED
+  SUSPENDED
+  INACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum UserGender {
+  UNSPECIFIED
+  MALE
+  FEMALE
+  OTHER
 }
 
 /// Unified identity for patients and staff (DB-001).
@@ -19,12 +30,55 @@ model User {
   passwordHash String     @map("password_hash")
   status       UserStatus @default(ACTIVE)
   tokenVersion Int        @default(0) @map("token_version")
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  sessions        Session[]
-  roleAssignments UserRoleAssignment[]
+  /// Profile / contact (Users-owned; Auth never writes these).
+  firstName    String?    @map("first_name")
+  lastName     String?    @map("last_name")
+  displayName  String?    @map("display_name")
+  phone        String?
+  bio          String?
+  /// Opaque Media Library asset id (no upload ownership).
+  avatarMediaAssetId String? @map("avatar_media_asset_id")
 
+  /// Patient demographics (allowlisted; PHI-aware access).
+  dateOfBirth  DateTime?  @map("date_of_birth") @db.Date
+  gender       UserGender @default(UNSPECIFIED)
+  region       String?
+  /// Opaque Media Library asset id for health-card image.
+  healthCardMediaAssetId String? @map("health_card_media_asset_id")
+
+  /// Embedded billing/shipping contact snapshots until Address module.
+  billingAddress  Json? @map("billing_address")
+  shippingAddress Json? @map("shipping_address")
+
+  /// Opaque PSP customer id refs (Payments owns sync semantics).
+  stripeCustomerIdLive String? @map("stripe_customer_id_live")
+  stripeCustomerIdTest String? @map("stripe_customer_id_test")
+
+  /// Account preferences (notification prefs remain Notifications-owned).
+  preferences Json?
+
+  /// Internal support/ops notes (CRM-heavy).
+  internalNotes String? @map("internal_notes")
+
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
+  lastActiveAt    DateTime? @map("last_active_at") @db.Timestamptz(3)
+  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions             Session[]
+  roleAssignments      UserRoleAssignment[]
+  passwordResetTokens  PasswordResetToken[]
+  accountSecurityState AccountSecurityState?
+  staffProfile         StaffProfile?
+  changeHistory        UserChangeHistory[]
+  activities           UserActivity[]
+
+  @@index([status])
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -112,6 +166,84 @@ model Session {
   @@index([userId])
   @@index([absoluteExpiresAt])
   @@map("sessions")
+}
+
+/// Time-limited single-use password reset tokens (DB-007). Auth-owned.
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+/// Lockout counters and abuse-protection state (DB-008). Auth-owned.
+model AccountSecurityState {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @unique @map("user_id") @db.Uuid
+  failedLoginCount  Int       @default(0) @map("failed_login_count")
+  lastFailedLoginAt DateTime? @map("last_failed_login_at") @db.Timestamptz(3)
+  lockedUntil       DateTime? @map("locked_until") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account_security_states")
+}
+
+/// Optional staff display/credentials prefs (DB-009) — not a separate person table.
+model StaffProfile {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @unique @map("user_id") @db.Uuid
+  title              String?
+  credentialsDisplay String?  @map("credentials_display")
+  department         String?
+  crmPreferences     Json?    @map("crm_preferences")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_profiles")
+}
+
+/// Entity field/state diffs for one user (not platform Audit Log).
+model UserChangeHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  changes   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("user_change_history")
+}
+
+/// Attributed interactions on a user (not History diffs, not Audit).
+model UserActivity {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  kind      String
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("user_activities")
 }
 
 // ---------------------------------------------------------------------------

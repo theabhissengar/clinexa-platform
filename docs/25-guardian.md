@@ -393,11 +393,14 @@ These are **authoritative product rules** for the Internal Platform. Cross-appli
 
 ### 6.1 Users
 
+Authoritative module blueprint: [32 — Users Module](32-users-module.md). Guardian exposes the administrative lifecycle and tabbed editor (General, Roles, Security stubs, History, Activity, …). Suspend/deactivate are routine (`PERM-ADM-001`); archive/restore/delete are Class D.
+
 | Action | Guardian | CRM |
 | --- | --- | --- |
 | Create | Yes | No |
 | View | Yes | Yes (staff-scoped) |
 | Edit | Yes (administrative fields, roles) | Yes (operational / clinical / support fields as permitted) |
+| Suspend / Deactivate / Reactivate | Yes | No |
 | Delete | Yes | No |
 | Archive | Yes | No |
 | Restore | Yes | No |
@@ -671,6 +674,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Initial Guardian architecture: context boundary, modules (`GRD-030`–`GRD-060`), navigation groups, `/guardian/*` routing and module page hierarchy, CRUD product rules, destructive-operation ownership and enforcement, shared shell rules, security posture, future Security area, Store/Portal dependencies, migration and traceability (`GRD-001`–`GRD-160`) | Draft for review |
 | 1.1 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`GRD-046`) and Prescriptions are not Guardian Internal Platform surfaces; staff UI is CRM-only | Draft for review |
+| 1.2 | 2026-08-02 | Platform Engineering | Pending | Users §6.1 links blueprint [32](32-users-module.md); suspend/deactivate vs Class D clarified | Draft for review |
 
 ---
 

@@ -406,7 +406,7 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-SUP-001 | Create support ticket | Create a support ticket from the Patient Portal. | SUP | Patient |
 | PERM-SUP-002 | Triage/resolve tickets | Triage and resolve support tickets in CRM. | SUP | Support; Admin (scoped) |
 | PERM-SUP-003 | Link ticket to order/patient | Associate tickets with patient and order records within authorization. | SUP | Support; Admin (scoped) |
-| PERM-ADM-001 | Manage users | Create and update staff/patient user records in administration. | ADM | Admin |
+| PERM-ADM-001 | Manage users | Create and update staff/patient user records; suspend, deactivate, and reactivate (non–Class D lifecycle). Does **not** imply archive, restore, or delete. | ADM | Admin |
 | PERM-ADM-002 | Assign roles | Assign and change roles/permissions (audited; no self-elevation). | ADM | Admin |
 | PERM-ADM-003 | Configure workflows | Configure catalog, questionnaires, treatment plans, and consult workflows. | ADM | Admin |
 | PERM-ADM-010 | View audit logs | Read clinical/admin audit log records. | ADM | Admin |
@@ -910,6 +910,7 @@ flowchart TB
 | 1.3 | 2026-07-27 | Platform Engineering | — | Administrator default business-module access (incl. Prescriptions); Super Admin platform-only exclusivity | Draft for review |
 | 1.4 | 2026-07-27 | Platform Engineering | — | Internal Platform context RBAC: `PERM-GRD-001` Guardian context access, `RBAC-009`–`011` principles, segregated destructive **Class D** dictionary (`PERM-ADM-030`–`034`, `PERM-ORD-010`–`014`, `PERM-SUB-010`–`012`, `PERM-PRD/CAT/CMS/BLG/CPN/RPT-010`), §4.1–4.2 context and Class D definitions, §6.1 context ownership of CRUD, SoD rules `RBAC-031`–`036`, hard-deny and screen-matrix context notes | Draft for review |
 | 1.5 | 2026-07-28 | Platform Engineering | — | Prescriptions and Questionnaires are CRM-only Internal Platform surfaces; screen-matrix and §6.1 updated | Draft for review |
+| 1.6 | 2026-08-02 | Platform Engineering | — | Clarify `PERM-ADM-001` covers suspend/deactivate/reactivate; Class D remains archive/restore/delete only; link [32](32-users-module.md) | Draft for review |
 
 ---
 

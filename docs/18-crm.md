@@ -389,9 +389,9 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 
 | Aspect | Detail |
 | --- | --- |
-| Responsibilities | Create/update/deactivate staff users; assign roles; view permission dictionary |
-| Ownership | Administrator (`ROLE-009`); `FR-ADM-001` |
-| Boundaries | Admin config ≠ default clinical prescribe (`RBAC-028`); role changes audited; Super Admin is ROLE-010 via normal RBAC (`PERM-ADM-020`) |
+| Responsibilities | Operational find/view/edit of patient and staff records within permission; escalate administrative and destructive actions to Guardian (`/guardian/users`) |
+| Ownership | Platform Users module ([32](32-users-module.md)); CRM surfaces operational/clinical/support fields only (`PERM-CRM-010`, scoped) |
+| Boundaries | **No** create staff, delete, archive, or restore in CRM; Admin config ≠ default clinical prescribe (`RBAC-028`); role assignment and Class D lifecycle are Guardian-only |
 
 ### 3.4 Patient Management (`CRM-032`)
 
@@ -1104,6 +1104,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.2 | 2026-07-27 | Platform Engineering | Pending | Administrator default business-module access; Super Admin platform-only exclusivity | Draft for review |
 | 1.3 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Re-scoped CRM as the Internal Platform **operational** context: administrative modules and all destructive operations reassigned to Guardian (§2.8 relocation table), context column added to the module map, shell section generalized to the shared Internal Platform shell with the Application Switcher, context-aware routing/navigation controls (`CRM-160`–`CRM-167`, `CRM-152`–`CRM-153`) | Draft for review |
 | 1.4 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`CRM-040`) are CRM-only Internal Platform UI (definitions + case view); not dual-mounted with Guardian | Draft for review |
+| 1.5 | 2026-08-02 | Platform Engineering | Pending | `CRM-031` aligned to operational-only Users surface; escalate to Guardian; link [32](32-users-module.md) | Draft for review |
 
 ---
 

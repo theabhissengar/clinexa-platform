@@ -135,6 +135,8 @@ Clinexa uses a **first-party identity module** inside the modular Backend API (`
 
 Staff are not registered via Store self-service; Administrators provision staff identities (`FR-ADM-001`, `ARCH-041`). Patients self-register (`FR-AUTH-001`, `JRN-002`).
 
+> **Users vs Authentication boundary.** The Authentication module owns login, logout, registration flows, sessions, tokens, MFA (future), password reset, and email verification. The Users platform module owns identity records, profile fields, account lifecycle, role assignments on a user, and preference hooks ([32 — Users Module](32-users-module.md) §1.1). Auth never owns profile fields or Class D archive/delete; Users never hashes credentials or writes session rows.
+
 ### 2.3 Authentication Layer
 
 | ID | Responsibility |
@@ -825,6 +827,7 @@ Enterprise governance for authentication-related areas. Owners are **organizatio
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Principal Security / IAM Architect (planning) | Pending | Initial authentication flow: architecture, identity types, lifecycle, sessions, AuthZ integration, eight flows, security controls, state machine, errors, audit, traceability (`AUTH-001`–`064`) | Draft for review |
 | 1.0 | 2026-07-23 | Principal Security / IAM Architect (planning) | Pending | Architectural appendices: §12.1 Flow Index, §12.2 Session Event Matrix, §12.3 Identity Trust Hierarchy, §12.4 Decision Matrix, §12.5 Ownership Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
+| 1.1 | 2026-08-02 | Platform Engineering | Pending | Cross-link Users vs Authentication boundary; [32](32-users-module.md) | Approved — Implementation Ready |
 
 ---
 

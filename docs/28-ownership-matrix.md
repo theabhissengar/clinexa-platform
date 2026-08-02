@@ -86,12 +86,17 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 
 | Entity | Guardian | CRM | Store | Portal | System | Future |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Staff user** | View, Create, Edit, Delete, Archive, Restore, Purge | View | — | — | — | Admin mobile: View, Edit (subset) |
-| **Patient user** | View, Create, Edit (administrative fields), Delete, Archive, Restore, Purge | View, Edit (operational, clinical, support fields within scope) | Create (self-registration) | View own, Edit own profile | Create (system-initiated), Edit (system fields) | Mobile: View own, Edit own |
+| **Staff user** | View, Create, Edit (admin fields), Suspend, Deactivate/Reactivate, Delete, Archive, Restore, Purge | View | — | — | — | Admin mobile: View, Edit (subset) |
+| **Patient user** | View, Create, Edit (administrative fields), Suspend, Deactivate/Reactivate, Delete, Archive, Restore, Purge | View, Edit (operational, clinical, support fields within scope) | Create (self-registration via Auth) | View own, Edit own profile | Create (system-initiated), Edit (system fields) | Mobile: View own, Edit own |
+| **User contact info** (email, phone) | View, Edit | View, Edit assist (scoped) | Create on register | View own, Edit own | — | Mobile: View/Edit own |
+| **Embedded billing/shipping contact** (V1 transitional) | View, Edit | View, Edit assist | Consume at checkout | View own, Edit own | — | Migrates to Address module |
+| **Reusable Address** (future module) | — (not V1) | — | — | — | — | Future Address module owns CRUD |
 | **Role assignment** | View, Create, Edit, Delete | — | — | — | — | — |
 | **Permission grant** | View, Edit (via role configuration), Delete | — | — | — | Evaluate | — |
 | **Session** | View active sessions (future Security area), Revoke (future) | — | Create (sign-in), Delete own (sign-out) | Create, Delete own | Expire | Mobile: Create, Delete own |
 | **Audit record** | View, Export | — | — | — | Append | — |
+
+> **Lifecycle vocabulary.** Suspend and Deactivate/Reactivate are routine administrative actions under `PERM-ADM-001` (not Class D). Archive, Restore, Delete, and Purge remain Class D and Guardian-only (`OWN-003`). See [32](32-users-module.md) §11.
 
 ---
 
@@ -207,6 +212,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | --- | --- | --- | --- |
 | 1.0 | 2026-07-27 | Platform Engineering | Initial Ownership Matrix: reading rules `OWN-001`–`008`, application columns for Guardian, CRM, Store, Portal, System, and Future, action vocabulary with destructive classification, entity matrices for identity, commerce, clinical, content, and platform, consolidated destructive summary, procedure for adding an application |
 | 1.1 | 2026-07-28 | Platform Engineering | Questionnaire definitions moved to CRM column only; Guardian no longer exposes definition CRUD |
+| 1.2 | 2026-08-02 | Platform Engineering | Users lifecycle vocabulary (Suspend/Deactivate vs Class D); contact vs future Address; link [32](32-users-module.md) |
 
 ---
 

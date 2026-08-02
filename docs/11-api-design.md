@@ -673,15 +673,20 @@ All paths are relative to `/v1` unless noted. **Roles Allowed** use abbreviation
 
 ### 6.3 Users
 
+Admin paths prefer `/v1/admin/users` at implementation for consistency with Products (`/v1/admin/products`). Logical catalog below retains historical `/users` resource names; Class D lifecycle endpoints are additive. Blueprint: [32](32-users-module.md). Password reset and credential changes from the user editor **call Auth** (`API-006`/`007`), not Users domain tables.
+
 | API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| API-009 | GET | `/users` | List users | Yes | Ad | FR-ADM-001 | Paginated; no unrestricted PHI dump |
-| API-010 | GET | `/users/{id}` | Get user | Yes | Ad | FR-ADM-001 | Staff/patient admin view |
+| API-009 | GET | `/users` | List users | Yes | Ad | FR-ADM-001 | Paginated; no unrestricted PHI dump; status/role filters |
+| API-010 | GET | `/users/{id}` | Get user | Yes | Ad | FR-ADM-001 | Staff/patient admin view; field allowlists by context |
 | API-011 | POST | `/users` | Create staff user | Yes | Ad | FR-ADM-001 | Assign initial role; audit |
 | API-012 | PATCH | `/users/{id}` | Update user admin fields | Yes | Ad | FR-ADM-001 | Cannot silently escalate clinical powers without role change audit |
-| API-013 | POST | `/users/{id}/deactivate` | Deactivate user | Yes | Ad | FR-ADM-001 | Soft-deactivate; revoke sessions |
+| API-013 | POST | `/users/{id}/deactivate` | Deactivate / suspend / reactivate | Yes | Ad | FR-ADM-001 | Soft lifecycle under `PERM-ADM-001`; revoke sessions; not Class D |
+| API-013a | POST | `/users/{id}/archive` | Archive user | Yes | Ad | FR-ADM-001 | **Class D** `PERM-ADM-031`; last-admin safeguard |
+| API-013b | POST | `/users/{id}/restore` | Restore user | Yes | Ad | FR-ADM-001 | **Class D** `PERM-ADM-032` |
+| API-013c | DELETE | `/users/{id}` | Soft-delete user | Yes | Ad | FR-ADM-001 | **Class D** `PERM-ADM-030`; last-admin safeguard; healthcare retention |
 | API-014 | GET | `/users/{id}/roles` | List role assignments | Yes | Ad | FR-ADM-001 | |
-| API-015 | PUT | `/users/{id}/roles` | Replace role assignments | Yes | Ad | FR-ADM-001, FR-ADM-004 | Audit; Admin cannot grant “disable clinical gates” |
+| API-015 | PUT | `/users/{id}/roles` | Replace role assignments | Yes | Ad | FR-ADM-001, FR-ADM-004 | Audit; Admin cannot grant “disable clinical gates”; bumps `tokenVersion` |
 
 ### 6.4 Profile
 
@@ -995,7 +1000,7 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 | --- | --- | --- |
 | API-001–002 | Platform | 2 |
 | API-003–008 | Authentication | 6 |
-| API-009–015 | Users | 7 |
+| API-009–015 | Users | 10 (incl. `API-013a`–`013c` Class D lifecycle) |
 | API-016–017 | Profile | 2 |
 | API-018–030 | Products | 13 |
 | API-031–037 | Categories | 7 |
@@ -1712,6 +1717,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Initial API design: principles, architecture, modules, endpoint catalog API-001–176, errors, versioning, performance, security, traceability | Draft for review |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Architectural appendix: §13.6 lifecycle classification, §13.7 idempotency matrix, §13.8 ownership matrix, §13.9 dependency flow, §13.10 HTTP status reference; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-07-27 | Platform Engineering | TBD | Consumer-agnostic zones (staff APIs replace CRM-labelled zone); new §3.2a destructive endpoints with `API-020`–`026` and Class D permission map; hard-deny rows for Guardian context and destructive grants; Internal Platform contexts in architecture diagram and composition surfaces; `PERM-GRD-001` in session validation; Administration/Settings consumers restated as Guardian-context roles; audit and authorization notes in §12 | Draft for review |
+| 1.2 | 2026-08-02 | Platform Engineering | TBD | Users Class D archive/restore/delete endpoints (`API-013a`–`013c`); Auth callouts from user editor; link [32](32-users-module.md) | Draft for review |
 
 ---
 

@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Engineering leadership, architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md) |
 
 This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
 
@@ -95,7 +95,8 @@ Every phase record in §5 carries these fields.
 | **P6** | API enforcement for destructive operations | Not started | P3 |
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
-| **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P8 |
+| **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | Not started (blueprint complete) | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
+| **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -249,6 +250,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | Products never owns Inventory mutations, Media upload, or Store presentation. Product Settings, AI, Brands entity module, and Phase 10 platform-wide UX remain out of scope. Bounded list bulk/archive and catalog editor UX are in P8. |
 | **Verification** | Class D delete denied without grant; published-only public APIs; `OR-14` blocks unsafe Rx publish; seed categories present; typecheck/lint/unit tests pass |
 
+### P9 — Users Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Users and Roles as the dual-context identity platform module: lifecycle schema, domain services, Auth register/reset completion, Class D user ops, Guardian index/editor, CRM operational surface |
+| **Status** | Not started (blueprint complete) |
+| **Owner** | Platform Engineering |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P5 shell; Auth/RBAC foundation; Class D codes and server gates (align with P6); blueprint [32](32-users-module.md); P8 patterns recommended for admin list/editor UX |
+| **Scope** | Expand `UserStatus` lifecycle; Prisma DB-007–009; Nest `users` module + Auth gaps (register/reset/verify); Roles admin APIs; `PERM-ADM-030`–`034` seeded; Guardian Users index + tabbed editor (General/Roles minimum); CRM operational Users (no Class D); profile API; opaque avatar media ref; seed staff/patients |
+| **Architecture changes** | Implements `GRD-042`/`043`, `CRM-031`, `FR-ADM-001`/`004`, `FR-AUTH-001`–`006`, `API-003`–`017`, `API-168`–`170`, Class D user lifecycle |
+| **Documentation updates** | [32](32-users-module.md), [27](27-module-registry.md), [26](26-implementation-tracker.md) (this record), [10](10-database-design.md) §7.1, [28](28-ownership-matrix.md), [12](12-authentication-flow.md), [11](11-api-design.md) as endpoints land |
+| **Notes** | Users owns identity/profile/lifecycle/role assignments/preferences; Authentication owns login/register/sessions/tokens/MFA/reset/verify. Soft delete default under healthcare retention. Bulk lifecycle, Merge, AI, Address module, and Security area (`GRD-058`) are explicit future reserves. Orders reference `user_id` — no parallel customer identity store. |
+| **Verification** | Class D user delete/archive/restore denied without grant from any client including CRM; last-admin safeguard; register creates Patient only; profile allowlist blocks role self-escalation; password reset from editor calls Auth; typecheck/lint/unit tests pass |
+
 ### P10 — Internal Platform UX/UI Modernization
 
 | Field | Value |
@@ -296,6 +313,7 @@ flowchart TD
   P6[P6_API_destructive_enforcement]
   P7[P7_Verification_and_signoff]
   P8[P8_Products_platform_module]
+  P9[P9_Users_platform_module]
   P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
@@ -310,7 +328,9 @@ flowchart TD
   P5 --> P7
   P6 --> P7
   P5 --> P8
+  P5 --> P9
   P8 --> P10
+  P9 --> P10
   P7 --> PF
 ```
 
@@ -383,6 +403,7 @@ A phase is complete when all of the following hold.
 | 1.2 | 2026-07-28 | Platform Engineering | Foundation nav correction: shared modules in both contexts; CRM Users + Activity Log + Subscriptions; Guardian Clinical/Content/Commerce placeholders; Questionnaires under Clinical |
 | 1.3 | 2026-07-28 | Platform Engineering | Prescriptions and Questionnaires are CRM-only — removed from Guardian nav/pages; aligned CRM, Guardian, Module Registry, Ownership Matrix, Navigation Blueprint, RBAC context note |
 | 1.4 | 2026-07-29 | Platform Engineering | P8 Products platform module in progress; P10 Internal Platform UX/UI Modernization reserved; blueprint [31](31-products-module.md) |
+| 1.5 | 2026-08-02 | Platform Engineering | P9 Users platform module recorded (blueprint complete); blueprint [32](32-users-module.md); dependency graph updated |
 
 ---
 

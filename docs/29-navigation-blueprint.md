@@ -85,7 +85,16 @@ Each module owns a route subtree under its context. Example for a Guardian modul
 /guardian/categories/new              → Create
 /guardian/categories/:id              → Redirect → Edit (stable deep link)
 /guardian/categories/:id/edit         → Edit (canonical)
+
+/guardian/assets                      → Asset Library index (query: status, q, page)
+/guardian/assets/upload               → Upload
+/guardian/assets/:id                  → View
+/guardian/assets/:id/edit             → Edit metadata
+/guardian/assets/:id/history          → History
+/guardian/assets/:id/activity         → Activity
 ```
+
+Asset Library V1 omits folders/collections/tags routes (reserved). See [33](33-asset-library-module.md). Existing stub `/guardian/media` renames at implementation.
 
 The same shape applies in CRM, for example `/crm/orders/:id/history`.
 
@@ -176,7 +185,7 @@ Guardian uses **grouped enterprise navigation**. Group membership comes from the
 | --- | --- | --- | --- |
 | `dashboard` | Dashboard | Home, platform KPIs | `GRD-030` |
 | `commerce` | Commerce | Catalog and commerce administration | Products, categories, inventory policy, orders (admin), subscriptions (admin), pricing, taxes, shipping |
-| `content` | Content | Content and media administration | Pages, blogs, media library, homepage, FAQs, review moderation |
+| `content` | Content | Content and reusable asset administration | Pages, blogs, Asset Library, homepage, FAQs, review moderation |
 | `users` | Users | Identity administration | Users (`/guardian/users` — list + tabbed editor per [32](32-users-module.md)), Roles and permissions (`/guardian/roles`) |
 | `marketing` | Marketing | Growth configuration | Coupons, campaigns, templates |
 | `platform` | Platform | Configuration and governance | Settings, feature flags, integrations, appointment types, audit log, activity log, system logs, data cleanup |
@@ -345,6 +354,7 @@ Detailed test cases live in [22 — Testing strategy](22-testing-strategy.md); p
 | 1.0 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Initial Navigation Blueprint: philosophy, routing contract and legacy redirects, context-aware catalog model, sidebar capabilities, Guardian groups, CRM ordering, breadcrumbs, visibility rules, context switching, responsive behavior, future capabilities, anti-patterns, verification (`NAV-001`–`NAV-131`) | Draft for review |
 | 1.1 | 2026-07-28 | Platform Engineering | Pending | Legacy `/questionnaires` redirects only to CRM; Platform group no longer lists questionnaires | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users group pages clarified (Users list/editor tabs, Roles); link [32](32-users-module.md) | Draft for review |
+| 1.3 | 2026-08-03 | Platform Engineering | Pending | Asset Library routes `/guardian/assets`; Content group label; link [33](33-asset-library-module.md) | Draft for review |
 
 ---
 

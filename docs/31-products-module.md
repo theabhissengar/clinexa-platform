@@ -8,7 +8,7 @@
 | Status | In delivery (P8) |
 | Audience | Architects, backend, frontend, QA, product |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md) |
+| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [33](33-asset-library-module.md) |
 
 This document is the durable **Module Blueprint** instance for Products (`GRD-031`) and sibling Categories (`GRD-032`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
@@ -20,7 +20,7 @@ Products is the **catalog master-data platform module**. It owns sellable offeri
 
 **Requirements:** `FR-PRD-001`–`005`, `FR-CAT-001`–`004`, `OR-14`, `AC-BR-05`/`06`, `BO-5`, `ROAD-004`.
 
-**Not its job:** Inventory stock management, Media Library upload infrastructure, Order lifecycle, questionnaire authoring, Store presentation/UX, Patient Portal UX, payments.
+**Not its job:** Inventory stock management, Asset Library upload infrastructure, Order lifecycle, questionnaire authoring, Store presentation/UX, Patient Portal UX, payments.
 
 ### 1.1 Products vs Inventory
 
@@ -30,12 +30,15 @@ Products is the **catalog master-data platform module**. It owns sellable offeri
 | Stock balances, adjustments, warehouses | No | Yes |
 | Read-only stock summary on product record | May display | Source of truth |
 
-### 1.2 Products vs Media Library
+### 1.2 Products vs Asset Library
 
-| Owns | Products | Media Library |
+| Owns | Products | Asset Library |
 | --- | --- | --- |
 | Upload / object storage / library organization | No | Yes |
-| Attach / detach / order / alt on a product | Yes | No |
+| `featuredAssetId`, gallery associations (`DB-013`), sort/alt on product | Yes | No |
+| Storage-provider URLs or raw keys | Never | Resolves via Asset Library |
+
+Asset Library does **not** understand Products domain rules. Products store opaque Asset identifiers only ([33](33-asset-library-module.md)).
 
 ### 1.3 Products vs Store
 
@@ -121,9 +124,9 @@ Class D is never implied by manage. Marketing/Content do not hold manage in V1.
 
 ## 7. Database models
 
-`DB-010` Categories, `DB-011` Products, `DB-012` ProductVariants, `DB-013` ProductMedia (association + opaque `media_asset_id`), `DB-014` ProductCategoryLinks, `product_relations` (cross-sell extension).
+`DB-010` Categories, `DB-011` Products, `DB-012` ProductVariants, `DB-013` ProductMedia (product-owned association + opaque `assetId`), `DB-014` ProductCategoryLinks, `product_relations` (cross-sell extension).
 
-**Product fields (beyond core):** `short_description`, `is_featured`, `brand_name` (label until Brands module), `featured_media_asset_id`, `product_type` (incl. variable/subscription kinds), `tags`, `medical_info` (derived summary from attributes), `attributes` (catalog attribute defs: `name`, `values`, `forVariation`, **per-attribute `din` / `dose`** — DIN/Dose are not independent product fields), `questionnaire_binding_ref`, inventory catalog fields (`gtin`, `sold_individually`), shipping dims/class/`one_time_shipping`, linked merchandising (`bundle_sells_*` + `product_relations` upsell/cross-sell/bundle), `default_variation_options`, advanced (`purchase_note`, `menu_order`, `enable_reviews`, `limit_subscription`), Stripe presentation prefs (`stripe_button_position`, `stripe_gateways` JSON — Payments owns charge execution).
+**Product fields (beyond core):** `short_description`, `is_featured`, `brand_name` (label until Brands module), `featuredAssetId`, `product_type` (incl. variable/subscription kinds), `tags`, `medical_info` (derived summary from attributes), `attributes` (catalog attribute defs: `name`, `values`, `forVariation`, **per-attribute `din` / `dose`** — DIN/Dose are not independent product fields), `questionnaire_binding_ref`, inventory catalog fields (`gtin`, `sold_individually`), shipping dims/class/`one_time_shipping`, linked merchandising (`bundle_sells_*` + `product_relations` upsell/cross-sell/bundle), `default_variation_options`, advanced (`purchase_note`, `menu_order`, `enable_reviews`, `limit_subscription`), Stripe presentation prefs (`stripe_button_position`, `stripe_gateways` JSON — Payments owns charge execution).
 
 **Variant:** `sale_price_cents`, `option_values` (attribute picks for variable products).
 
@@ -131,7 +134,7 @@ Class D is never implied by manage. Marketing/Content do not hold manage in V1.
 
 **Attribute creation:** Attributes are created only through **Attribute name → Add new**; there is no preset/existing-attribute dropdown. Every new attribute card contains its name, values, per-attribute DIN, per-attribute Dose/Strength, and “Used for variations” setting.
 
-**Category fields (beyond core):** `parent_id` (hierarchy), `thumbnail_media_asset_id`, `min_quantity` / `max_quantity` / `group_of`, `display_type`, header align/image fields, `content_permission_roles` (Store role allowlist; empty = everyone).
+**Category fields (beyond core):** `parent_id` (hierarchy), `thumbnailAssetId`, `min_quantity` / `max_quantity` / `group_of`, `display_type`, header align/image fields, `content_permission_roles` (Store role allowlist; empty = everyone).
 
 Lifecycle: `draft` → `review` → `published` → `unpublished` → `archived` (Trash tab).
 
@@ -159,7 +162,7 @@ Category admin list returns hierarchy `depth` plus `_count.productLinks`. Create
 
 ## 10. Dependencies
 
-Guardian foundation; RBAC; Class D codes in API; Media attach uses opaque asset IDs until Media Library ships; Inventory summary stubs until Inventory ships; QST binding ref required for Rx publish (`OR-14`); Brands module deferred (`brand_name` label only).
+Guardian foundation; RBAC; Class D codes in API; Asset attach uses opaque `assetId` until Asset Library ships ([33](33-asset-library-module.md)); Inventory summary stubs until Inventory ships; QST binding ref required for Rx publish (`OR-14`); Brands module deferred (`brand_name` label only).
 
 ---
 
@@ -171,7 +174,7 @@ Product Settings, AI assist, Brands entity module, Bundles/Kits depth, Digital p
 
 ## 12. Testing
 
-Authorization (incl. Class D negatives), lifecycle/`OR-14`, published-only public APIs, Inventory/Media boundary (no stock mutation / no binary upload), seed demo categories (`AC-PRD-003` / `AC-BR-06`), list filters/status counts, category hierarchy + permission roles persistence.
+Authorization (incl. Class D negatives), lifecycle/`OR-14`, published-only public APIs, Inventory/Asset Library boundary (no stock mutation / no binary upload / no provider URLs on Products), seed demo categories (`AC-PRD-003` / `AC-BR-06`), list filters/status counts, category hierarchy + permission roles persistence.
 
 ---
 
@@ -191,5 +194,6 @@ Backend + Guardian mini-apps for Products and Categories (list + shared create/e
 | 1.3 | 2026-07-29 | Platform Engineering | Full Product Data tabs: Inventory/Shipping/Linked/Attributes/Variations/Advanced/Stripe prefs |
 | 1.4 | 2026-07-29 | Platform Engineering | DIN/Dose moved onto each catalog attribute (not independent product fields) |
 | 1.5 | 2026-07-29 | Platform Engineering | Removed preset attribute dropdown; all attributes are added through Add new with values, DIN, Dose, and variation settings |
+| 1.6 | 2026-08-03 | Platform Engineering | Asset Library boundary (`featuredAssetId` / `thumbnailAssetId`); Products own relationships; never provider URLs; link [33](33-asset-library-module.md) |
 
 *End of 31 — Products Module.*

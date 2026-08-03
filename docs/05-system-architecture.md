@@ -154,7 +154,7 @@ Aligned with [PRD §11](00-product-requirements-document.md#11-out-of-scope): na
 | ARCH-014 | Backend API | Modular monolith: domain logic, AuthZ, integrations, audit |
 | ARCH-015 | Background Workers | Renewals, notifications, reports, cleanup, reindex |
 | ARCH-016 | PostgreSQL | System of record for transactional domain data |
-| ARCH-017 | Object Storage | Documents and media (S3-compatible) |
+| ARCH-017 | Object Storage | Shared S3-compatible storage for Document Management, Asset Library, exports, and future User Media — modules own metadata separately |
 | ARCH-018 | Redis-compatible store | Sessions/tokens, cache, rate-limit counters, job broker |
 | ARCH-019 | CDN | Public Store static assets and edge cache |
 | ARCH-020 | Payment Provider (PSP) | Tokenization, charge, refund, webhooks; no raw PAN on platform |
@@ -464,7 +464,7 @@ Public SEO storefront rendering; Marketing/Content default access to clinical no
 
 #### Responsibilities
 
-- Catalog administration: products, categories, variants, pricing, images, DIN, dosage, inventory policy, media.
+- Catalog administration: products, categories, variants, pricing, images (Asset Library IDs), DIN, dosage, inventory policy.
 - Content and marketing administration: pages, blogs, homepage, FAQs, coupons, campaigns, templates.
 - Platform administration: settings, feature flags, taxes, shipping, payment providers and keys, webhooks, integrations, API keys.
 - Administrative lifecycle for shared entities: users (full admin lifecycle), orders (administrative and financial), subscriptions (administrative lifecycle).
@@ -478,7 +478,7 @@ Public SEO storefront rendering; Marketing/Content default access to clinical no
 | --- | --- |
 | Dashboard | Administrators, platform owners |
 | Commerce | Products, categories, inventory, orders (admin), subscriptions (admin), pricing, taxes, shipping |
-| Content | Pages, blogs, media, homepage, FAQs |
+| Content | Pages, blogs, Asset Library, homepage, FAQs |
 | Users | Full user administrative lifecycle |
 | Marketing | Coupons, campaigns, templates |
 | Platform | Settings, feature flags, integrations |
@@ -588,11 +588,12 @@ flowchart TB
 
 | Aspect | Detail |
 | --- | --- |
-| Purpose | Catalog-agnostic products (SKU/variants, price, Rx flag, media, SEO) |
+| Purpose | Catalog-agnostic products (SKU/variants, price, Rx flag, presentation assets via Asset Library IDs, SEO) |
 | Responsibilities | CRM-configurable publish without deploy; Rx-eligible flag drives gates |
-| Dependencies | Categories, Inventory, Search, CMS/media via object storage |
+| Dependencies | Categories, Inventory, Search, CMS; presentation assets via Asset Library opaque IDs |
+| Consumers | Store, Portal (read published), CRM (ops context), Guardian (admin), Workers |
+| External integrations | Object storage via Asset Library resolve (consumers never store provider URLs) |
 | Events | Product Published, Product Updated |
-| External integrations | Object storage (media) |
 
 ### 6.4 Categories (ARCH-043)
 
@@ -704,13 +705,13 @@ flowchart TB
 | Events | Consumes and triggers clinical/ops events under RBAC |
 | External integrations | None beyond shared PSP/email |
 
-### 6.15 Documents (ARCH-054)
+### 6.15 Documents / Document Management (ARCH-054)
 
 | Aspect | Detail |
 | --- | --- |
-| Purpose | Patient-scoped document artifacts (receipts, Rx PDFs, education) |
-| Responsibilities | Metadata in SoR; bytes in object storage; Portal download; CRM upload; audit PHI-sensitive access |
-| Dependencies | Object storage, Orders/Prescriptions, AuthZ, Audit |
+| Purpose | Private document artifacts (patient documents, Rx PDFs, insurance, invoices, lab reports, questionnaire attachments, and related private files) — future broader **Document Management** name |
+| Responsibilities | Metadata in SoR; bytes in object storage; Portal download; CRM upload; audit PHI-sensitive access. **Not** Asset Library reusable business assets |
+| Dependencies | Object storage (shared provider), Orders/Prescriptions, AuthZ, Audit |
 | Events | Document Uploaded |
 | External integrations | Object storage |
 
@@ -1317,7 +1318,7 @@ flowchart TD
 | ARCH-100 | Modular monolith first | Fastest path to consistent clinical/payment transactions; NFR-025 allows later extraction | Single deployable can grow complex; mitigated by module boundaries |
 | ARCH-101 | Versioned REST (`/v1`) | Matches NFR-112–120; simple for web and future mobile | Less flexible queries than GraphQL; acceptable for V1 resource model |
 | ARCH-102 | Managed PostgreSQL as SoR | Strong relational consistency for orders/clinical states; OSS ecosystem; NFR-134 | Vertical scale limits vs distributed DB; sufficient for V1 single-region |
-| ARCH-103 | S3-compatible object storage | Documents/media out of DB BLOBs (NFR-022/135); durable and scalable | Cross-object transactional coupling requires careful metadata design |
+| ARCH-103 | S3-compatible object storage | Shared infra for Document Management, Asset Library, exports, User Media (NFR-022/135); durable and scalable; modules own metadata separately | Cross-object transactional coupling requires careful metadata design |
 | ARCH-104 | Queues + dedicated workers | Isolates renewals/NTF/reports from request latency (NFR-021/038) | Operational complexity (DLQ, visibility timeouts) |
 | ARCH-105 | Server-side RBAC | PHI isolation and clinical gates cannot be client-enforced | Requires thorough policy tests and role matrices (doc 08) |
 | ARCH-106 | Background workers separate from API | Protects interactive p95; independent scale | Extra deployable and monitoring surface |
@@ -1341,7 +1342,7 @@ flowchart TD
 | ARCH-120 | PRD remains the single source of truth; this doc does not invent product scope |
 | ARCH-121 | Store, Portal, and the Internal Platform are separate V1 web applications sharing one Backend API |
 | ARCH-122 | Email is the primary V1 notification channel |
-| ARCH-123 | Document/media bytes live in object storage; transactional metadata in PostgreSQL |
+| ARCH-123 | Document Management and Asset Library bytes live in object storage; transactional metadata in PostgreSQL; business modules store opaque IDs only — never provider URLs |
 | ARCH-124 | Demo catalog categories are seed data, not hard-wired product identity |
 | ARCH-125 | Human clinicians approve prescriptions; system enforces gates and audit |
 | ARCH-126 | Non-Rx products may skip clinical order states after successful payment |
@@ -1426,7 +1427,7 @@ Maps architecture components → functional modules → representative NFR requi
 | Inventory / Reviews / Support / Settings (ARCH-058–059, ARCH-062, ARCH-064) | INV, REV, SUP, SET | NFR-036, NFR-045, NFR-123 |
 | Blogs / CMS (ARCH-060–061) | BLG, CMS | NFR-103–104 |
 | PostgreSQL (ARCH-016) | All transactional modules | NFR-134, NFR-048, NFR-083–087 |
-| Object storage (ARCH-017) | DOC, PRD media, exports | NFR-022, NFR-085, NFR-135 |
+| Object storage (ARCH-017) | DOC (Document Management), AST (Asset Library), exports | NFR-022, NFR-085, NFR-135 |
 | Redis / workers / queues (ARCH-018, ARCH-015, ARCH-080) | SUB, NTF, RPT, PAY webhooks | NFR-013–014, NFR-021, NFR-038 |
 | PSP / Email (ARCH-070–071) | PAY, NTF, AUTH reset | NFR-136–137 |
 | CDN (ARCH-019) | STO static | NFR-023, NFR-133 |
@@ -1476,6 +1477,7 @@ Maps architecture components → functional modules → representative NFR requi
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | — | Initial System Architecture draft for review | Pending review |
 | 1.1 | 2026-07-27 | Architecture (Clinexa planning) | — | Added Clinexa Ecosystem view (ARCH-170–173), Internal Platform contexts (CRM + Guardian), application-agnostic backend and platform-module principles (ARCH-160–166), Guardian client section (§4.4), ADRs ARCH-113–116, assumptions ARCH-132–134, constraints ARCH-151–154 | Pending review |
+| 1.2 | 2026-08-03 | Platform Engineering | — | Object storage shared across Document Management / Asset Library / exports; ARCH-017/103/123 and Products consumers clarified; ID-only asset refs; link [33](33-asset-library-module.md) | Pending review |
 
 ---
 

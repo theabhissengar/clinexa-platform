@@ -266,7 +266,7 @@ Logical controls aligned to OWASP classes (`NFR-051`). No frameworks or librarie
 | --- | --- | --- | --- |
 | **SEC-040** | Input validation | Validate type, length, format, and allowlists at the API boundary for all untrusted input; reject malformed payloads with safe errors. | `NFR-051`; [11](11-api-design.md) |
 | **SEC-041** | Output encoding | Encode untrusted data for the output context (HTML, attributes, URLs) on Store/Portal/CRM to prevent XSS. | `NFR-051` |
-| **SEC-042** | File upload security | Allowlist MIME/extensions; default max size **≤ 10 MB** unless configured; store bytes in object storage with metadata/ACL in DB; Prefer malware scan path when tooling available (Should). | `NFR-054`/`055`; `FR-DOC-*` |
+| **SEC-042** | File upload security | Allowlist MIME/extensions; default max size **≤ 10 MB** unless configured; store bytes in object storage with metadata in DB. **Asset Library** (`FR-AST-*`, `DB-062`): reusable public/catalog assets; consumers store `assetId` only. **Document Management** (`FR-DOC-*`, `DB-047`): private/PHI documents with ACL + audited download. Prefer malware scan path when tooling available (Should). | `NFR-054`/`055`; `FR-AST-*`; `FR-DOC-*` |
 | **SEC-043** | Rate limiting | Bound auth and public write endpoints; login **≤ 10** attempts / IP / 15 min; return HTTP 429 with stable error code. | `NFR-052`; `AUTH-036` |
 | **SEC-044** | CSRF | If session credentials are cookie-bound, apply anti-CSRF for state-changing browser requests (`AUTH-039`). Bearer-only API clients rely on CORS and credential isolation patterns. | `AUTH-039` |
 | **SEC-045** | XSS prevention | Combine output encoding, CSP baseline, and avoidance of unsafe inline script patterns on Store/Portal. | `NFR-051`/`053` |
@@ -441,7 +441,8 @@ V1 defines a **logical** incident-response lifecycle suitable for portfolio/demo
 | `KPI-08` zero cross-patient exposure | `FR-AUTH-005`; isolation ACs | SEC-053, SEC-097, SEC-105 | Protected API chain | Object-level AuthZ | 401/403/404 semantics | Scoped queries |
 | Payment integrity / no PAN | `FR-PAY-001` | SEC-023, SEC-064, SEC-057–059 | `AUTH-032` webhook | Payment ≠ dispense SoD | `API-061`/`062`/`067`/`068` | `DB-030`/`031` |
 | Clinical auditability | `FR-CRM-002`; `FR-ADM-004` | SEC-008, SEC-109–111 | AuthN actor identity | Role snapshot in audit | Clinical/admin APIs | `DB-057` append-only |
-| Document PHI access | `FR-DOC-001`–`004` | SEC-021, SEC-042, SEC-062 | Authenticated user | Document ACL perms | `API-112` download | `DB-047` + object storage |
+| Document PHI access | `FR-DOC-001`–`004` | SEC-021, SEC-042, SEC-062 | Authenticated user | Document ACL perms | `API-112` download | `DB-047` + object storage (Document Management — not Asset Library) |
+| Asset Library resolve | `FR-AST-004` | SEC-042, SEC-025 | Published/Active reusable assets | `PERM-AST-001` / public rules | `API-186` | `DB-062` + object storage |
 | Support least privilege | `FR-SUP-004` | SEC-028, SEC-095 | Staff AuthN | Support perms; no Rx approve | Ticket APIs | Ticket-scoped PHI |
 | Secrets / env hygiene | NFR-049 / env NFRs | SEC-034, SEC-035, SEC-072 | — | Admin config only | — | No secrets in DB dumps/repos |
 | Encryption posture | NFR-040 / NFR-048 | SEC-031, SEC-032 | TLS to API | — | HTTPS only | Encrypted PG + objects |
@@ -720,6 +721,7 @@ flowchart LR
 | 1.0 | 2026-07-23 | Principal / Enterprise Security Architect (planning) | Pending | Initial security architecture: principles, domains, data protection, app/API/infra/IAM controls, incident response, compliance governance, traceability (`SEC-001`–`115`) | Draft for review |
 | 1.0 | 2026-07-23 | Principal / Enterprise Security Architect (planning) | Pending | Architectural appendices: §11.4 Security Priority Matrix, §11.5 Security Ownership Matrix, §11.6 Threat Surface Diagram, §11.7 Security Event Matrix, §11.8 Secure Development Lifecycle; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Internal Platform staff zone split into CRM and Guardian contexts; added destructive-operation ownership and consumer-independent enforcement controls (`SEC-020a`–`SEC-020c`); Guardian context access (`PERM-GRD-001`) and Class D destructive permissions reflected in `SEC-012`, `SEC-083`, `SEC-084`, `SEC-038` | Draft for review |
+| 1.2 | 2026-08-03 | Platform Engineering | Pending | SEC-042 distinguishes Asset Library vs Document Management uploads; Asset Library resolve row; link [33](33-asset-library-module.md) | Draft for review |
 
 ---
 

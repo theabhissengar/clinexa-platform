@@ -62,7 +62,7 @@ Specify **what the system shall do** for every V1 functional module so that:
 | Clinical ops | Doctor review, prescriptions, pharmacist review (via CRM + Orders) |
 | Subscriptions | Plans, renewals, grace/past-due, cancel/manage, reassessment hooks |
 | Appointments | Scheduling-only booking and staff visibility |
-| Content | CMS pages, blogs, Store search/SEO rendering |
+| Content | CMS pages, blogs, Asset Library (reusable business assets), Store search/SEO rendering |
 | Operations | Inventory, fulfillment readiness, support tickets, reports, analytics |
 | Payments | PSP pay, renew, refund (no raw PAN storage) |
 | Notifications | Email events for core journeys |
@@ -786,6 +786,57 @@ Store, Blogs, Search/SEO, CRM, Administration, Authentication.
 
 - Full visual page builder.
 - Multi-brand CMS tenants.
+
+### 2.6a Asset Library (`AST`)
+
+| Field | Value |
+| --- | --- |
+| Module code | `AST` |
+| V1 priority | Should (platform foundation for catalog/content presentation) |
+| Primary surfaces | Guardian Asset Library; Store/CMS consumers via resolve |
+| PRD anchors | Object storage / catalog presentation in [00](00-product-requirements-document.md) |
+| BRD anchors | Content and catalog presentation (`BP-11`, catalog FRs) |
+| Blueprint | [33 — Asset Library module](33-asset-library-module.md) |
+
+#### Actors
+
+Content, Admin (Guardian manage); Store consumers (resolve); CRM may select existing Active assets only — never Asset Manager.
+
+#### Dependencies
+
+Authentication/RBAC, object storage (`StorageProvider`), Audit for Class D; Products/CMS/Blogs own their own `assetId` relationships.
+
+#### Functional Requirements
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FR-AST-001 | System shall allow authorized Guardian staff to browse and manage reusable business asset metadata (alt, caption, lifecycle listing). | Should |
+| FR-AST-002 | System shall allow authorized Guardian staff to upload reusable business assets via upload-session to object storage and finalize metadata (Uploaded → Active on success in V1). | Should |
+| FR-AST-003 | System shall support archive, restore, and soft-delete of assets under Class D permissions (`PERM-AST-010`/`011`), Guardian-only. | Should |
+| FR-AST-004 | System shall resolve storage for consumers from Asset identifiers only; business modules must not store storage-provider URLs or raw keys. | Must |
+
+#### Acceptance Criteria
+
+**AC-AST-001** (FR-AST-004)
+
+- **Given** a product holds `featuredAssetId`
+- **When** Store renders the product image
+- **Then** the URL/stream is obtained via Asset Library resolve — not from a provider URL on the product row
+
+**AC-AST-002** (FR-AST-002 / CRM boundary)
+
+- **Given** a CRM user without Guardian Asset Manager grants
+- **When** they attempt to upload or delete an Asset Library asset
+- **Then** access is denied
+
+#### Future Enhancements
+
+- Search, Tags, Folders, Collections, metadata filters.
+- Versioning; opaque usage registry; CDN/optimization/transcoding; AI assets (separate module).
+
+#### Out of scope / other modules
+
+Private patient documents, prescriptions, insurance, invoices, lab reports, questionnaire attachments → **Document Management** (`FR-DOC-*`). User avatars → **User Media** (future).
 
 ### 2.7 Search (`SRCH`)
 
@@ -2062,7 +2113,7 @@ Orders, Payments, Subscriptions, Appointments, Support, Authentication, CRM, Pat
 - In-app notification center.
 - Rich preference centers by event category.
 
-### 2.18 Documents (`DOC`)
+### 2.18 Documents / Document Management (`DOC`)
 
 | Field | Value |
 | --- | --- |
@@ -2136,7 +2187,7 @@ Orders, CRM (Rx), Patient Portal, Notifications (optional links), Authentication
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
-| FR-DOC-001 | System shall store patient documents with access control and patient scoping. | Must |
+| FR-DOC-001 | System shall store patient/private documents (Document Management) with access control and patient scoping. **Not** Asset Library reusable assets. | Must |
 | FR-DOC-002 | System shall allow patients to view/download their own documents in Portal. | Must |
 | FR-DOC-003 | System shall allow authorized staff to upload/attach documents in CRM. | Must |
 | FR-DOC-004 | System shall audit downloads/views of PHI-sensitive documents. | Must |
@@ -3710,6 +3761,7 @@ Extended module-level definitions also appear in [§1.4 Definitions](#14-definit
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | Initial functional requirements specification |
 | 1.1 | 2026-07-23 | Abhishek Singh Sengar | Added business→FR traceability detail, CRUD matrix, domain events, sequence diagrams, state machine summary, and glossary |
 | 1.2 | 2026-07-27 | Platform Engineering | Added §11.1 surface responsibility (multi-consumer exposure and Guardian-only destructive rules); surface notes on `CRM` and `ADM` modules for the CRM and Guardian contexts of the Internal Platform |
+| 1.3 | 2026-08-03 | Platform Engineering | Added Asset Library `FR-AST-001`–`004`; Document Management clarification on `FR-DOC-001`; link [33](33-asset-library-module.md) |
 
 ---
 

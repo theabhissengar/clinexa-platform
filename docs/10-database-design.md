@@ -59,7 +59,7 @@ Define a production-grade relational data architecture so that:
 
 | Area | Coverage |
 | --- | --- |
-| Logical entities | Identity, catalog, commerce, clinical, inventory, portal, content, notifications, audit, settings, analytics/report metadata (`DB-001`–`DB-061`) |
+| Logical entities | Identity, catalog, commerce, clinical, inventory, portal, content (incl. Asset Library), notifications, audit, settings, analytics/report metadata (`DB-001`–`DB-062`) |
 | Surfaces served | Store Web (`ARCH-011`), Patient Portal (`ARCH-012`), CRM (`ARCH-013`), Backend API (`ARCH-014`) |
 | Persistence model | Single-operator PostgreSQL SoR; object-storage metadata for documents/media; Redis session/cache/queue coordination (`ARCH-017`, `ARCH-018`) |
 | Lifecycles | Canonical statuses from [03 §14](03-functional-requirements.md#14-state-machine-summary) |
@@ -184,7 +184,8 @@ Once written under business rules, do not mutate:
 
 - Store only PHI required for care-commerce journeys (NFR-058/059).
 - Questionnaire answers and clinical notes are **high-sensitivity**; default deny for Marketing/Content (`FR-CRM-006`).
-- Document bytes live in object storage; DB holds metadata + ACL (`ARCH-017`, NFR-022, FR-DOC-001).
+- Document bytes live in object storage; DB holds metadata + ACL (`ARCH-017`, NFR-022, FR-DOC-001) — **Document Management** (`DB-047`), not Asset Library.
+- Reusable business asset bytes live in object storage; Asset Library metadata in `DB-062`; consumers store opaque `assetId` only ([33](33-asset-library-module.md)).
 - No raw PAN; PSP tokens only (`FR-PAY-001`, NFR-050).
 - Marketing analytics exclude clinical free text (`FR-ANL-002`).
 
@@ -318,7 +319,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Purpose | Configurable Store categories with SEO metadata |
 | Primary key | `id` |
 | Relationships | M:N Products via ProductCategoryLinks; optional self-parent hierarchy (`parent_id`); optional Blog associations |
-| Notable columns | `thumbnail_media_asset_id`, `min_quantity` / `max_quantity` / `group_of`, `display_type`, header align/image, `content_permission_roles` |
+| Notable columns | `thumbnailAssetId` (opaque Asset Library id; legacy `thumbnail_media_asset_id` until P11e), `min_quantity` / `max_quantity` / `group_of`, `display_type`, header align/image, `content_permission_roles` |
 | Business rules | Create/update/publish via Guardian without deploy (`FR-CAT-001/002`); only published visible on Store (`FR-CAT-003`); demo categories are seed data (`FR-CAT-004`) |
 | Retention | Unpublish/archive preferred |
 | Trace | FR-CAT-001–004, ARCH-043, ROAD-004 |
@@ -330,7 +331,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Purpose | Sellable catalog offerings with Rx-eligibility, pricing base, media, SEO, publish state |
 | Primary key | `id` |
 | Relationships | 1:N ProductVariants, ProductMedia, ProductRelation; M:N Categories; bindings to questionnaires/treatment plans |
-| Notable columns | `short_description`, `is_featured`, `brand_id`/`brand_name`, `featured_media_asset_id`, `product_type`, `tags`, `medical_info` (summary), `attributes` JSON attribute defs with per-attribute `din`/`dose`, inventory catalog (`gtin`, `sold_individually`), shipping dims/class, linked bundle copy, `default_variation_options`, advanced (`purchase_note`, `menu_order`, `enable_reviews`, `limit_subscription`), Stripe prefs (`stripe_button_position`, `stripe_gateways`) |
+| Notable columns | `short_description`, `is_featured`, `brand_id`/`brand_name`, `featuredAssetId` (opaque Asset Library id; legacy column may read `featured_media_asset_id` until P11e), `product_type`, `tags`, `medical_info` (summary), `attributes` JSON attribute defs with per-attribute `din`/`dose`, inventory catalog (`gtin`, `sold_individually`), shipping dims/class, linked bundle copy, `default_variation_options`, advanced (`purchase_note`, `menu_order`, `enable_reviews`, `limit_subscription`), Stripe prefs (`stripe_button_position`, `stripe_gateways`) |
 | Business rules | Rx flag drives clinical intake and order states (`FR-PRD-004`); only published on Store (`FR-PRD-003`); Admin publish without code (`FR-PRD-002`) |
 | Retention | Archive/unpublish; retain for historical order FKs |
 | Trace | FR-PRD-001–005, ARCH-042, ROAD-004 |
@@ -351,12 +352,12 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Media metadata (object-storage keys, alt, sort order) for products |
+| Purpose | **Product-owned** gallery association rows (sort order, optional per-association alt override) pointing at opaque Asset Library `assetId` |
 | Primary key | `id` |
-| Relationships | N:1 Product |
-| Business rules | Bytes in object storage; DB stores references only (NFR-022) |
+| Relationships | N:1 Product; references Asset Library asset by opaque ID (Asset Library does not own this row) |
+| Business rules | Bytes and asset metadata live in Asset Library (`DB-062`) + object storage; Products never store storage-provider URLs or raw keys (`NFR-022`, [33](33-asset-library-module.md)) |
 | Retention | Soft-delete with product media updates |
-| Trace | FR-PRD-001, ARCH-017 |
+| Trace | FR-PRD-001, ARCH-017, FR-AST-004 |
 
 #### DB-014 ProductCategoryLinks
 
@@ -736,7 +737,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Patient document metadata + ACL; bytes in object storage |
+| Purpose | Private document metadata + ACL for **Document Management** (patient documents and related private artifacts); bytes in object storage. **Not** Asset Library (`DB-062`) |
 | Primary key | `id` |
 | Relationships | N:1 User (patient); polymorphic link to Order/Prescription/Consultation; optional uploader User |
 | Business rules | Patient view/download own (`FR-DOC-002`); staff upload where permitted (`FR-DOC-003`); audit PHI-sensitive views/downloads (`FR-DOC-004`) |
@@ -901,6 +902,18 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Retention | Export GC per cleanup jobs; definitions retained |
 | Trace | FR-RPT-001–003, NFR-011/012, ROAD-026 |
 
+#### DB-062 Assets
+
+| Field | Detail |
+| --- | --- |
+| Purpose | Reusable business asset metadata SoR for **Asset Library** (`GRD-039`); bytes in object storage via shared `StorageProvider` |
+| Primary key | `id` (UUID) |
+| Notable columns | `storage_provider`, `storage_key`, `original_filename`, `mime_type`, `byte_size`, `width`, `height`, `alt_text`, `caption`, `status` (`uploaded` \| `active` \| `archived` \| `deleted`), timestamps, `created_by_user_id` |
+| Relationships | Referenced by opaque `assetId` from Products, Categories, CMS, Blogs, etc. — Asset Library does **not** own those consumer relationships |
+| Business rules | Metadata only in PostgreSQL; business modules never store provider URLs; lifecycle Uploaded → Active → Archived → Deleted; auto-Active on successful finalize (V1); Folders/Tags/Collections/Search reserved |
+| Retention | Soft-delete default; binary GC reserved for workers |
+| Trace | FR-AST-001–004, ARCH-017/103/123, [33](33-asset-library-module.md) |
+
 ### 3.10 Entity index
 
 | ID | Entity | Domain |
@@ -966,6 +979,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | DB-059 | DomainEvents | Admin |
 | DB-060 | AnalyticsEvents | Admin |
 | DB-061 | ReportMetadata | Admin |
+| DB-062 | Assets | Content (Asset Library) |
 
 ---
 
@@ -1317,7 +1331,7 @@ Canonical account statuses and ownership: [32 — Users Module](32-users-module.
 | `deleted` | Soft delete (`PERM-ADM-030`); FKs retained; last-admin safeguard |
 | Security | Lockout via AccountSecurityStates (Auth); password reset rotates credentials and invalidates sessions (Auth) |
 | Hard delete | Rare documented procedure (`PERM-ADM-034`); healthcare retention gate; audit retained (`NFR-064`); orders/prescriptions never cascade-delete |
-| Avatar | Opaque `avatar_media_asset_id` only; Media Library owns binaries ([32](32-users-module.md) §1.4) |
+| Avatar | Opaque avatar reference for display only; **User Media** (future) owns avatar binaries — **not** Asset Library ([32](32-users-module.md) §1.4, [33](33-asset-library-module.md)) |
 | Addresses | Contact fields and embedded billing/shipping snapshots on User (V1); reusable Address aggregate remains future ([§14](#14-address-architecture-future-recommendation)) |
 
 Legacy binary `ACTIVE` / `DISABLED` maps to `active` / `inactive` at implementation.
@@ -1681,6 +1695,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Initial logical database design: principles, DB-001–DB-061 entity catalog, relationship matrix, split Mermaid ER diagrams, lifecycles, indexing, integrity, performance, security, and BO/OR/FR→DB→ARCH traceability | Draft for review |
 | 1.1 | 2026-08-02 | Platform Engineering | TBD | §7.1 User lifecycle expanded to platform statuses; avatar opaque ref; Address remains §14; link [32](32-users-module.md) | Draft for review |
+| 1.2 | 2026-08-03 | Platform Engineering | TBD | `DB-062` Assets; DB-013 clarified as product-owned associations; avatar → User Media not Asset Library; Document Management labeling for DB-047; link [33](33-asset-library-module.md) | Draft for review |
 
 ---
 
@@ -2163,7 +2178,8 @@ Security appendix classifying major entities from §3. Classifications support H
 | Categories | DB-010 | Public (when published) / Internal (draft) | No | No | Yes | Publish actions | Archive preferred | Store public subset; CRM Content/Admin |
 | Products | DB-011 | Public (published) / Internal (draft) | No | No | Yes | Publish/config | Archive; keep order FKs | Store public; CRM Admin |
 | ProductVariants | DB-012 | Public/Internal | No | No | Yes | Config changes | With product | Store/CRM as product |
-| ProductMedia | DB-013 | Public/Internal | No | No | Yes (DB + object store) | Optional | With product | Store/CRM |
+| ProductMedia | DB-013 | Public/Internal | No | No | Yes (association + assetId; bytes via DB-062) | Optional | With product | Store/CRM |
+| Assets | DB-062 | Public/Internal | No | No | Yes (DB + object store) | Optional | Soft-delete + GC | Guardian manage; Store resolve |
 | ProductCategoryLinks | DB-014 | Internal | No | No | Yes | Low | With catalog | System/CRM |
 | TreatmentPlans | DB-015 | Internal / Sensitive | No | No | Yes | Publish validation | Archive | Admin; clinical config roles |
 | TreatmentPlanLinks | DB-016 | Internal | No | No | Yes | Config | With plans | Admin |

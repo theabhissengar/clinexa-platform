@@ -281,13 +281,13 @@ export const NAV_ITEMS: NavItem[] = [
     order: 70,
   },
   {
-    key: "guardian-media",
-    title: "Media",
-    route: "/guardian/media",
+    key: "guardian-assets",
+    title: "Asset Library",
+    route: "/guardian/assets",
     icon: Image,
     context: "guardian",
     group: "content",
-    permission: Permissions.CMS_MANAGE,
+    permission: Permissions.AST_VIEW,
     order: 80,
   },
   // Platform

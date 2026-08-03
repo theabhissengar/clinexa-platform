@@ -66,7 +66,7 @@ Define the Guardian context so that:
 | Area | Coverage |
 | --- | --- |
 | Guardian context | Administrative context of the Internal Platform, served under `/guardian/*` |
-| Modules | Dashboard, catalog (products, categories, variants, pricing, media, inventory policy), content (pages, blogs, homepage, FAQs, review moderation), marketing (coupons, campaigns, templates), users (full administrative lifecycle), orders (administration, financial corrections, overrides), subscriptions (plans and administrative lifecycle), questionnaires and workflow configuration, platform settings, feature flags, taxes, shipping, payment providers, webhooks, integrations, API keys, audit/activity/system logs, administrative analytics and reports |
+| Modules | Dashboard, catalog (products, categories, variants, pricing, inventory policy), content (pages, blogs, Asset Library, homepage, FAQs, review moderation), marketing (coupons, campaigns, templates), users (full administrative lifecycle), orders (administration, financial corrections, overrides), subscriptions (plans and administrative lifecycle), questionnaires and workflow configuration, platform settings, feature flags, taxes, shipping, payment providers, webhooks, integrations, API keys, audit/activity/system logs, administrative analytics and reports |
 | Navigation | Grouped enterprise navigation, nesting, fly-outs, permission filtering |
 | Routing | `/guardian/*` prefix and the module page hierarchy |
 | Governance rules | CRUD responsibilities, destructive-operation ownership and enforcement |
@@ -140,7 +140,7 @@ Define the Guardian context so that:
 | Responsibility | Guardian owns (UX) | Server owns (truth) |
 | --- | --- | --- |
 | Administrative dashboard | Platform KPIs, governance shortcuts, system signals | Aggregates and AuthZ (`PERM-GRD-001`) |
-| Catalog | Products, categories, variants, pricing, images, DIN/dosage attributes, media, inventory policy | Publish safety validation and bindings (`FR-PRD-002`, `FR-CAT-002`, `OR-14`) |
+| Catalog | Products, categories, variants, pricing, images (via Asset Library IDs), DIN/dosage attributes, inventory policy | Publish safety validation and bindings (`FR-PRD-002`, `FR-CAT-002`, `OR-14`) |
 | Content | Pages, blogs, homepage, FAQs, review moderation, SEO fields | Draft/publish enforcement; moderation before public display (`FR-CMS-*`, `FR-BLG-*`, `FR-REV-003`) |
 | Marketing | Coupons, campaigns, notification templates | Coupon validation and template usage (`FR-CPN-*`, `FR-NTF-002`) |
 | Users | Full administrative lifecycle: create, edit administrative fields, role assignment, delete, archive, restore | Users/RBAC persistence, last-admin safeguard, audit (`FR-ADM-001`, `FR-ADM-002`) |
@@ -279,7 +279,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-036 | Pricing, taxes, shipping | Commerce | No | `FR-SET-*` | Delete configuration entries |
 | GRD-037 | Pages | Content | No | `FR-CMS-*` | Delete, archive, restore |
 | GRD-038 | Blogs | Content | No | `FR-BLG-*` | Delete, archive, restore |
-| GRD-039 | Media library | Content | No | `FR-DOC-*` (media metadata), `FR-PRD-002` | Delete media assets |
+| GRD-039 | Asset library | Content | No | `FR-AST-001`–`004`, `FR-PRD-002`; blueprint [33](33-asset-library-module.md) | Archive, restore, delete assets |
 | GRD-040 | Homepage and FAQs | Content | No | `FR-CMS-*` | Delete blocks |
 | GRD-041 | Review moderation | Content | No | `FR-REV-003` | Delete reviews |
 | GRD-042 | Users (administration) | Users | Shared | `FR-ADM-001`, `FR-ADM-002` | Delete, archive, restore |
@@ -324,7 +324,7 @@ Guardian navigation uses **grouped enterprise navigation**. Full behavior—nest
 | --- | --- | --- |
 | Dashboard | Home and platform KPIs | `GRD-030` |
 | Commerce | Catalog and commerce administration | `GRD-031`–`GRD-036` |
-| Content | Content and media administration | `GRD-037`–`GRD-041` |
+| Content | Content and Asset Library administration | `GRD-037`–`GRD-041` |
 | Users | Identity administration | `GRD-042`, `GRD-043` |
 | Marketing | Growth configuration | `GRD-044`, `GRD-045` |
 | Platform | Configuration and governance | `GRD-047`–`GRD-050`, `GRD-053`–`GRD-055`, `GRD-057`, `GRD-059`, `GRD-060` |
@@ -476,6 +476,7 @@ Destructive permissions form a segregated **Class D** in [08 — Role permission
 | `PERM-SUB-010` / `011` / `012` | Delete / archive / restore subscription |
 | `PERM-PRD-010`, `PERM-CAT-010` | Delete product, delete category |
 | `PERM-CMS-010`, `PERM-BLG-010` | Delete page, delete blog post |
+| `PERM-AST-010`, `PERM-AST-011` | Archive / restore / delete asset; bulk destructive (Asset Library) |
 | `PERM-CPN-010` | Delete coupon |
 | `PERM-RPT-010` | Purge report job artifacts |
 
@@ -540,7 +541,7 @@ Guardian consumes documented APIs only ([11](11-api-design.md)); it never invent
 | --- | --- | --- |
 | Auth | `API-004`–`008` | Shared staff session (`AUTH-027`) |
 | Users / roles / audit | `API-009`–`015`, `API-168`–`171` | Administrative user lifecycle, role assignment, audit query |
-| Products / categories / media | `API-021`–`037` | Catalog authoring and publish |
+| Products / categories / Asset Library | `API-021`–`037`, `API-177`–`186` | Catalog authoring and reusable assets |
 | Plans / workflows | `API-095`–`096`, `API-172`–`174` | Plan and consultation workflow configuration (questionnaire staff UI is CRM-only) |
 | Orders / refunds / subscriptions | `API-072`–`076`, `API-067`, `API-083`–`087` | Administrative orders, corrections, subscription administration |
 | Inventory | `API-105`–`109` | Policy and administrative adjustment |
@@ -626,7 +627,7 @@ Store and Patient Portal are **out of scope for design and implementation in thi
 
 ### 15.1 Store depends on Guardian-managed modules
 
-Products, pricing, media, blogs, pages, coupons, marketing, SEO, search configuration, homepage content, navigation, and dynamic content. Future Store requirements may introduce new Guardian modules—for example SEO, landing pages, homepage builder, search configuration, product merchandising, catalog management—added as Module Registry entries within existing navigation groups.
+Products, pricing, Asset Library, blogs, pages, coupons, marketing, SEO, search configuration, homepage content, navigation, and dynamic content. Future Store requirements may introduce new Guardian modules—for example SEO, landing pages, homepage builder, search configuration, product merchandising, catalog management—added as Module Registry entries within existing navigation groups.
 
 ### 15.2 Patient Portal interacts with shared platform modules
 
@@ -660,7 +661,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | `BO-5`, `OR-14` | `FR-PRD-002`, `FR-CAT-002`, `FR-CRM-007` | `GRD-031`, `GRD-032`, `GRD-046` | `API-021`–`037`, `API-046`–`052` | `PERM-PRD-002`, `PERM-CAT-002`, `PERM-QST-004`, `PERM-PRD-010`, `PERM-CAT-010` | `DB-010`–`021` |
 | `ARCH-165` | `FR-ORD-*`, `FR-PAY-003` | `GRD-034`, `GRD-082`–`GRD-090` | `API-067`, `API-072`–`076` | `PERM-ORD-010`–`014` | `DB-026`–`029` |
 | `OR-10` | `FR-SUB-*` | `GRD-035` | `API-083`–`087` | `PERM-SUB-002`, `PERM-SUB-010`–`012` | `DB-032`–`034` |
-| `BP-11`, `OR-13` | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003` | `GRD-037`–`GRD-041` | `API-139`–`141`, `API-150`–`160` | `PERM-CMS-001`/`002`, `PERM-BLG-001`, `PERM-CMS-010`, `PERM-BLG-010` | `DB-024`–`025`, `DB-050`–`053` |
+| `BP-11`, `OR-13` | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003`, `FR-AST-001`–`004` | `GRD-037`–`GRD-041` | `API-139`–`141`, `API-150`–`160`, `API-177`–`186` | `PERM-CMS-001`/`002`, `PERM-BLG-001`, `PERM-CMS-010`, `PERM-BLG-010`, `PERM-AST-001`/`002`/`010`/`011` | `DB-024`–`025`, `DB-050`–`053`, `DB-062` |
 | Growth | `FR-CPN-001`, `FR-NTF-002` | `GRD-044`, `GRD-045` | `API-135`–`136`, `API-143`–`147` | `PERM-CPN-001`, `PERM-NTF-003`, `PERM-CPN-010` | `DB-054`, coupon tables |
 | Governance | `FR-ADM-004`, `FR-SET-001`–`004` | `GRD-047`–`GRD-055`, `GRD-060` | `API-171`, `API-175`–`176` | `PERM-ADM-010`, `PERM-SET-001`/`002`, `PERM-ADM-033`/`034` | `DB-057`–`058` |
 | Reporting | `FR-RPT-*`, `FR-ANL-*` | `GRD-056` | `API-161`–`167` | `PERM-RPT-001`/`002`, `PERM-RPT-010` | `DB-060`–`061` |
@@ -675,6 +676,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | 1.0 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Initial Guardian architecture: context boundary, modules (`GRD-030`–`GRD-060`), navigation groups, `/guardian/*` routing and module page hierarchy, CRUD product rules, destructive-operation ownership and enforcement, shared shell rules, security posture, future Security area, Store/Portal dependencies, migration and traceability (`GRD-001`–`GRD-160`) | Draft for review |
 | 1.1 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`GRD-046`) and Prescriptions are not Guardian Internal Platform surfaces; staff UI is CRM-only | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users §6.1 links blueprint [32](32-users-module.md); suspend/deactivate vs Class D clarified | Draft for review |
+| 1.3 | 2026-08-03 | Platform Engineering | Pending | `GRD-039` Asset library; `PERM-AST-*`; blueprint [33](33-asset-library-module.md); drop `FR-DOC-*` as Asset Library primary | Draft for review |
 
 ---
 
@@ -686,7 +688,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | [18 — CRM](18-crm.md) | Peer operational context and shared shell contract |
 | [08 — Role permissions](08-role-permissions.md) | `PERM-GRD-001` and the destructive permission class |
 | [11 — API design](11-api-design.md) | Administrative and destructive endpoint requirements |
-| [13 — Security](13-security.md) | Destructive-operation ownership and audit |
+| [33 — Asset Library module](33-asset-library-module.md) | Reusable business assets (`GRD-039`) |
 | [26 — Implementation tracker](26-implementation-tracker.md) | Delivery phases and verification |
 | [27 — Module registry](27-module-registry.md) | Module catalog, consumers, blueprint standard |
 | [28 — Ownership matrix](28-ownership-matrix.md) | Per-entity action ownership across applications |

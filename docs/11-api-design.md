@@ -239,7 +239,7 @@ Destructive operations are exposed in the Guardian context only (`ARCH-165`), bu
 | Order financial correction | `PERM-ORD-013` | Distinct from policy-scoped operational refund (`PERM-PAY-003`) |
 | Order administrative override | `PERM-ORD-014` | Never silently bypasses a clinical or payment gate; always audited |
 | Subscription delete / archive / restore | `PERM-SUB-010`–`012` | — |
-| Catalog / content / coupon delete | `PERM-PRD-010`, `PERM-CAT-010`, `PERM-CMS-010`, `PERM-BLG-010`, `PERM-CPN-010` | Refused where dependent history requires retention |
+| Catalog / content / coupon / asset delete | `PERM-PRD-010`, `PERM-CAT-010`, `PERM-CMS-010`, `PERM-BLG-010`, `PERM-AST-010`/`011`, `PERM-CPN-010` | Refused where dependent history requires retention |
 | Report artifact purge | `PERM-RPT-010` | Retention-policy scoped |
 
 ### 3.3 Hard surface denies
@@ -713,7 +713,7 @@ Admin paths prefer `/v1/admin/users` at implementation for consistency with Prod
 | API-027 | POST | `/admin/products/{id}/variants` | Create variant/SKU | Yes | Ad | FR-PRD-001 | Supports `salePriceCents` |
 | API-028 | PATCH | `/admin/products/{id}/variants/{variantId}` | Update variant | Yes | Ad | FR-PRD-001 | Supports `salePriceCents` |
 | API-029 | PUT | `/admin/products/{id}/categories` | Set category links | Yes | Ad | FR-PRD-001, FR-CAT-002 | |
-| API-030 | POST | `/admin/products/{id}/media` | Attach media asset reference | Yes | Ad | FR-PRD-001 | Association only — Media Library owns upload |
+| API-030 | POST | `/admin/products/{id}/media` | Attach asset reference (`assetId`) | Yes | Ad | FR-PRD-001 | Association only — Asset Library owns upload; never store provider URLs |
 | API-030a | POST | `/admin/products/{id}/duplicate` | Duplicate as draft | Yes | Ad | FR-PRD-002 | Copies variants/media/categories |
 | API-030b | POST | `/admin/products/{id}/toggle-featured` | Toggle featured | Yes | Ad | FR-PRD-002 | |
 | API-030c | POST | `/admin/products/bulk-delete` | Bulk soft-delete | Yes | Ad | FR-PRD-010 | Class D; per-id results |
@@ -731,6 +731,25 @@ Admin paths prefer `/v1/admin/users` at implementation for consistency with Prod
 | API-035 | PATCH | `/admin/categories/{id}` | Update category | Yes | Ad | FR-CAT-002 | Same fields as create |
 | API-036 | POST | `/admin/categories/{id}/publish` | Publish | Yes | Ad | FR-CAT-002 | |
 | API-037 | POST | `/admin/categories/{id}/unpublish` | Unpublish | Yes | Ad | FR-CAT-002 | |
+
+### 6.6a Asset Library
+
+Reusable business assets only. Business modules store opaque `assetId` values and never storage-provider URLs. Private documents remain Document Management (`API-110`–`114`). See [33](33-asset-library-module.md).
+
+| API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| API-177 | GET | `/admin/assets` | List / browse assets | Yes | Ct, Ad | FR-AST-001 | Status filter; pagination; `PERM-AST-001` |
+| API-178 | GET | `/admin/assets/{id}` | Get asset metadata | Yes | Ct, Ad | FR-AST-001 | `PERM-AST-001` |
+| API-179 | POST | `/admin/assets/upload-sessions` | Start upload session | Yes | Ct, Ad | FR-AST-002 | MIME allowlist; size cap; `PERM-AST-002`; Guardian only |
+| API-180 | POST | `/admin/assets/upload-sessions/{id}/finalize` | Finalize upload → Uploaded then Active | Yes | Ct, Ad | FR-AST-002 | Auto-Active on success (V1); `PERM-AST-002` |
+| API-181 | PATCH | `/admin/assets/{id}` | Update metadata (alt, caption) | Yes | Ct, Ad | FR-AST-001 | `PERM-AST-002` |
+| API-182 | POST | `/admin/assets/{id}/archive` | Archive asset | Yes | Ct, Ad | FR-AST-003 | Class D; `PERM-AST-010` |
+| API-183 | POST | `/admin/assets/{id}/restore` | Restore → Active | Yes | Ct, Ad | FR-AST-003 | Class D; `PERM-AST-010` |
+| API-184 | DELETE | `/admin/assets/{id}` | Soft-delete asset | Yes | Ct, Ad | FR-AST-003 | Class D; `PERM-AST-010` |
+| API-185 | POST | `/admin/assets/bulk` | Bounded bulk archive/delete | Yes | Ad | FR-AST-003 | Class D; `PERM-AST-011`; per-id results |
+| API-186 | GET | `/assets/{id}/resolve` | Resolve URL/stream for consumers | Yes* | G*, P, Ct, Ad | FR-AST-004 | Via Asset Library only; no provider credentials in response |
+
+\*Public/Store resolution rules as designed for Active reusable assets.
 
 ### 6.7 Search
 
@@ -867,7 +886,9 @@ Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain se
 | API-108 | GET | `/crm/inventory/{variantId}/movements` | Stock ledger | Yes | Op, Ad◐ | FR-INV-002/005 | Reserve/decrement/restock history |
 | API-109 | GET | `/crm/inventory/low-stock` | Low-stock list | Yes | Op, Ad | FR-INV-004 | Threshold from settings |
 
-### 6.18 Documents
+### 6.18 Documents (Document Management)
+
+Private documents path — **not** Asset Library. Future broader Document Management module owns patient documents, prescriptions, insurance, invoices, lab reports, questionnaire attachments, and other private documents ([33](33-asset-library-module.md) §1.2).
 
 | API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1029,6 +1050,7 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 | API-165–167 | Analytics | 3 |
 | API-168–174 | Administration | 7 |
 | API-175–176 | Settings | 2 |
+| API-177–186 | Asset Library | 10 |
 | **Total** | | **176** |
 
 ### 6.31 Clinical care-commerce sequence
@@ -1112,8 +1134,9 @@ Keys are scoped to actor + route; replay returns original outcome.
 ### 7.9 File uploads
 
 - Prefer **upload session** + direct-to-object-storage with MIME allowlist and size cap (default ≤ 10 MB).
-- API stores metadata + ACL (`DB-047`); binary not in PostgreSQL.
-- Document downloads go through API for audit (`API-112`).
+- **Asset Library** (`API-179`/`180`, `DB-062`): reusable business asset metadata in PostgreSQL; bytes via `StorageProvider`; consumers store `assetId` only — never provider URLs.
+- **Document Management** (`API-110`–`114`, `DB-047`): private/patient document metadata + ACL; binary not in PostgreSQL; audited download (`API-112`).
+- Do not conflate Asset Library with Document Management — shared storage provider ≠ shared module.
 
 ---
 
@@ -1721,6 +1744,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.1 | 2026-07-27 | Platform Engineering | TBD | Consumer-agnostic zones (staff APIs replace CRM-labelled zone); new §3.2a destructive endpoints with `API-020`–`026` and Class D permission map; hard-deny rows for Guardian context and destructive grants; Internal Platform contexts in architecture diagram and composition surfaces; `PERM-GRD-001` in session validation; Administration/Settings consumers restated as Guardian-context roles; audit and authorization notes in §12 | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | TBD | Users Class D archive/restore/delete endpoints (`API-013a`–`013c`); Auth callouts from user editor; link [32](32-users-module.md) | Draft for review |
 | 1.3 | 2026-08-02 | Platform Engineering | TBD | P9 implementation note: `/v1/admin/users`, CRM users, profile, roles admin, Auth register/reset delivered | Draft for review |
+| 1.4 | 2026-08-03 | Platform Engineering | TBD | Asset Library `API-177`–`186`; ID-only consumer rule; Documents section labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 
 ---
 

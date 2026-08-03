@@ -140,7 +140,7 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | --- | --- | --- | --- | --- | --- | --- |
 | **CMS page** | View, Create, Edit, Publish, Unpublish, Delete, Archive, Restore | View | View published | View published (legal, help) | Index | Public API: View published |
 | **Blog post** | View, Create, Edit, Publish, Unpublish, Delete, Archive, Restore | View | View published | — | Index | Public API: View published |
-| **Media asset** | View, Create, Edit metadata, Delete | View | Consume | Consume | — | — |
+| **Asset** | View, Create (upload), Edit metadata, Archive, Restore, Delete | Select existing (Active) only — never Asset Manager | Consume (via Asset Library resolve) | — | GC / orphan cleanup (future) | — |
 | **Homepage and FAQ block** | View, Create, Edit, Publish, Delete | — | View published | View published FAQ | — | — |
 | **Product review** | View, Transition (approve, reject), Edit moderation policy, Delete | View | Create (authenticated purchaser), View moderated | View own | — | Mobile: Create own |
 | **Notification template** | View, Create, Edit, Delete | View | — | — | Render on dispatch | — |
@@ -178,7 +178,8 @@ Every destructive action in this document, in one place.
 | Override | Order state, policy exemption | Guardian | `PERM-ORD-014` | Everywhere else; never silent, always audited |
 | Delete, Archive, Restore | Subscription | Guardian | `PERM-SUB-010`–`012` | CRM, Portal (patient cancel is not a delete) |
 | Delete | Product, Category | Guardian | `PERM-PRD-010`, `PERM-CAT-010` | CRM, Store |
-| Delete | CMS page, Blog post, Media asset, Review, Template | Guardian | `PERM-CMS-010`, `PERM-BLG-010`, and module scope | CRM, Store, Portal |
+| Delete, Archive, Restore | Asset (Asset Library) | Guardian | `PERM-AST-010` (`PERM-AST-011` bulk) | CRM (select-only), Store, Portal |
+| Delete | CMS page, Blog post, Review, Template | Guardian | `PERM-CMS-010`, `PERM-BLG-010`, and module scope | CRM, Store, Portal |
 | Delete, Archive | Coupon | Guardian | `PERM-CPN-010` | Store (redemption history retained) |
 | Purge | Report artifacts | Guardian | `PERM-RPT-010` | CRM |
 | Purge | Bulk cleanup across records | Guardian | `PERM-ADM-033`, bounded scope required | Everywhere else |
@@ -214,6 +215,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.1 | 2026-07-28 | Platform Engineering | Questionnaire definitions moved to CRM column only; Guardian no longer exposes definition CRUD |
 | 1.2 | 2026-08-02 | Platform Engineering | Users lifecycle vocabulary (Suspend/Deactivate vs Class D); contact vs future Address; link [32](32-users-module.md) |
 | 1.3 | 2026-08-02 | Platform Engineering | Users module in delivery (`feature/users-platform-module`); CRM no Class D confirmed in APIs |
+| 1.4 | 2026-08-03 | Platform Engineering | Media asset → Asset (Asset Library); CRM select-only; `PERM-AST-010`/`011`; link [33](33-asset-library-module.md) |
 
 ---
 

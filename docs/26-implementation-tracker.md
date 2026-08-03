@@ -97,6 +97,7 @@ Every phase record in §5 carries these fields.
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
 | **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | In progress | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
 | **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
+| **P11** | Asset Library platform module (reusable business assets + storage resolution) | Planning complete | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -266,6 +267,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | Implementation on `feature/users-platform-module`. Users owns identity/profile/lifecycle/role assignments/preferences; Authentication owns login/register/sessions/tokens/MFA/reset/verify. Soft delete default under healthcare retention. Bulk lifecycle, Merge, AI, Address module, and Security area (`GRD-058`) remain explicit future reserves. Orders reference `user_id` — no parallel customer identity store. Class D user ops gated server-side; last-admin safeguard enforced on suspend/deactivate/archive/delete/role-strip. |
 | **Verification** | Class D user delete/archive/restore denied without grant from any client including CRM; last-admin safeguard; register creates Patient only; profile allowlist blocks role self-escalation; password reset from editor calls Auth; typecheck/lint/unit tests pass |
 
+### P11 — Asset Library Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Asset Library as the reusable business-asset platform module: metadata SoR, shared StorageProvider, Guardian upload/lifecycle UI, ID-only consumer refs, Class D archive/restore/delete |
+| **Status** | Planning complete (implementation not started) |
+| **Owner** | Platform Engineering |
+| **Branch** | — |
+| **PR** | — |
+| **Dependencies** | P5 shell; Class D codes and server gates (align with P6); blueprint [33](33-asset-library-module.md); P8 opaque asset ID pattern on Products |
+| **Scope** | Docs: blueprint + synced registry/ownership/nav/API/DB/permissions. Later implementation slices P11a–P11g per [33 §18](33-asset-library-module.md): Assets schema, Local StorageProvider, admin APIs, Guardian UI, consumer `assetId` wiring, Class D/bulk, Store resolve |
+| **Architecture changes** | Implements `GRD-039`, `FR-AST-001`–`004`, `PERM-AST-001`/`002`/`010`/`011`, `API-177`–`186`, `DB-062`; reusable-asset boundary vs Document Management / User Media; business modules own relationships; never provider URLs on consumers |
+| **Documentation updates** | [33](33-asset-library-module.md), [27](27-module-registry.md), [26](26-implementation-tracker.md) (this record), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [25](25-guardian.md), [11](11-api-design.md), [10](10-database-design.md), [08](08-role-permissions.md), [31](31-products-module.md), [32](32-users-module.md), [05](05-system-architecture.md), [03](03-functional-requirements.md), [13](13-security.md) |
+| **Notes** | Asset Library owns reusable business assets only — not Document Management, User Media, order packets, or system/temp files. CRM never becomes Asset Manager (select-only). Lifecycle: Uploaded → Active → Archived → Deleted (auto-Active on successful finalize in V1). Search/Tags/Folders/Collections/AI reserved. Existing `/guardian/media` stub renames to `/guardian/assets` at implementation. P10 remains UX modernization. |
+| **Verification** | (At implementation) CRM denied upload/Class D; consumers reject provider URLs; Products attach remains ID-only; Document Management path untouched; StorageProvider Local contract tests; typecheck/lint/unit tests pass |
+
 ### P10 — Internal Platform UX/UI Modernization
 
 | Field | Value |
@@ -314,6 +331,7 @@ flowchart TD
   P7[P7_Verification_and_signoff]
   P8[P8_Products_platform_module]
   P9[P9_Users_platform_module]
+  P11[P11_Asset_Library_platform_module]
   P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
@@ -329,8 +347,11 @@ flowchart TD
   P6 --> P7
   P5 --> P8
   P5 --> P9
+  P5 --> P11
+  P8 --> P11
   P8 --> P10
   P9 --> P10
+  P11 --> P10
   P7 --> PF
 ```
 
@@ -375,6 +396,7 @@ Non-blocking for design; each must be resolved before the phase that consumes it
 | CRM and Guardian drift into two products | Users experience a seam; shell code forks | Shared shell, shared tokens, `UI-011` review check | P5 |
 | Store or Portal work forces a redesign | Rework of ownership and registry structure | Consumers and matrix columns pre-declared | PF |
 | Guardian catalog grows into a clone of another admin console | Modules with no requirement behind them | Inspiration-only rule (`NAV-006`, `GRD-012`); registry entry requires a requirement reference | P5 |
+| PHI or private docs land in Asset Library | Wrong ACL surface; audit gap | Reusable-asset boundary; Document Management owns private docs ([33](33-asset-library-module.md)) | P11 |
 
 ---
 
@@ -405,6 +427,7 @@ A phase is complete when all of the following hold.
 | 1.4 | 2026-07-29 | Platform Engineering | P8 Products platform module in progress; P10 Internal Platform UX/UI Modernization reserved; blueprint [31](31-products-module.md) |
 | 1.5 | 2026-08-02 | Platform Engineering | P9 Users platform module recorded (blueprint complete); blueprint [32](32-users-module.md); dependency graph updated |
 | 1.6 | 2026-08-02 | Platform Engineering | P9 In progress on `feature/users-platform-module`: lifecycle schema, Users/Roles APIs, Auth register/reset, Guardian/CRM UI |
+| 1.7 | 2026-08-03 | Platform Engineering | P11 Asset Library planning complete; blueprint [33](33-asset-library-module.md); dependency graph updated |
 
 ---
 

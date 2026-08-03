@@ -69,11 +69,11 @@ Define a production-grade CRM architecture for Clinexa so that:
 | Area | Coverage |
 | --- | --- |
 | CRM context | Operational context of the Internal Platform (`ARCH-013` within `ARCH-171`), served under `/crm/*` |
-| Modules (CRM-owned) | Dashboard, patient management, orders (operational), clinical review, prescriptions, pharmacy, inventory, questionnaires (clinician case view), appointments, subscriptions (operational actions), documents, support, operational reports |
-| Modules (catalogued here, Guardian-owned) | User administration, products, categories, questionnaire configuration, coupons, CMS/blogs/review moderation, notification templates, audit log query, system settings — behavior remains traceable via `CRM-*` IDs, but the surface is Guardian (§2.8, [25](25-guardian.md)) |
+| Modules (CRM-owned) | Dashboard, patient management, orders (operational), clinical review, prescriptions, pharmacy, questionnaires (clinician case view), appointments, subscriptions (operational actions), documents, support, operational reports |
+| Modules (catalogued here, Guardian-owned) | User administration, products, categories, **Inventory administration**, questionnaire configuration, coupons, CMS/blogs/review moderation, notification templates, audit log query, system settings — behavior remains traceable via `CRM-*` IDs, but the surface is Guardian (§2.8, [25](25-guardian.md)). Inventory consume widgets may appear in CRM order/fulfillment context (`CRM-037`) |
 | Navigation | Permission-driven, role-scoped shell; route protection; dynamic navigation |
-| Operational workflows | Order review, clinical approval, prescription processing, pharmacy fulfillment readiness, inventory updates, subscription assist, appointment management, support resolution, document management |
-| Logical FE state | Auth/session, users, patients, orders, clinical queue, prescriptions, inventory, products, CMS, support, reports, notification templates, UI state |
+| Operational workflows | Order review, clinical approval, prescription processing, pharmacy fulfillment readiness, inventory **visibility and reservation service calls**, subscription assist, appointment management, support resolution, document management |
+| Logical FE state | Auth/session, users, patients, orders, clinical queue, prescriptions, products, CMS, support, reports, notification templates, UI state; inventory **summaries** as consume-only |
 | API consumption | Staff/admin APIs per [11](11-api-design.md) CRM consumer map |
 | Qualities | Performance, accessibility, CRM security posture |
 | Traceability | Business → Functional → CRM modules → API → Auth → Database |
@@ -169,8 +169,8 @@ The CRM context (`ARCH-013`) is the authenticated **operational control plane** 
 | Clinical review | CRM | Consult queue; approve / decline / request info; notes | Decisions, audit, order clinical states (`FR-CRM-002`) |
 | Prescriptions | CRM | Create/update after approval; status for pharmacy/ops | Rx after doctor approval only (`FR-CRM-003`) |
 | Pharmacy | CRM | Pharmacy queue; ready / flag | Pharmacist review before Rx fulfillment (`FR-CRM-004`) |
-| Orders / fulfillment (operational) | CRM | Staff lists, fulfill, cancel within policy, timeline, documents, internal notes | Lifecycle gates and inventory side effects (`FR-CRM-005`; `FR-ORD-003`) |
-| Inventory | CRM | Balances, adjustments, low-stock | Ledger and oversell policy (`FR-INV-*`) |
+| Orders / fulfillment (operational) | CRM | Staff lists, fulfill, cancel within policy, timeline, documents, internal notes | Lifecycle gates; inventory side effects **only** via Inventory services (`FR-CRM-005`; `FR-ORD-003`; [34](34-inventory-module.md)) |
+| Inventory | **Guardian** (admin); CRM consume | CRM: availability / reserved / summaries / order-scoped movements; Reserve/Release/Commit via Inventory services | Ledger SoT and policies in Inventory module (`FR-INV-*`; [34](34-inventory-module.md)). CRM never adjusts, receives, or configures warehouses/policies |
 | Subscriptions (operational) | CRM | Renew / pause / resume assist within policy | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`; `OR-10`) |
 | Support | CRM | Triage, reply, resolve; policy-scoped refund assist | Ticket lifecycle; never Rx approve (`FR-SUP-002`/`004`) |
 | Operational reports | CRM | Role-scoped operational dashboards and exports | Query/export AuthZ and PHI minimization (`FR-RPT-*`, `FR-ANL-*`) |
@@ -191,7 +191,7 @@ The CRM context (`ARCH-013`) is the authenticated **operational control plane** 
 | --- | --- | --- |
 | Catalog / CMS / blogs / coupons | Read for operational context; authoring and publishing belong to Guardian ([25 §2.3](25-guardian.md#23-relationship-with-store)) | Consume published only |
 | Reviews | Read; moderation is a Guardian surface | Display approved |
-| Clinical / inventory / ops | Own queues and truth | Never mutate |
+| Clinical / inventory / ops | Own clinical/ops queues; inventory **consume** only (Inventory module owns stock truth) | Never mutate |
 | SEO metadata | Read; editable in Guardian | Render indexable pages |
 | Access | Staff roles only | Guest/Patient denied CRM (`PERM-CRM-020`) |
 
@@ -326,7 +326,7 @@ Guardian (`ARCH-172`) is the **administrative** context of the same application.
 | Clinical Review | `CRM-034` | CRM | Doctor-only |
 | Prescriptions | `CRM-035` | CRM | Clinical |
 | Pharmacy | `CRM-036` | CRM | Pharmacist-only |
-| Inventory | `CRM-037` | CRM operational balances; Guardian policy/master data | Oversell policy is a Guardian setting |
+| Inventory | `CRM-037` | Guardian admin; CRM consume-only | CRM is not an Inventory Management System; oversell/policy in Guardian ([34](34-inventory-module.md)) |
 | Products | `CRM-038` | Guardian | Catalog authoring and publish |
 | Categories | `CRM-039` | Guardian | Catalog taxonomy |
 | Questionnaires | `CRM-040` | CRM | CRM-only Internal Platform surface: clinician case view and definition/configuration |
@@ -362,7 +362,7 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 | CRM-034 | Clinical Review | CRM | Must | `FR-CRM-002` | `JRN-011`–`014`; `BP-03` |
 | CRM-035 | Prescriptions | CRM | Must | `FR-CRM-003` | `JRN-012`; `BP-04`; cross-module |
 | CRM-036 | Pharmacy | CRM | Must | `FR-CRM-004` | `JRN-015`; `BP-04`/`05` |
-| CRM-037 | Inventory | Both | Must | `FR-INV-001`–`005`, `FR-CRM-005` | `JRN-016`; `OR-12` |
+| CRM-037 | Inventory | Guardian admin; CRM consume | Must | `FR-INV-001`–`005`, `FR-CRM-005` | `JRN-016`; `OR-12`; blueprint [34](34-inventory-module.md) |
 | CRM-038 | Products | Guardian | Must | `FR-PRD-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
 | CRM-039 | Categories | Guardian | Must | `FR-CAT-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
 | CRM-040 | Questionnaires | CRM | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | CRM-only; case view and definitions |
@@ -437,9 +437,9 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 
 | Aspect | Detail |
 | --- | --- |
-| Responsibilities | Balances, manual adjustments, movement ledger, low-stock visibility |
-| Ownership | Operations full; Pharmacist/Admin limited; `FR-INV-*`, `FR-CRM-005` |
-| Boundaries | No separate Inventory Manager role (`USER-006` owns inventory); oversell policy from settings (`OR-12`) |
+| Responsibilities | **Consume only:** view availability / reserved / summaries; observe low-stock signals; Reserve / Release / Commit via Inventory services during order workflows; show order-relevant movement history |
+| Ownership | Inventory platform module owns ledger SoT; Guardian owns administration ([34](34-inventory-module.md)); Operations may hold CRM consume + Guardian admin grants as needed |
+| Boundaries | CRM must **never** adjust stock, CRUD warehouses, receive, transfer, reconcile, cycle-count, or configure inventory policies. Escalate to `/guardian/inventory` for admin work |
 
 ### 3.10 Products (`CRM-038`)
 
@@ -648,7 +648,7 @@ The matrix below is **module-level**, spanning both contexts. Rows marked Guardi
 | Prescriptions | Full | Limited | Limited | Limited | — | — | Full |
 | Patient Management | Limited | Limited | Limited | Limited | — | — | Limited |
 | Orders | Limited | Limited | Limited | Limited | — | — | Limited |
-| Inventory | — | Limited | — | Full | — | — | Limited |
+| Inventory | — | View (consume) | — | View + service Reserve/Release/Commit; escalate to Guardian for admin | — | — | View (consume) |
 | Documents | Limited | Limited | Limited | Limited | — | — | Limited |
 | Appointments | Limited | Limited | Limited | Limited | — | — | Full |
 | Subscriptions | — | — | Limited | — | — | — | Full |
@@ -667,9 +667,9 @@ The matrix below is **module-level**, spanning both contexts. Rows marked Guardi
 | Role | Primary nav destinations |
 | --- | --- |
 | Doctor (`ROLE-003`) | Dashboard → Clinical Review → Prescriptions → scoped Patients/Orders/Documents/Appointments → limited Reports |
-| Pharmacist (`ROLE-004`) | Dashboard → Pharmacy → Prescriptions → limited Inventory/Orders/Documents → limited Reports |
+| Pharmacist (`ROLE-004`) | Dashboard → Pharmacy → Prescriptions → limited Orders/Documents → limited Reports (inventory availability via order context) |
 | Support (`ROLE-005`) | Dashboard → Support → scoped Orders/Patients/Subscriptions/Documents/Appointments → refunds → limited Reports |
-| Operations (`ROLE-006`) | Dashboard → Orders → Inventory → Documents/Appointments → Reports/Analytics |
+| Operations (`ROLE-006`) | Dashboard → Orders → Documents/Appointments → Reports/Analytics; inventory admin via Guardian escalation when granted |
 | Marketing (`ROLE-007`) | Dashboard → Coupons → limited CMS → marketing-safe Analytics |
 | Content (`ROLE-008`) | Dashboard → CMS / Blogs → review moderation |
 | Administrator (`ROLE-009`) | Dashboard → Users → Orders → Prescriptions → Questionnaires → Activity Log → Reports → Settings → catalog/QST/plans/workflows; **no** Administration (`PERM-ADM-020`) |
@@ -732,7 +732,7 @@ flowchart LR
 | CRM-072 | Clinical Approval | Doctor | `BP-03`; `JRN-011`/`012`; `FR-CRM-002`/`003`; `AC-BR-02` | Clinical Review, Prescriptions |
 | CRM-073 | Prescription Processing | Doctor → Pharmacist | `BP-04`; `FR-CRM-003`; `ROAD-012` | Prescriptions, Documents |
 | CRM-074 | Pharmacy Fulfillment readiness | Pharmacist → Operations | `JRN-015`/`016`; `FR-CRM-004`; `OR-05`; `FR-ORD-003` | Pharmacy, Orders, Inventory |
-| CRM-075 | Inventory Updates | Operations | `FR-INV-*`; `OR-12`; low-stock `NTF-052` | Inventory, Reports |
+| CRM-075 | Inventory visibility / service calls | Operations | `FR-INV-*`; `OR-12`; low-stock event consumers; [34](34-inventory-module.md) | Orders (consume); Guardian Inventory for admin |
 | CRM-076 | Subscription Management | Support assist; Admin plans | `BP-06`; `OR-10`; `JRN-020` | Subscriptions, Support |
 | CRM-077 | Appointment Management | Staff; Admin types/slots | `BP-07`; `FR-APT-002`; `JRN-022` | Appointments |
 | CRM-078 | Support Resolution | Support | `BP-09`; `JRN-025`/`026`; `FR-SUP-002`/`004`/`005` | Support, Orders |
@@ -1105,6 +1105,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.3 | 2026-07-27 | Architecture (Clinexa planning) | Pending | Re-scoped CRM as the Internal Platform **operational** context: administrative modules and all destructive operations reassigned to Guardian (§2.8 relocation table), context column added to the module map, shell section generalized to the shared Internal Platform shell with the Application Switcher, context-aware routing/navigation controls (`CRM-160`–`CRM-167`, `CRM-152`–`CRM-153`) | Draft for review |
 | 1.4 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`CRM-040`) are CRM-only Internal Platform UI (definitions + case view); not dual-mounted with Guardian | Draft for review |
 | 1.5 | 2026-08-02 | Platform Engineering | Pending | `CRM-031` aligned to operational-only Users surface; escalate to Guardian; link [32](32-users-module.md) | Draft for review |
+| 1.6 | 2026-08-03 | Platform Engineering | Pending | `CRM-037` Inventory consume-only; Guardian owns inventory admin; CRM-075 visibility/service calls; link [34](34-inventory-module.md) | Draft for review |
 
 ---
 

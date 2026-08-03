@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [03 — Functional requirements](03-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [16 — Store architecture](16-store-architecture.md), [17 — Patient portal](17-patient-portal.md), [18 — CRM](18-crm.md), [25 — Guardian](25-guardian.md), [26 — Implementation tracker](26-implementation-tracker.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [33 — Asset Library module](33-asset-library-module.md) |
+| Related docs | [03 — Functional requirements](03-functional-requirements.md), [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [10 — Database design](10-database-design.md), [11 — API design](11-api-design.md), [16 — Store architecture](16-store-architecture.md), [17 — Patient portal](17-patient-portal.md), [18 — CRM](18-crm.md), [25 — Guardian](25-guardian.md), [26 — Implementation tracker](26-implementation-tracker.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [33 — Asset Library module](33-asset-library-module.md), [34 — Inventory module](34-inventory-module.md) |
 
 This document is the **master catalog of Clinexa platform modules**. For each module it records what the module is, which backend capability it represents, which applications consume it, which Internal Platform context surfaces it, what its destructive operations are, and where it stands in delivery.
 
@@ -79,7 +79,7 @@ Consumer keys are used in the registry tables below.
 | **Payments** | Payment intents, captures, refunds, provider configuration | Guardian (configuration and corrections) | `STO`, `PRT`, `GRD`, `CRM` (operational refund assist), `SYS` | Split — operational refund assist in CRM, corrections and provider configuration in Guardian | CRM assists policy-scoped refunds; Guardian performs corrections and manages providers; Store and Portal initiate patient-facing payment actions | Financial correction, provider credential rotation and deletion | `PERM-PAY-*`, `PERM-PAY-003`; `PERM-ORD-013` (Class D) | Planned |
 | **Orders** (`GRD-034`, `CRM-033`) | Order records, state machine, fulfillment, commerce history | Both | `GRD`, `CRM`, `PRT`, `STO` (creation at checkout), `SYS`, later `MOB` | Split — operational workflow in CRM, administrative correction in Guardian | CRM advances operational states, fulfills gate-cleared orders, assists policy refunds; Guardian corrects, archives, deletes, overrides; Portal shows patient's own orders | Delete, archive, restore, financial correction, administrative override | `PERM-ORD-001`–`003`; `PERM-ORD-010`–`014` (Class D) | In delivery |
 | **Subscriptions** (`GRD-035`, `CRM-042`) | Recurring plans, renewals, grace, cancellation | Both | `GRD`, `CRM`, `PRT`, `SYS`, later `MOB` | Split — operational assist in CRM, plan and record administration in Guardian | CRM renews, pauses, resumes, assists; Guardian administers plans and records; Portal manages patient's own subscription; workers execute renewals | Delete, archive, restore | `PERM-SUB-*`; `PERM-SUB-010`–`012` (Class D) | Planned |
-| **Inventory** (`GRD-033`, `CRM-037`) | Stock balances, adjustments, low-stock policy | Both | `CRM`, `GRD`, `SYS` | Split — operational balances in CRM, policy in Guardian | CRM adjusts and views balances; Guardian sets oversell and threshold policy | Bulk adjustment cleanup | `PERM-INV-*`; `PERM-ADM-033` for bulk cleanup (Class D) | Planned |
+| **Inventory** (`GRD-033`, `CRM-037`) | Stock ledger (movements SoT), balance projections, reservations, warehouses, policies | Guardian (admin); CRM consume-only | `GRD`, `CRM` (consume), `SYS`, later `STO`/`PRT` | Guardian-only administration; CRM is not an Inventory Management System | Guardian: warehouses, adjust, receive, policies, Class D; CRM/Orders: view + Reserve/Release/Commit/Restock via services only; ledger-first ([34](34-inventory-module.md)) | Bulk cleanup / warehouse archive (Class D) | `PERM-INV-001`–`005`, `PERM-INV-010` (Class D) | In delivery — see [34](34-inventory-module.md) |
 | **Coupons** (`GRD-044`, `CRM-045`) | Promotional codes and redemption rules | Guardian | `GRD`, `STO`, `SYS` | Administrative | Guardian creates, edits, deactivates; Store validates and redeems | Delete, archive | `PERM-CPN-001`–`003`; `PERM-CPN-010` (Class D) | Planned |
 | **Pricing, taxes, shipping** (`GRD-036`) | Commerce configuration | Guardian | `GRD`, `STO`, `SYS` | Administrative | Guardian configures; Store and workers consume | Delete configuration entries | `PERM-SET-001`–`002` | Planned |
 
@@ -170,7 +170,9 @@ Three modules are surfaced in both Internal Platform contexts. They are the most
 
 **CRM-only Internal Platform modules** (not dual-mounted): Prescriptions, Questionnaires, Reports. Guardian must not list them in navigation.
 
-The same rule generalizes: **the record is one; the purpose is two**. Both contexts read the same truth through the same API, and the API authorizes the principal in both cases (`REG-005`, `RBAC-011`).
+**Inventory** is **not** dual-mounted for administration. Guardian owns Inventory Administration (`GRD-033`). CRM (`CRM-037`) consumes availability and order-driven reservation services only — no adjust/receive/warehouse/policy UI ([34](34-inventory-module.md)).
+
+The same rule generalizes for dual-mounted modules: **the record is one; the purpose is two**. Both contexts read the same truth through the same API, and the API authorizes the principal in both cases (`REG-005`, `RBAC-011`).
 
 ---
 
@@ -204,6 +206,8 @@ A module that skips step 5 or step 8 is not a module; it is an unguarded surface
 | 1.5 | 2026-08-02 | Platform Engineering | Users and Roles status → In delivery on `feature/users-platform-module` |
 | 1.6 | 2026-08-03 | Platform Engineering | Asset library (`GRD-039`) planning complete — blueprint [33](33-asset-library-module.md); `PERM-AST-*`; Documents capability labeled Document Management (`CRM-043`) |
 | 1.7 | 2026-08-03 | Platform Engineering | Asset library status → In delivery on `feature/asset-library-platform-module` |
+| 1.8 | 2026-08-03 | Platform Engineering | Inventory (`GRD-033` / `CRM-037`) planning complete — blueprint [34](34-inventory-module.md); Guardian-only admin; CRM consume-only; ledger-first SoT; P12 |
+| 1.9 | 2026-08-03 | Platform Engineering | Inventory status → In delivery on `feature/inventory-platform-blueprint-refinement` |
 
 ---
 

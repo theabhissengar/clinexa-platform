@@ -509,11 +509,14 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Stock balances, adjustments, low-stock visibility |
-| Consumers | CRM Operations (+ Pharmacist view scoped) |
-| Authorization | `PERM-INV-001`–`003` |
-| Primary Resources | `DB-042`, `DB-043` |
+| Purpose | Stock ledger (movements SoT), balance projections, reservations, warehouses, policies, availability |
+| Consumers | Guardian (admin); CRM / Orders / SYS (consume + Reserve/Release/Commit/Restock); later Store/Portal availability |
+| Authorization | `PERM-INV-001`–`005`, `PERM-INV-010` (Class D) |
+| Primary Resources | `DB-042`, `DB-043`, `DB-063`–`066` |
 | Referenced FRs | `FR-INV-001`–`005` |
+| Blueprint | [34 — Inventory module](34-inventory-module.md) |
+
+> **Supersession.** Prior CRM adjust catalog under `/crm/inventory` (`API-105`–`109`) is superseded by `/admin/inventory…` and domain reservation APIs below. CRM is not an Inventory Management System.
 
 ### 5.18 Documents
 
@@ -878,13 +881,36 @@ Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain se
 
 ### 6.17 Inventory
 
+> Supersedes prior `API-105`–`109` CRM adjust endpoints. See [34](34-inventory-module.md).
+
+#### Admin (Guardian) — `API-187`–`197`
+
 | API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| API-105 | GET | `/crm/inventory` | List balances | Yes | Op, Ph◐, Ad◐ | FR-INV-001 | |
-| API-106 | GET | `/crm/inventory/{variantId}` | Balance for SKU | Yes | Op, Ph◐, Ad◐ | FR-INV-001 | |
-| API-107 | POST | `/crm/inventory/{variantId}/adjustments` | Manual adjust | Yes | Op, Ad◐ | FR-INV-001/003 | Audit; oversell policy from settings |
-| API-108 | GET | `/crm/inventory/{variantId}/movements` | Stock ledger | Yes | Op, Ad◐ | FR-INV-002/005 | Reserve/decrement/restock history |
-| API-109 | GET | `/crm/inventory/low-stock` | Low-stock list | Yes | Op, Ad | FR-INV-004 | Threshold from settings |
+| API-187 | GET | `/admin/inventory/balances` | List balance projections | Yes | Op, Ph◐, Ad | FR-INV-001 | `PERM-INV-001`; warehouse filter |
+| API-188 | GET | `/admin/inventory/balances/{variantId}` | Balance for SKU | Yes | Op, Ph◐, Ad | FR-INV-001 | `PERM-INV-001` |
+| API-189 | POST | `/admin/inventory/adjustments` | Manual adjust | Yes | Op, Ad | FR-INV-001/003 | `PERM-INV-004`; appends movement; Guardian only |
+| API-190 | POST | `/admin/inventory/receiving` | Receive inbound | Yes | Op, Ad | FR-INV-001 | `PERM-INV-004`; appends movement |
+| API-191 | GET | `/admin/inventory/movements` | Ledger query | Yes | Op, Ad | FR-INV-002/005 | `PERM-INV-001` |
+| API-192 | GET | `/admin/inventory/warehouses` | List warehouses | Yes | Ad, Op◐ | FR-INV-001 | `PERM-INV-005` |
+| API-193 | POST | `/admin/inventory/warehouses` | Create warehouse | Yes | Ad | — | `PERM-INV-005`; V1 may restrict |
+| API-194 | PATCH | `/admin/inventory/warehouses/{id}` | Update warehouse | Yes | Ad | — | `PERM-INV-005` |
+| API-195 | GET | `/admin/inventory/policies` | Get policies | Yes | Ad | FR-INV-003/004 | `PERM-INV-005` |
+| API-196 | PATCH | `/admin/inventory/policies` | Update policies | Yes | Ad | FR-INV-003/004 | `PERM-INV-005`; audit |
+| API-197 | POST | `/admin/inventory/purge` | Bounded Class D cleanup | Yes | Ad | — | `PERM-INV-010`; Class D |
+
+#### Domain (Orders / CRM / SYS) — `API-198`–`203`
+
+| API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| API-198 | POST | `/inventory/reservations` | Reserve | Yes | Op, SYS, Ad◐ | FR-INV-002 | `PERM-INV-002`; appends reserve movement |
+| API-199 | POST | `/inventory/reservations/{id}/release` | Release | Yes | Op, SYS, Ad◐ | FR-INV-002 | `PERM-INV-002` |
+| API-200 | POST | `/inventory/reservations/{id}/commit` | Commit | Yes | Op, SYS | FR-INV-002, FR-ORD-003 | `PERM-INV-002`; fulfill path |
+| API-201 | POST | `/inventory/restock` | Restock | Yes | Op, SYS, Ad◐ | FR-INV-005 | `PERM-INV-002` |
+| API-202 | GET | `/inventory/availability` | Availability / summary | Yes | Op, Ph◐, Ad, Ct◐ | FR-INV-001 | `PERM-INV-001`; Products/CRM/Store |
+| API-203 | GET | `/inventory/movements` | Order-scoped ledger read | Yes | Op, Ad◐ | FR-INV-002/005 | `PERM-INV-001`; CRM consume |
+
+**Deprecated (do not implement):** `API-105`–`109` `/crm/inventory` adjust/list as CRM inventory admin.
 
 ### 6.18 Documents (Document Management)
 
@@ -1037,7 +1063,8 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 | API-088–096 | Consultations | 9 |
 | API-097–101 | Prescriptions | 5 |
 | API-102–104 | Pharmacy | 3 |
-| API-105–109 | Inventory | 5 |
+| API-105–109 | Inventory (deprecated CRM admin paths) | superseded |
+| API-187–203 | Inventory (admin + domain) | 17 |
 | API-110–114 | Documents | 5 |
 | API-115–124 | Appointments | 10 |
 | API-125–132 | Support | 8 |
@@ -1434,7 +1461,7 @@ No general batch API in V1. Use async jobs for exports/renewals/notifications.
 | Notification send | Domain events |
 | Report export | `API-163` |
 | Search reindex | Publish hooks |
-| Low-stock alert | Inventory thresholds |
+| Low-stock alert | Inventory emits `inventory.low_stock`; consumers (NTF, CRM, Guardian, …) react |
 
 Async acceptance should return quickly (&lt; 2 s) with job status resources where applicable.
 
@@ -1549,7 +1576,7 @@ Payment and webhook paths must be replay-safe (`FR-PAY-002`, NFR-118).
 | CRM | Consultations, Prescriptions, Pharmacy, CRM orders/search |
 | NTF | API-133–136 + workers |
 | DOC | API-110–114 |
-| INV | API-105–109 |
+| INV | API-187–203 ([34](34-inventory-module.md)) |
 | REV | API-137–141 |
 | CPN | API-142–147 |
 | SUP | API-125–132 |
@@ -1565,7 +1592,7 @@ Payment and webhook paths must be replay-safe (`FR-PAY-002`, NFR-118).
 | DB-022–031 | `/cart`, `/checkout`, `/payments`, `/webhooks/payments`, coupons |
 | DB-032–034 | `/subscriptions`, `/subscription-plans` |
 | DB-035–041 | questionnaire-responses, consultations, prescriptions, pharmacy-reviews |
-| DB-042–043 | `/crm/inventory` |
+| DB-042–043, DB-063–066 | `/admin/inventory`, `/inventory` reservations/availability |
 | DB-044–049 | appointments, documents, support-tickets |
 | DB-050–053 | blog-posts, cms pages, reviews |
 | DB-054–061 | notification-*, settings, audit-logs, reports/analytics |
@@ -1646,7 +1673,7 @@ Governance matrix using **role-based team ownership** (not named individuals). P
 | Consultations | Backend Engineering | Clinical Operations, Frontend CRM, Security, QA |
 | Prescriptions | Backend Engineering | Clinical Operations, Frontend CRM, Security, QA |
 | Pharmacy | Backend Engineering | Clinical Operations, Operations, Frontend CRM, QA |
-| Inventory | Backend Engineering | Operations, Frontend CRM, QA |
+| Inventory | Backend Engineering | Operations, Frontend Guardian, Frontend CRM (consume), QA |
 | Documents | Backend Engineering | Security, Clinical Operations, Frontend Store (Portal), Frontend CRM, QA |
 | Appointments | Backend Engineering | Frontend Store (Portal), Frontend CRM, Product, QA |
 | Support | Backend Engineering | Frontend Store (Portal), Frontend CRM, Product, QA |
@@ -1745,6 +1772,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.2 | 2026-08-02 | Platform Engineering | TBD | Users Class D archive/restore/delete endpoints (`API-013a`–`013c`); Auth callouts from user editor; link [32](32-users-module.md) | Draft for review |
 | 1.3 | 2026-08-02 | Platform Engineering | TBD | P9 implementation note: `/v1/admin/users`, CRM users, profile, roles admin, Auth register/reset delivered | Draft for review |
 | 1.4 | 2026-08-03 | Platform Engineering | TBD | Asset Library `API-177`–`186`; ID-only consumer rule; Documents section labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
+| 1.5 | 2026-08-03 | Platform Engineering | TBD | Inventory `API-187`–`203`; deprecate `API-105`–`109` CRM adjust paths; ledger-first; link [34](34-inventory-module.md) | Draft for review |
 
 ---
 

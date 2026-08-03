@@ -60,6 +60,17 @@ export const ErrorCodes = {
   AST_SESSION_INVALID: 'ERR-AST-003',
   /** Storage provider operation failed. */
   AST_STORAGE_FAILED: 'ERR-AST-004',
+
+  /** Insufficient stock / oversell blocked. */
+  INV_INSUFFICIENT: 'ERR-INV-001',
+  /** Invalid reservation state transition. */
+  INV_RESERVATION_INVALID: 'ERR-INV-002',
+  /** Inventory tracking disabled for product type. */
+  INV_NOT_TRACKED: 'ERR-INV-003',
+  /** Warehouse constraint (default delete, inactive, missing). */
+  INV_WAREHOUSE_INVALID: 'ERR-INV-004',
+  /** Policy or validation failure. */
+  INV_POLICY_VIOLATION: 'ERR-INV-005',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

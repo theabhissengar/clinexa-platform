@@ -13,6 +13,7 @@ import {
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { InventoryAvailabilityService } from '../inventory/inventory-query.service';
 import { ProductLifecycleService } from './product-lifecycle.service';
 
 export type CreateProductInput = {
@@ -149,6 +150,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly lifecycle: ProductLifecycleService,
+    private readonly inventoryAvailability: InventoryAvailabilityService,
   ) {}
 
   async listAdmin(params: {
@@ -630,19 +632,7 @@ export class ProductsService {
 
   /** Inventory is owned elsewhere — return a stub summary only. */
   async inventorySummary(id: string) {
-    const product = await this.getAdminById(id);
-    return {
-      productId: product.id,
-      source: 'inventory_module',
-      available: false,
-      message:
-        'Inventory balances are owned by the Inventory module. Summary unavailable until Inventory ships.',
-      variants: product.variants.map((v) => ({
-        variantId: v.id,
-        sku: v.sku,
-        balance: null as number | null,
-      })),
-    };
+    return this.inventoryAvailability.availabilityForProduct(id);
   }
 
   private async assertSlugAvailable(slug: string, excludeId?: string) {

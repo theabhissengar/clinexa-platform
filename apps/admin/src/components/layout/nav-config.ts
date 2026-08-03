@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Tags,
   Users,
+  Warehouse,
 } from "lucide-react";
 
 import {
@@ -214,6 +215,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "commerce",
     permission: Permissions.CAT_MANAGE,
     order: 25,
+  },
+  {
+    key: "guardian-inventory",
+    title: "Inventory",
+    route: "/guardian/inventory",
+    icon: Warehouse,
+    context: "guardian",
+    group: "commerce",
+    permission: Permissions.INV_VIEW,
+    order: 27,
   },
   {
     key: "guardian-orders",

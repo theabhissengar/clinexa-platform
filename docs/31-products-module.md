@@ -27,8 +27,11 @@ Products is the **catalog master-data platform module**. It owns sellable offeri
 | Owns | Products | Inventory |
 | --- | --- | --- |
 | Catalog identity, variants, prices, Rx, SEO, lifecycle | Yes | No |
-| Stock balances, adjustments, warehouses | No | Yes |
-| Read-only stock summary on product record | May display | Source of truth |
+| Stock, reservations, availability, movements, warehouses | No | Yes |
+| Read-only stock summary on product record | May display via **Inventory services only** | Source of truth (ledger + projection) |
+| Writes to inventory tables | **Never** | Inventory services only |
+
+Digital products, services, and memberships may disable inventory tracking per product type ([34](34-inventory-module.md) §14). Sibling Inventory module: **P12** ([34](34-inventory-module.md)).
 
 ### 1.2 Products vs Asset Library
 
@@ -63,7 +66,7 @@ Products exposes **structured catalog data**. Store owns homepage layout, naviga
 Commerce
 ├── Products
 ├── Categories
-├── Inventory          (sibling module — later)
+├── Inventory          (sibling — P12; [34](34-inventory-module.md))
 ├── Pricing…           (sibling — later)
 ├── Orders
 └── Subscriptions
@@ -195,5 +198,6 @@ Backend + Guardian mini-apps for Products and Categories (list + shared create/e
 | 1.4 | 2026-07-29 | Platform Engineering | DIN/Dose moved onto each catalog attribute (not independent product fields) |
 | 1.5 | 2026-07-29 | Platform Engineering | Removed preset attribute dropdown; all attributes are added through Add new with values, DIN, Dose, and variation settings |
 | 1.6 | 2026-08-03 | Platform Engineering | Asset Library boundary (`featuredAssetId` / `thumbnailAssetId`); Products own relationships; never provider URLs; link [33](33-asset-library-module.md) |
+| 1.7 | 2026-08-03 | Platform Engineering | Inventory boundary strengthened: consume via Inventory services only; digital no-track pointer; P12 sibling [34](34-inventory-module.md) |
 
 *End of 31 — Products Module.*

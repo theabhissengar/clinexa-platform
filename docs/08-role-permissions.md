@@ -216,8 +216,8 @@ Define production-grade authorization policy for Clinexa so that:
 | **Role ID** | ROLE-006 |
 | **Persona** | USER-006 |
 | **Description** | Fulfillment and inventory owner keeping cleared orders moving with accurate stock. |
-| **Responsibilities** | Update shipping/fulfillment; reserve/decrement inventory; enforce oversell policy; operational reports; refund restock coordination. |
-| **System access** | CRM ops (`FR-CRM-005`); inventory (`FR-INV-001`–`005`); order lifecycle after clearance (`FR-ORD-002`–`003`); reports (`FR-RPT-001`). |
+| **Responsibilities** | Update shipping/fulfillment; call Inventory Reserve/Release/Commit/Restock; enforce oversell via Inventory services; operational reports; refund restock coordination; Guardian Inventory admin when granted. |
+| **System access** | CRM ops (`FR-CRM-005`); inventory consume + services (`FR-INV-001`–`005`, [34](34-inventory-module.md)); order lifecycle after clearance (`FR-ORD-002`–`003`); reports (`FR-RPT-001`); Guardian Inventory for adjust/receive/policy when granted. |
 | **Restrictions** | Cannot ship Rx before doctor approve + pharmacist review; no unrestricted clinical note editing unless dual-roled; cannot approve treatments. |
 | **Business justification** | Operational throughput with clinical-gate integrity (BO-4; OR-08/OR-12; AC-BR-03). |
 
@@ -296,7 +296,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Guardian context | GRD | `PERM-GRD-001` Access the Guardian context shell (`/guardian/*`, staff); deny patients | Marketing, Content, Admin, Super Admin |
 | Documents (Document Management) | DOC | `PERM-DOC-001` View/download own; `PERM-DOC-002` Staff attach/view case-scoped; `PERM-DOC-003` Audit PHI access — **not** Asset Library | Patient; Staff scoped |
 | Notifications | NTF | `PERM-NTF-001` Receive; `PERM-NTF-002` Manage prefs; `PERM-NTF-003` Manage templates | Patient; Admin |
-| Inventory | INV | `PERM-INV-001` View stock; `PERM-INV-002` Adjust/reserve/decrement; `PERM-INV-003` Low-stock alerts | Ops; Pharmacist coord |
+| Inventory | INV | `PERM-INV-001` View; `PERM-INV-002` Reserve/release/commit (service); `PERM-INV-003` Low-stock signals; `PERM-INV-004` Adjust/receive (Guardian); `PERM-INV-005` Warehouses/policies (Guardian); `PERM-INV-010` Class D cleanup | Ops; Pharmacist view; Admin; System |
 | Reports | RPT | `PERM-RPT-001` View operational/clinical reports; `PERM-RPT-002` Export | Ops, Doctor, Support, Admin |
 | Analytics | ANL | `PERM-ANL-001` Marketing-safe analytics; `PERM-ANL-002` Ops/clinical metrics | Marketing; Ops/Clinical; Admin |
 | Marketing | CPN, ANL | Coupons + marketing analytics (see Coupons/Analytics) | Marketing, Admin |
@@ -392,9 +392,12 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-NTF-001 | Receive notifications | Receive domain-triggered notifications (email and in-product as configured). | NTF | Patient, Doctor, Pharmacist, Support, Operations, Marketing, Content, Admin |
 | PERM-NTF-002 | Manage notification preferences | Update non-mandatory notification preferences for self. | NTF | Patient |
 | PERM-NTF-003 | Manage notification templates | Configure notification templates used by the platform. | NTF | Admin |
-| PERM-INV-001 | View inventory | View stock levels and inventory status. | INV | Operations; Pharmacist (coordination); Admin |
-| PERM-INV-002 | Adjust/reserve/decrement inventory | Reserve, decrement, or adjust inventory as part of fulfillment and restock flows. | INV | Operations; Admin (scoped) |
-| PERM-INV-003 | Low-stock alerts | Receive and act on low-stock operational alerts. | INV | Operations |
+| PERM-INV-001 | View inventory | View stock projections, availability, and movement ledger (read). | INV | Operations; Pharmacist (coordination); Admin |
+| PERM-INV-002 | Reserve / release / commit inventory | Call Inventory reservation services (Reserve, Release, Commit, Restock) — **not** admin adjust. | INV | Operations; System; Admin (scoped) |
+| PERM-INV-003 | Low-stock signals | Subscribe to / act on low-stock **signals** emitted by Inventory (consumers decide reaction). | INV | Operations |
+| PERM-INV-004 | Adjust / receive inventory | Guardian admin ledger writes (adjust, receive). Never granted as CRM inventory admin. | INV | Operations (with Guardian access); Admin |
+| PERM-INV-005 | Manage warehouses and inventory policies | Warehouses, locations, platform-wide INV policies. Guardian only. | INV | Admin; Operations if granted |
+| PERM-INV-010 | Inventory Class D cleanup | Bounded purge / bulk cleanup. Guardian only. | INV | Super Administrator; Admin Class D |
 | PERM-RPT-001 | View reports | View operational/clinical tabular reports within RBAC scope. | RPT | Operations; Doctor, Pharmacist, Support (scoped); Admin |
 | PERM-RPT-002 | Export reports | Export authorized reports (async exports remain under RBAC). | RPT | Operations; Doctor, Pharmacist, Support (scoped); Admin |
 | PERM-ANL-001 | Marketing-safe analytics | View funnel/marketing analytics that exclude unnecessary PHI. | ANL | Marketing; Admin |
@@ -488,7 +491,7 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Pharmacy review | — | — | — | A | — | — | — | — | ✓ | PERM-CRM-006–007 |
 | Appointments | — | ✓ | ◐ | ◐ | ◐ | ◐ | — | — | M | PERM-APT-001–002 |
 | Documents | — | ◐ | ◐ | ◐ | ◐ | ◐ | — | — | ◐ | PERM-DOC-001–002 |
-| Inventory | — | — | — | ◐ | — | M | — | — | ◐ | PERM-INV-001–003 |
+| Inventory | — | — | — | ◐ | — | M* | — | — | ◐ | PERM-INV-001–005; `010` Class D. *Ops adjust/receive only with Guardian INV grants ([34](34-inventory-module.md)) |
 | Support tickets | — | C/V | — | — | M | ◐ | — | — | ◐ | PERM-SUP-001–003 |
 | Coupons configure | — | redeem | — | — | — | — | M | — | M | PERM-CPN-001–002 |
 | Marketing analytics | — | — | — | — | — | — | ◐ | — | ✓ | PERM-ANL-001 |
@@ -560,7 +563,7 @@ Actions: **V** View · **C** Create · **U** Update · **D** Delete · **A** App
 | Documents | C/V case | — | — | ◐ | ◐ | ◐ | ◐ | — | — | ◐ |
 | Documents | D | — | — | — | — | — | — | — | — | ◐ |
 | Inventory | V | — | — | — | ◐ | — | ✓ | — | — | ✓ |
-| Inventory | U adjust | — | — | — | — | — | ✓ | — | — | ◐ |
+| Inventory | U adjust | — | — | — | — | — | Guardian only | — | — | Guardian only |
 | Coupons | C/U/Ar | — | — | — | — | — | — | ✓ | — | ✓ |
 | Coupons | Redeem | — | ✓ | — | — | — | — | — | — | — |
 | Support tickets | C/V own | — | ✓ | — | — | — | — | — | — | — |
@@ -917,6 +920,7 @@ flowchart TB
 | 1.5 | 2026-07-28 | Platform Engineering | — | Prescriptions and Questionnaires are CRM-only Internal Platform surfaces; screen-matrix and §6.1 updated | Draft for review |
 | 1.6 | 2026-08-02 | Platform Engineering | — | Clarify `PERM-ADM-001` covers suspend/deactivate/reactivate; Class D remains archive/restore/delete only; link [32](32-users-module.md) | Draft for review |
 | 1.7 | 2026-08-03 | Platform Engineering | — | Asset Library `PERM-AST-001`/`002`/`010`/`011`; Documents labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
+| 1.8 | 2026-08-03 | Platform Engineering | — | Split `PERM-INV-002` vs `004`/`005`/`010`; Guardian-only inventory admin; link [34](34-inventory-module.md) | Draft for review |
 
 ---
 
@@ -949,7 +953,7 @@ UI/screen access derived from §5 Permission Matrix and §3 Role Catalog. This m
 | CRM Dashboard | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
 | Clinical Queue | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
 | Pharmacy Queue | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
-| Inventory | — No Access | — No Access | — No Access | ◐ Limited Access | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
+| Inventory | — No Access | — No Access | — No Access | ◐ Limited Access (availability / order context) | — No Access | ◐ Consume in CRM; ✓ Guardian admin when granted | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
 | Coupons | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ✓ Full Access | — No Access | ✓ Full Access | ✓ Full Access |
 | CMS | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |
 | Blogs | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | — No Access | — No Access | ◐ Limited Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |

@@ -37,14 +37,14 @@ model User {
   displayName  String?    @map("display_name")
   phone        String?
   bio          String?
-  /// Opaque Media Library asset id (no upload ownership).
+  /// Opaque User Media ref (future — not Asset Library).
   avatarMediaAssetId String? @map("avatar_media_asset_id")
 
   /// Patient demographics (allowlisted; PHI-aware access).
   dateOfBirth  DateTime?  @map("date_of_birth") @db.Date
   gender       UserGender @default(UNSPECIFIED)
   region       String?
-  /// Opaque Media Library asset id for health-card image.
+  /// Opaque User Media / Document Management ref (future — not Asset Library).
   healthCardMediaAssetId String? @map("health_card_media_asset_id")
 
   /// Embedded billing/shipping contact snapshots until Address module.
@@ -286,7 +286,7 @@ model Category {
   seoTitle             String?                 @map("seo_title")
   seoDescription       String?                 @map("seo_description")
   sortOrder            Int                     @default(0) @map("sort_order")
-  /// Opaque Media Library asset id for category thumbnail.
+  /// Opaque Asset Library asset id for category thumbnail.
   thumbnailMediaAssetId String?                @map("thumbnail_media_asset_id")
   minQuantity          Int?                    @map("min_quantity")
   maxQuantity          Int?                    @map("max_quantity")
@@ -332,7 +332,7 @@ model Product {
   medicalInfo              Json?                  @map("medical_info")
   /// Catalog attribute definitions: [{ name, values[], forVariation }].
   attributes               Json?
-  /// Opaque featured image asset id (Media Library).
+  /// Opaque featured image Asset Library id (consumers never store provider URLs).
   featuredMediaAssetId     String?                @map("featured_media_asset_id")
   /// Opaque ref until Questionnaires module owns bindings (OR-14).
   questionnaireBindingRef  String?                @map("questionnaire_binding_ref")
@@ -411,7 +411,7 @@ model ProductVariant {
 model ProductMedia {
   id           String   @id @default(uuid()) @db.Uuid
   productId    String   @map("product_id") @db.Uuid
-  /// Opaque Media Library asset id (no FK until Media module ships).
+  /// Opaque Asset Library asset id (association only; Asset Library owns binaries).
   mediaAssetId String   @map("media_asset_id")
   alt          String?
   sortOrder    Int      @default(0) @map("sort_order")
@@ -485,4 +485,103 @@ model ProductActivity {
 
   @@index([productId, createdAt])
   @@map("product_activities")
+}
+
+/// Reusable business asset lifecycle (DB-062 / docs/33).
+enum AssetStatus {
+  UPLOADED
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum StorageProviderKind {
+  LOCAL
+  S3
+  R2
+  AZURE
+  GCS
+}
+
+enum AssetUploadSessionStatus {
+  PENDING
+  UPLOADED
+  FINALIZED
+  EXPIRED
+}
+
+/// Asset Library metadata SoR (DB-062). Bytes live in StorageProvider — never PostgreSQL.
+model Asset {
+  id               String              @id @default(uuid()) @db.Uuid
+  storageProvider  StorageProviderKind @map("storage_provider")
+  storageKey       String              @map("storage_key")
+  originalFilename String              @map("original_filename")
+  mimeType         String              @map("mime_type")
+  byteSize         Int                 @map("byte_size")
+  width            Int?
+  height           Int?
+  altText          String?             @map("alt_text")
+  caption          String?
+  status           AssetStatus         @default(UPLOADED)
+  createdByUserId  String?             @map("created_by_user_id") @db.Uuid
+  archivedAt       DateTime?           @map("archived_at") @db.Timestamptz(3)
+  deletedAt        DateTime?           @map("deleted_at") @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  changeHistory AssetChangeHistory[]
+  activities    AssetActivity[]
+
+  @@unique([storageProvider, storageKey])
+  @@index([status])
+  @@index([createdAt])
+  @@index([mimeType])
+  @@map("assets")
+}
+
+model AssetUploadSession {
+  id               String                   @id @default(uuid()) @db.Uuid
+  storageProvider  StorageProviderKind      @map("storage_provider")
+  storageKey       String                   @map("storage_key")
+  originalFilename String                   @map("original_filename")
+  mimeType         String                   @map("mime_type")
+  byteSize         Int?                     @map("byte_size")
+  status           AssetUploadSessionStatus @default(PENDING)
+  createdByUserId  String                   @map("created_by_user_id") @db.Uuid
+  expiresAt        DateTime                 @map("expires_at") @db.Timestamptz(3)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, expiresAt])
+  @@index([createdByUserId])
+  @@map("asset_upload_sessions")
+}
+
+model AssetChangeHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  assetId   String   @map("asset_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  action    String
+  changes   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
+  @@map("asset_change_history")
+}
+
+model AssetActivity {
+  id        String   @id @default(uuid()) @db.Uuid
+  assetId   String   @map("asset_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  kind      String
+  summary   String
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
+  @@map("asset_activities")
 }

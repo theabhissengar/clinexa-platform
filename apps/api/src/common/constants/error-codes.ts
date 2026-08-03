@@ -51,6 +51,15 @@ export const ErrorCodes = {
   AUTH_RESET_INVALID: 'ERR-AUTH-006',
   /** Account locked (abuse protection). */
   AUTH_ACCOUNT_LOCKED: 'ERR-AUTH-007',
+
+  /** Invalid asset lifecycle transition. */
+  AST_INVALID_TRANSITION: 'ERR-AST-001',
+  /** Upload MIME or size policy violation. */
+  AST_UPLOAD_REJECTED: 'ERR-AST-002',
+  /** Upload session missing, expired, or invalid state. */
+  AST_SESSION_INVALID: 'ERR-AST-003',
+  /** Storage provider operation failed. */
+  AST_STORAGE_FAILED: 'ERR-AST-004',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

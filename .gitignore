@@ -21,6 +21,9 @@ apps/api/prisma.config.js.map
 .env.*
 !.env.example
 
+# Local object storage (Asset Library Local provider)
+.data/
+
 # Logs / OS / IDE
 logs/
 *.log

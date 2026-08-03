@@ -1,19 +1,19 @@
 "use client";
 
-import { Image } from "lucide-react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
-import { RequirePagePermission } from "@/components/auth/require-page-permission";
-import { Permissions } from "@/features/auth/permissions";
-
-export default function GuardianMediaPage() {
+/**
+ * Legacy Media stub → Asset Library.
+ */
+export default function GuardianMediaRedirectPage() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/guardian/assets");
+  }, [router]);
   return (
-    <RequirePagePermission permission={Permissions.CMS_MANAGE}>
-      <ModuleComingSoon
-        title="Media"
-        description="Media library administration placeholder. Asset management ships in a later phase."
-        icon={Image}
-      />
-    </RequirePagePermission>
+    <main className="px-6 py-10 text-sm text-muted-foreground">
+      Redirecting to Asset Library…
+    </main>
   );
 }

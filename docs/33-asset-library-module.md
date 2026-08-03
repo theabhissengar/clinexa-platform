@@ -5,14 +5,14 @@
 | Document | Asset Library Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | Planning complete (ready for delivery) |
+| Status | In delivery (P11 implementation) |
 | Audience | Architects, backend, frontend, QA, product, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [05](05-system-architecture.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [13](13-security.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md) |
 
 This document is the durable **Module Blueprint** instance for Asset Library (`GRD-039`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P11 — Asset Library Platform Module** ([26](26-implementation-tracker.md)). Documentation only in this pass — no application code until P11 implementation slices begin.
+> Delivery phase: **P11 — Asset Library Platform Module** ([26](26-implementation-tracker.md)). Implementation on `feature/asset-library-platform-module`.
 
 ---
 
@@ -379,5 +379,6 @@ Guardian foundation (P5 shell); RBAC; Class D server gates (align with P6); Audi
 | Version | Date | Author | Changes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-03 | Platform Engineering | Initial Asset Library Module Blueprint (`GRD-039`): reusable-business-asset boundary, ID-only storage rule, lifecycle Uploaded→Active→Archived→Deleted, `PERM-AST-*`, Document Management / User Media integration points, P11 roadmap |
+| 1.1 | 2026-08-03 | Platform Engineering | P11 implementation in progress: Local StorageProvider, admin APIs, Guardian `/guardian/assets` UI, picker foundation |
 
 *End of 33 — Asset Library Module.*

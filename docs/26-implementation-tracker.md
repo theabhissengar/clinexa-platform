@@ -97,7 +97,7 @@ Every phase record in §5 carries these fields.
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
 | **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | In progress | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
 | **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
-| **P11** | Asset Library platform module (reusable business assets + storage resolution) | Planning complete | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
+| **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -272,16 +272,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Asset Library as the reusable business-asset platform module: metadata SoR, shared StorageProvider, Guardian upload/lifecycle UI, ID-only consumer refs, Class D archive/restore/delete |
-| **Status** | Planning complete (implementation not started) |
+| **Status** | In progress (implementation) |
 | **Owner** | Platform Engineering |
-| **Branch** | — |
+| **Branch** | `feature/asset-library-platform-module` |
 | **PR** | — |
 | **Dependencies** | P5 shell; Class D codes and server gates (align with P6); blueprint [33](33-asset-library-module.md); P8 opaque asset ID pattern on Products |
-| **Scope** | Docs: blueprint + synced registry/ownership/nav/API/DB/permissions. Later implementation slices P11a–P11g per [33 §18](33-asset-library-module.md): Assets schema, Local StorageProvider, admin APIs, Guardian UI, consumer `assetId` wiring, Class D/bulk, Store resolve |
+| **Scope** | Assets schema (`DB-062`); Local `StorageProvider`; admin APIs `API-177`–`186`; Guardian UI (`/guardian/assets`); upload finalize → Active; Class D archive/restore/delete + bulk; picker foundation; Folders/Tags/Collections remain reserved per blueprint |
 | **Architecture changes** | Implements `GRD-039`, `FR-AST-001`–`004`, `PERM-AST-001`/`002`/`010`/`011`, `API-177`–`186`, `DB-062`; reusable-asset boundary vs Document Management / User Media; business modules own relationships; never provider URLs on consumers |
-| **Documentation updates** | [33](33-asset-library-module.md), [27](27-module-registry.md), [26](26-implementation-tracker.md) (this record), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [25](25-guardian.md), [11](11-api-design.md), [10](10-database-design.md), [08](08-role-permissions.md), [31](31-products-module.md), [32](32-users-module.md), [05](05-system-architecture.md), [03](03-functional-requirements.md), [13](13-security.md) |
-| **Notes** | Asset Library owns reusable business assets only — not Document Management, User Media, order packets, or system/temp files. CRM never becomes Asset Manager (select-only). Lifecycle: Uploaded → Active → Archived → Deleted (auto-Active on successful finalize in V1). Search/Tags/Folders/Collections/AI reserved. Existing `/guardian/media` stub renames to `/guardian/assets` at implementation. P10 remains UX modernization. |
-| **Verification** | (At implementation) CRM denied upload/Class D; consumers reject provider URLs; Products attach remains ID-only; Document Management path untouched; StorageProvider Local contract tests; typecheck/lint/unit tests pass |
+| **Documentation updates** | [33](33-asset-library-module.md), [27](27-module-registry.md), [26](26-implementation-tracker.md) (this record), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [25](25-guardian.md), [11](11-api-design.md), [10](10-database-design.md), [08](08-role-permissions.md) |
+| **Notes** | Asset Library owns reusable business assets only. CRM never becomes Asset Manager (select-only via `PERM-AST-001` + picker). Lifecycle: Uploaded → Active → Archived → Deleted (auto-Active on successful finalize). Search/Tags/Folders/Collections/AI reserved. `/guardian/media` redirects to `/guardian/assets`. |
+| **Verification** | API typecheck/lint/build; admin typecheck/lint; unit tests for permissions, lifecycle, LocalStorageProvider; migrate + seed required before runtime |
 
 ### P10 — Internal Platform UX/UI Modernization
 
@@ -428,6 +428,7 @@ A phase is complete when all of the following hold.
 | 1.5 | 2026-08-02 | Platform Engineering | P9 Users platform module recorded (blueprint complete); blueprint [32](32-users-module.md); dependency graph updated |
 | 1.6 | 2026-08-02 | Platform Engineering | P9 In progress on `feature/users-platform-module`: lifecycle schema, Users/Roles APIs, Auth register/reset, Guardian/CRM UI |
 | 1.7 | 2026-08-03 | Platform Engineering | P11 Asset Library planning complete; blueprint [33](33-asset-library-module.md); dependency graph updated |
+| 1.8 | 2026-08-03 | Platform Engineering | P11 In progress on `feature/asset-library-platform-module`: schema, Local storage, APIs, Guardian UI |
 
 ---
 

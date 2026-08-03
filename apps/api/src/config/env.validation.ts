@@ -47,6 +47,18 @@ const envSchema = z.object({
   ARGON2_MEMORY_COST: z.coerce.number().int().positive().optional(),
   ARGON2_TIME_COST: z.coerce.number().int().positive().optional(),
   ARGON2_PARALLELISM: z.coerce.number().int().positive().optional(),
+
+  STORAGE_PROVIDER: z
+    .enum(['local', 's3', 'r2', 'azure', 'gcs'])
+    .default('local'),
+  STORAGE_LOCAL_ROOT: z.string().min(1).optional(),
+  STORAGE_PUBLIC_BASE_URL: z.string().url().optional(),
+  STORAGE_MAX_UPLOAD_BYTES: z.coerce.number().int().positive().optional(),
+  STORAGE_UPLOAD_SESSION_TTL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

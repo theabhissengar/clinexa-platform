@@ -563,6 +563,74 @@ async function seedDemoCatalog(prisma: PrismaClient): Promise<void> {
   );
 }
 
+async function seedInventoryDefaults(prisma: PrismaClient): Promise<void> {
+  const warehouse = await prisma.warehouse.upsert({
+    where: { code: 'DEFAULT' },
+    create: {
+      id: randomUUID(),
+      code: 'DEFAULT',
+      name: 'Default Warehouse',
+      status: 'ACTIVE',
+      isDefault: true,
+    },
+    update: {
+      name: 'Default Warehouse',
+      status: 'ACTIVE',
+      isDefault: true,
+    },
+  });
+
+  await prisma.inventoryPolicy.upsert({
+    where: { code: 'default' },
+    create: {
+      id: randomUUID(),
+      code: 'default',
+      oversellMode: 'PREVENT',
+      reservationTimeoutMinutes: 60,
+      lowStockThreshold: 5,
+      allowNegativeStock: false,
+    },
+    update: {},
+  });
+
+  const demoVariant = await prisma.productVariant.findFirst({
+    where: { sku: 'DEMO-SKIN-50ML', deletedAt: null },
+  });
+  if (demoVariant) {
+    const existing = await prisma.inventoryBalance.findUnique({
+      where: {
+        warehouseId_productVariantId: {
+          warehouseId: warehouse.id,
+          productVariantId: demoVariant.id,
+        },
+      },
+    });
+    if (!existing) {
+      await prisma.stockMovement.create({
+        data: {
+          id: randomUUID(),
+          warehouseId: warehouse.id,
+          productVariantId: demoVariant.id,
+          movementType: 'RECEIVE',
+          quantityDelta: 50,
+          reason: 'Seed receiving',
+        },
+      });
+      await prisma.inventoryBalance.create({
+        data: {
+          id: randomUUID(),
+          warehouseId: warehouse.id,
+          productVariantId: demoVariant.id,
+          quantityOnHand: 50,
+          quantityReserved: 0,
+        },
+      });
+    }
+  }
+
+  console.log('Seeded inventory: default warehouse, policies, demo stock for DEMO-SKIN-50ML when present.');
+}
+
 async function main(): Promise<void> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -575,6 +643,7 @@ async function main(): Promise<void> {
   try {
     await seedRbacCatalog(prisma);
     await seedDemoCatalog(prisma);
+    await seedInventoryDefaults(prisma);
     await seedAdminUser(prisma);
     await seedSuperAdminUser(prisma);
     await seedDemoStaffUsers(prisma);

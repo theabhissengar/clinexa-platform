@@ -2229,63 +2229,65 @@ Orders, CRM (Rx), Patient Portal, Notifications (optional links), Authentication
 
 #### Purpose
 
-Track stock for fulfillable SKUs; reserve/decrement per order lifecycle; alert on low stock; prevent oversell per configured policy.
+Track stock for fulfillable SKUs via an append-only movement ledger; reserve/commit/release/restock per order lifecycle through Inventory services; emit low-stock events; prevent oversell per configured platform policy. Guardian administers inventory; CRM consumes.
 
 #### Actors
 
 | Actor | Role |
 | --- | --- |
-| Operations | Adjust stock; fulfill |
-| System | Reserve/decrement; oversell checks |
-| Admin | Configure thresholds/policy |
-| Pharmacist | Coordinate on mismatches |
+| Operations | Guardian: adjust/receive/policy when granted; CRM: view + Reserve/Release/Commit via services; fulfill |
+| System | Reserve/commit/release/restock via Inventory services; emit low-stock events; expire reservations |
+| Admin | Guardian: warehouses and inventory policies |
+| Pharmacist | Coordinate on mismatches (view availability) |
 
 #### Preconditions
 
-- SKUs marked fulfillable.
-- Stock levels initialized.
+- SKUs marked fulfillable / inventory-tracked (digital/services/memberships may skip).
+- Stock levels initialized via receive/adjust (ledger).
 - Order reaching inventory-affecting state.
 
 #### Postconditions
 
-- Stock levels accurate per rules.
+- Stock projection accurate per ledger rules.
 - Oversell prevented per policy.
-- Low-stock visible to ops.
+- Low-stock **events** emitted for consumers (Guardian, CRM, NTF, …).
 
 #### Main Workflow
 
-1. Ops sets/adjusts on-hand quantity.
-2. On clearance toward fulfillment, system reserves/decrements per lifecycle rules.
-3. Fulfillment completion finalizes decrement if reserved earlier.
-4. Cancel/refund restock when applicable.
-5. Low-stock alerts surface in CRM.
+1. Ops receives/adjusts stock in **Guardian** (appends movements).
+2. On clearance toward fulfillment, Orders call Inventory `Reserve()` / later `Commit()` per lifecycle rules.
+3. Cancel/refund calls `Release()` / `Restock()` when applicable.
+4. Low-stock threshold crossed → Inventory emits event; consumers react.
 
 #### Alternative Flows
 
 | Flow | Behavior |
 | --- | --- |
 | Insufficient stock at fulfill | Block fulfillment; notify ops |
-| Clinical decline restock | Restock if reserved |
-| Manual adjustment | Audited |
+| Clinical decline restock | Release/restock if reserved |
+| Manual adjustment | Guardian only; audited; appends movement |
 
 #### Business Rules
 
 - OR-12 reserve/decrement, low stock, oversell policy.
 - Inventory truth not owned by Store UI.
+- **Orders never write inventory tables** — only Inventory services.
+- Movements are SoT; balances are projections ([34](34-inventory-module.md)).
 
 #### Validations
 
 - Quantity never negative under prevent-oversell policy.
-- Adjustments require authorized role.
+- Adjustments require Guardian `PERM-INV-004`.
+- Warehouse required on every inventory write.
 
 #### Edge Cases
 
 - Concurrent fulfill race: transactional reservation wins/loses safely.
-- Non-tracked digital SKU: inventory rules may no-op.
+- Non-tracked digital SKU: inventory rules no-op.
 
 #### Dependencies
 
-Products, Orders, CRM, Payments (refund restock), Reports, Settings, Notifications (ops alerts).
+Products, Orders, Guardian, CRM (consume), Payments (refund restock), Reports, Settings/Policies, Notifications (event consumers).
 
 #### Functional Requirements
 
@@ -2314,12 +2316,13 @@ Products, Orders, CRM, Payments (refund restock), Reports, Settings, Notificatio
 
 - **Given** order fulfills with stock available
 - **When** fulfillment completes
-- **Then** inventory decrements recorded
+- **Then** inventory decrements recorded (ledger commit movement)
 
 #### Future Enhancements
 
 - Multi-warehouse and transfers.
 - Supplier PO automation.
+- FEFO/FIFO, serials, controlled drugs, recall (see [34](34-inventory-module.md)).
 
 ### 2.20 Reviews (`REV`)
 
@@ -3762,6 +3765,7 @@ Extended module-level definitions also appear in [§1.4 Definitions](#14-definit
 | 1.1 | 2026-07-23 | Abhishek Singh Sengar | Added business→FR traceability detail, CRUD matrix, domain events, sequence diagrams, state machine summary, and glossary |
 | 1.2 | 2026-07-27 | Platform Engineering | Added §11.1 surface responsibility (multi-consumer exposure and Guardian-only destructive rules); surface notes on `CRM` and `ADM` modules for the CRM and Guardian contexts of the Internal Platform |
 | 1.3 | 2026-08-03 | Platform Engineering | Added Asset Library `FR-AST-001`–`004`; Document Management clarification on `FR-DOC-001`; link [33](33-asset-library-module.md) |
+| 1.4 | 2026-08-03 | Platform Engineering | §2.19 Inventory: Guardian admin, ledger SoT, service-only Orders, low-stock events, digital no-track; link [34](34-inventory-module.md) |
 
 ---
 

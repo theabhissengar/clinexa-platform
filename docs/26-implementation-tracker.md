@@ -96,8 +96,9 @@ Every phase record in §5 carries these fields.
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
 | **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | In progress | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
-| **P9+** | Subsequent business modules (Inventory, CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
+| **P9+** | Subsequent business modules (CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
+| **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -283,6 +284,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | Asset Library owns reusable business assets only. CRM never becomes Asset Manager (select-only via `PERM-AST-001` + picker). Lifecycle: Uploaded → Active → Archived → Deleted (auto-Active on successful finalize). Search/Tags/Folders/Collections/AI reserved. `/guardian/media` redirects to `/guardian/assets`. |
 | **Verification** | API typecheck/lint/build; admin typecheck/lint; unit tests for permissions, lifecycle, LocalStorageProvider; migrate + seed required before runtime |
 
+### P12 — Inventory Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Inventory as the authoritative stock and reservation platform module: append-only movement ledger as SoT, warehouse-keyed schema (V1 single default), Guardian-only administration, Orders/CRM via Reserve/Release/Commit/Restock services only |
+| **Status** | In progress (implementation) |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/inventory-platform-blueprint-refinement` |
+| **PR** | — |
+| **Dependencies** | P5 shell; P8 Products (variants / fulfillable / product type); Class D gates (align with P6); blueprint [34](34-inventory-module.md); Orders depth for reservation integration (P12f) |
+| **Scope** | Schema `DB-042`–`043`, `DB-063`–`066`; ledger services; admin APIs `API-187`–`197`; domain APIs `API-198`–`203`; Guardian UI; Products availability wire-up; CRM consume-only (no CRM admin); seed + tests |
+| **Architecture changes** | `GRD-033` full Inventory admin (supersedes policy-only); `CRM-037` consume-only; ledger-first SoT; warehouse FKs from day one; platform-wide INV policies; Orders never write inventory tables |
+| **Documentation updates** | [34](34-inventory-module.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [25](25-guardian.md), [29](29-navigation-blueprint.md), [18](18-crm.md), [10](10-database-design.md), [11](11-api-design.md), [08](08-role-permissions.md), [31](31-products-module.md), [03](03-functional-requirements.md), [05](05-system-architecture.md), this record |
+| **Notes** | Implementation on `feature/inventory-platform-blueprint-refinement`. Guardian-only admin. Movements SoT; balances projections. Low-stock emit-only. Digital products skip tracking. Multi-WH/FEFO/FIFO/serials reserved. |
+| **Verification** | API/admin typecheck + lint; inventory unit tests; nest build; migrate + seed (default warehouse, policies, demo stock) |
+
 ### P10 — Internal Platform UX/UI Modernization
 
 | Field | Value |
@@ -332,6 +349,7 @@ flowchart TD
   P8[P8_Products_platform_module]
   P9[P9_Users_platform_module]
   P11[P11_Asset_Library_platform_module]
+  P12[P12_Inventory_platform_module]
   P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
@@ -348,10 +366,13 @@ flowchart TD
   P5 --> P8
   P5 --> P9
   P5 --> P11
+  P5 --> P12
   P8 --> P11
+  P8 --> P12
   P8 --> P10
   P9 --> P10
   P11 --> P10
+  P12 --> P10
   P7 --> PF
 ```
 
@@ -397,6 +418,8 @@ Non-blocking for design; each must be resolved before the phase that consumes it
 | Store or Portal work forces a redesign | Rework of ownership and registry structure | Consumers and matrix columns pre-declared | PF |
 | Guardian catalog grows into a clone of another admin console | Modules with no requirement behind them | Inspiration-only rule (`NAV-006`, `GRD-012`); registry entry requires a requirement reference | P5 |
 | PHI or private docs land in Asset Library | Wrong ACL surface; audit gap | Reusable-asset boundary; Document Management owns private docs ([33](33-asset-library-module.md)) | P11 |
+| Balance row treated as inventory SoT | Drift; unauditable stock | Append-only movements as SoT; projection rebuild ([34](34-inventory-module.md)) | P12 |
+| CRM or Orders mutate stock tables directly | Split truth; oversell | Guardian-only admin; Orders/CRM service-only Reserve/Release/Commit/Restock | P12 |
 
 ---
 
@@ -429,6 +452,8 @@ A phase is complete when all of the following hold.
 | 1.6 | 2026-08-02 | Platform Engineering | P9 In progress on `feature/users-platform-module`: lifecycle schema, Users/Roles APIs, Auth register/reset, Guardian/CRM UI |
 | 1.7 | 2026-08-03 | Platform Engineering | P11 Asset Library planning complete; blueprint [33](33-asset-library-module.md); dependency graph updated |
 | 1.8 | 2026-08-03 | Platform Engineering | P11 In progress on `feature/asset-library-platform-module`: schema, Local storage, APIs, Guardian UI |
+| 1.9 | 2026-08-03 | Platform Engineering | P12 Inventory planning complete; blueprint [34](34-inventory-module.md); Guardian-only admin; ledger-first SoT; Inventory removed from P9+ catch-all |
+| 2.0 | 2026-08-03 | Platform Engineering | P12 In progress: Prisma inventory schema, Nest module, Guardian UI, seed, APIs `API-187`–`203` |
 
 ---
 

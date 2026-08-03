@@ -8,7 +8,7 @@
 | Status | In progress (implementation) |
 | Audience | Architects, backend, frontend, QA, product, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [12](12-authentication-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md) |
+| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [12](12-authentication-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [33](33-asset-library-module.md) |
 
 This document is the durable **Module Blueprint** instance for Users (`GRD-042`, `CRM-031`) and sibling Roles and permissions (`GRD-043`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
@@ -24,14 +24,14 @@ Users is the **identity and account master-data platform module**. It owns ident
 
 **Requirements:** `FR-AUTH-001`–`006`, `FR-ADM-001`/`004`, `FR-PRT-001`/`002`, `FR-NTF-004`, `OR-06`/`07`, `ROAD-003`, `AC-BR-08`.
 
-**Not its job:** Credential hashing, session/token issue, MFA secrets, EHR clinical charting, Order lifecycle, Payments charge execution, Notification dispatch, Audit log storage (Users emits; Audit owns), Media upload, Store/Portal chrome.
+**Not its job:** Credential hashing, session/token issue, MFA secrets, EHR clinical charting, Order lifecycle, Payments charge execution, Notification dispatch, Audit log storage (Users emits; Audit owns), Asset Library upload, User Media upload, Store/Portal chrome.
 
 ### 1.1 Users vs Authentication
 
 | Concern | Users | Authentication |
 | --- | --- | --- |
 | Identity (who the principal is) | **Owns** | Reads for credential binding |
-| Profile (name, phone, bio, avatar ref, contact) | **Owns** | No |
+| Profile (name, phone, bio, avatar display ref, contact) | **Owns** | No |
 | Lifecycle (active / suspended / inactive / archived / deleted) | **Owns** | Enforces auth allow/deny from status |
 | Roles on a user (assignments) | **Owns** assignment UX/API | Consumes grants at AuthZ time via RBAC |
 | Preferences (account + links to notification prefs) | **Owns** / references | No |
@@ -60,14 +60,15 @@ Users is the **identity and account master-data platform module**. It owns ident
 | 2FA enrollment UI, trusted devices, login history, recovery codes, security logs | Editor stubs / deep-links only | Yes |
 | MFA mechanics | No | Auth + Security surface |
 
-### 1.4 Users vs Media Library (avatar)
+### 1.4 Users vs User Media / Asset Library (avatar)
 
-| Owns | Users | Media Library |
-| --- | --- | --- |
-| Upload / object storage / library organization | No | Yes |
-| `avatar_media_asset_id` reference + display | Yes | No |
+| Owns | Users | User Media (future) | Asset Library |
+| --- | --- | --- | --- |
+| Opaque avatar reference + display | Yes | No | No |
+| Avatar binary upload / storage / lifecycle | No | **Owns** | No |
+| Reusable business assets (catalog, marketing, public downloads) | No | No | **Owns** |
 
-Same opaque-asset pattern as Products media attach ([31](31-products-module.md)).
+Avatar binaries are **not** Asset Library assets. Users may hold an opaque ID from future User Media. Private clinical/commercial files belong to **Document Management**, not Asset Library ([33](33-asset-library-module.md)).
 
 ### 1.5 Users vs Address module (future)
 
@@ -164,9 +165,10 @@ Stable IDs: UUID primary keys in paths and list/editor UI (same Products rule).
 
 | Tab | Content | Owner |
 | --- | --- | --- |
-| **General** | Username/email (immutable login id after create); first/last/display name; profile image (Media ref); contact email/phone; short bio | Users |
+| **General** | Username/email (immutable login id after create); first/last/display name; profile image (opaque User Media ref when that module ships); contact email/phone; short bio | Users |
+| **Account** | Status; roles summary; last login (read from Auth/session projection) | Users + Auth read |
+| **Patient info** (patient principals) | DOB, gender, province/region, health-card image ref (opaque User Media / Document Management id) — PHI-aware | Users stores allowlisted attrs; CRM operational emphasis |
 | **Roles** | Multi-select of product roles; link to capability summary via Roles module | Users assigns; Roles catalog owns defs |
-| **Patient info** (patient principals) | DOB, gender, province/region, health-card image ref (Media opaque id) — PHI-aware | Users stores allowlisted attrs; CRM operational emphasis |
 | **Addresses** | Billing + shipping contact forms (embedded V1); “Copy from billing” | Users contact snapshots; future Address module owns reusable book |
 | **Security** | Set new password / Send reset link (Auth APIs); 2FA status stub; sessions stub; no Application Passwords in V1 | Auth executes; Users tab presents |
 | **Billing integrations** (optional / Future) | Stripe customer IDs (live/test), other PSP profile IDs — opaque refs | Users stores refs; Payments owns sync semantics |
@@ -235,7 +237,7 @@ Role assignment and Class D operations **must** emit Audit (`FR-ADM-004`, `GRD-0
 
 ### 8.1 Core
 
-- **DB-001 Users** — lifecycle enum expansion; profile contact fields; optional `avatar_media_asset_id`; optional PSP customer id refs (opaque)
+- **DB-001 Users** — lifecycle enum expansion; profile contact fields; optional opaque avatar ref (User Media when available — not Asset Library); optional PSP customer id refs (opaque)
 - **DB-002–005** — Roles, Permissions, RolePermissions, UserRoleAssignments (exist)
 - **DB-006 Sessions** — Auth-owned; Users triggers revoke
 - **DB-007 PasswordResetTokens** — Auth-owned; Users may request reset
@@ -341,7 +343,7 @@ Reserve API/UI capability for Bulk Activate / Reactivate, Bulk Suspend, Bulk Arc
 
 ## 12. Dependencies
 
-**Users depends on:** Auth foundation; RBAC seed matrix; Guardian/CRM shells (P2–P5); Class D server gates (align with P6); Audit append path; Notifications (reset email, prefs); Media attach for avatar when Media Library ships.
+**Users depends on:** Auth foundation; RBAC seed matrix; Guardian/CRM shells (P2–P5); Class D server gates (align with P6); Audit append path; Notifications (reset email, prefs); avatar binary attach deferred to User Media (not Asset Library).
 
 **Depend on Users:** Orders, Subscriptions, Payments (actor + customer FK), CRM, Guardian, Store, Portal, Notifications, Audit, Activity, Appointments, Documents, Support, future Mobile / API / Vendor / Partner.
 
@@ -399,7 +401,7 @@ Backend `users` module + completed Auth register/reset/verify + Roles admin APIs
 | **P9d** | Guardian index + General/Roles editor tabs |
 | **P9e** | Remaining editor tabs (Patient info, Addresses embedded, Security stubs, History/Activity) |
 | **P9f** | CRM operational Users + escalation |
-| **P9g** | Profile API; avatar media ref when Media exists |
+| **P9g** | Profile API; avatar opaque ref stub (User Media later — not Asset Library) |
 | **Later** | Bulk ops, Security module, Address module, Merge, AI, Store/Portal clients |
 
 Delivery phase: **P9 — Users Platform Module** ([26](26-implementation-tracker.md)).
@@ -412,5 +414,6 @@ Delivery phase: **P9 — Users Platform Module** ([26](26-implementation-tracker
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-02 | Platform Engineering | Initial Users Module Blueprint: dual-context ownership, Auth boundary, lifecycle, index/editor UX, Class D, future reserves |
 | 1.1 | 2026-08-02 | Platform Engineering | Implementation in delivery: Nest `users` module, Auth register/reset, Guardian/CRM surfaces, Class D + last-admin |
+| 1.2 | 2026-08-03 | Platform Engineering | Avatar boundary → User Media (not Asset Library); Document Management for private docs; link [33](33-asset-library-module.md) |
 
 *End of 32 — Users Module.*

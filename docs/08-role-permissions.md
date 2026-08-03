@@ -294,13 +294,14 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Patient Portal | PRT | `PERM-PRT-010` Aggregate self-service dashboard | Patient only |
 | CRM context | CRM | `PERM-CRM-020` Access the CRM context shell (`/crm/*`, staff); deny patients | Staff roles |
 | Guardian context | GRD | `PERM-GRD-001` Access the Guardian context shell (`/guardian/*`, staff); deny patients | Marketing, Content, Admin, Super Admin |
-| Documents | DOC | `PERM-DOC-001` View/download own; `PERM-DOC-002` Staff attach/view case-scoped; `PERM-DOC-003` Audit PHI access | Patient; Staff scoped |
+| Documents (Document Management) | DOC | `PERM-DOC-001` View/download own; `PERM-DOC-002` Staff attach/view case-scoped; `PERM-DOC-003` Audit PHI access — **not** Asset Library | Patient; Staff scoped |
 | Notifications | NTF | `PERM-NTF-001` Receive; `PERM-NTF-002` Manage prefs; `PERM-NTF-003` Manage templates | Patient; Admin |
 | Inventory | INV | `PERM-INV-001` View stock; `PERM-INV-002` Adjust/reserve/decrement; `PERM-INV-003` Low-stock alerts | Ops; Pharmacist coord |
 | Reports | RPT | `PERM-RPT-001` View operational/clinical reports; `PERM-RPT-002` Export | Ops, Doctor, Support, Admin |
 | Analytics | ANL | `PERM-ANL-001` Marketing-safe analytics; `PERM-ANL-002` Ops/clinical metrics | Marketing; Ops/Clinical; Admin |
 | Marketing | CPN, ANL | Coupons + marketing analytics (see Coupons/Analytics) | Marketing, Admin |
 | CMS | CMS | `PERM-CMS-001` Manage pages/banners/FAQs; `PERM-CMS-002` Publish | Content, Admin; Marketing limited |
+| Asset Library | AST | `PERM-AST-001` View/browse/select; `PERM-AST-002` Upload and edit metadata (Guardian) | Content, Admin; CRM may hold `PERM-AST-001` for pickers only |
 | Blogs | BLG | `PERM-BLG-001` Create/edit/publish posts | Content, Admin |
 | Coupons | CPN | `PERM-CPN-001` Configure coupons; `PERM-CPN-002` Redeem at checkout | Marketing/Admin; Patient |
 | Support | SUP | `PERM-SUP-001` Create ticket (patient); `PERM-SUP-002` Triage/resolve; `PERM-SUP-003` Link order/patient | Patient; Support |
@@ -308,7 +309,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | System Configuration | SET | `PERM-SET-001` Manage platform settings; `PERM-SET-002` Oversell/publish policies | Admin |
 | Audit Logs | ADM, DOC | `PERM-ADM-010` View audit logs; `PERM-DOC-003` PHI access audit | Admin (primary) |
 | Reviews (product) | REV | `PERM-REV-001` Submit review; `PERM-REV-002` Moderate approve/reject | Patient; Content/Support/Admin as granted |
-| **Destructive operations (Class D)** | ADM, ORD, SUB, PRD, CAT, CMS, BLG, CPN, RPT | `PERM-ADM-030`–`032` user delete/archive/restore; `PERM-ADM-033` bulk cleanup; `PERM-ADM-034` hard-delete execution; `PERM-ORD-010`–`012` order delete/archive/restore; `PERM-ORD-013` financial correction; `PERM-ORD-014` administrative override; `PERM-SUB-010`–`012` subscription delete/archive/restore; `PERM-PRD-010` delete product; `PERM-CAT-010` delete category; `PERM-CMS-010` delete page; `PERM-BLG-010` delete post; `PERM-CPN-010` delete coupon; `PERM-RPT-010` purge report artifacts | Super Admin (full); Admin (subset as granted) — **Guardian context only** |
+| **Destructive operations (Class D)** | ADM, ORD, SUB, PRD, CAT, CMS, BLG, AST, CPN, RPT | `PERM-ADM-030`–`032` user delete/archive/restore; `PERM-ADM-033` bulk cleanup; `PERM-ADM-034` hard-delete execution; `PERM-ORD-010`–`012` order delete/archive/restore; `PERM-ORD-013` financial correction; `PERM-ORD-014` administrative override; `PERM-SUB-010`–`012` subscription delete/archive/restore; `PERM-PRD-010` delete product; `PERM-CAT-010` delete category; `PERM-CMS-010` delete page; `PERM-BLG-010` delete post; `PERM-AST-010` archive/restore/delete asset; `PERM-AST-011` bulk asset destructive; `PERM-CPN-010` delete coupon; `PERM-RPT-010` purge report artifacts | Super Admin (full); Admin (subset as granted) — **Guardian context only** |
 
 ### 4.1 Application contexts (`RBAC-009`)
 
@@ -400,6 +401,8 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-ANL-002 | Ops/clinical analytics | View operational and clinical queue/metrics dashboards. | ANL | Operations; Doctor, Pharmacist, Support (scoped); Admin |
 | PERM-CMS-001 | Manage CMS content | Create and edit CMS pages, banners, FAQs, and blocks. | CMS | Content, Admin; Marketing (limited / as granted) |
 | PERM-CMS-002 | Publish CMS content | Publish or unpublish CMS content to the Store. | CMS | Content, Admin; Marketing (limited / as granted) |
+| PERM-AST-001 | View / select Asset Library | Browse Asset Library and select existing Active assets (picker). Does **not** imply upload or Class D. CRM may hold this for pickers only — never Asset Manager. | AST | Content, Admin; CRM staff (as granted for pickers) |
+| PERM-AST-002 | Manage Asset Library | Upload assets and edit metadata in Guardian. | AST | Content, Admin |
 | PERM-BLG-001 | Manage blogs | Create, edit, publish, and archive blog posts. | BLG | Content, Admin |
 | PERM-CPN-001 | Configure coupons | Create, update, and archive promotional coupons. | CPN | Marketing, Admin |
 | PERM-CPN-002 | Redeem coupon | Apply a valid coupon at checkout. | CPN | Patient |
@@ -433,6 +436,8 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-CAT-010 | Delete category | Delete a category in Guardian; blocked where dependent catalog structure requires retention. **Class D.** | CAT | Admin (as granted), Super Administrator |
 | PERM-CMS-010 | Delete CMS page | Delete a CMS page or block in Guardian. **Class D.** | CMS | Content (as granted), Admin, Super Administrator |
 | PERM-BLG-010 | Delete blog post | Delete a blog post in Guardian. **Class D.** | BLG | Content (as granted), Admin, Super Administrator |
+| PERM-AST-010 | Archive / restore / delete asset | Archive, restore, or soft-delete a reusable business asset in Guardian Asset Library. **Class D.** | AST | Content (as granted), Admin, Super Administrator |
+| PERM-AST-011 | Bulk asset destructive | Bounded bulk archive/delete of Asset Library assets. **Class D.** | AST | Admin (as granted), Super Administrator |
 | PERM-CPN-010 | Delete coupon | Delete a coupon in Guardian; redemption history is retained. **Class D.** | CPN | Admin (as granted), Super Administrator |
 | PERM-RPT-010 | Purge report artifacts | Delete generated report job artifacts and exports per retention policy. **Class D.** | RPT | Admin (as granted), Super Administrator |
 
@@ -911,6 +916,7 @@ flowchart TB
 | 1.4 | 2026-07-27 | Platform Engineering | — | Internal Platform context RBAC: `PERM-GRD-001` Guardian context access, `RBAC-009`–`011` principles, segregated destructive **Class D** dictionary (`PERM-ADM-030`–`034`, `PERM-ORD-010`–`014`, `PERM-SUB-010`–`012`, `PERM-PRD/CAT/CMS/BLG/CPN/RPT-010`), §4.1–4.2 context and Class D definitions, §6.1 context ownership of CRUD, SoD rules `RBAC-031`–`036`, hard-deny and screen-matrix context notes | Draft for review |
 | 1.5 | 2026-07-28 | Platform Engineering | — | Prescriptions and Questionnaires are CRM-only Internal Platform surfaces; screen-matrix and §6.1 updated | Draft for review |
 | 1.6 | 2026-08-02 | Platform Engineering | — | Clarify `PERM-ADM-001` covers suspend/deactivate/reactivate; Class D remains archive/restore/delete only; link [32](32-users-module.md) | Draft for review |
+| 1.7 | 2026-08-03 | Platform Engineering | — | Asset Library `PERM-AST-001`/`002`/`010`/`011`; Documents labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 
 ---
 

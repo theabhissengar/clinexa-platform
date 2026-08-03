@@ -585,3 +585,145 @@ model AssetActivity {
   @@index([assetId, createdAt])
   @@map("asset_activities")
 }
+
+// ---------------------------------------------------------------------------
+// Inventory (DB-042, DB-043, DB-063–066 / docs/34) — ledger-first SoT
+// ---------------------------------------------------------------------------
+
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum StockMovementType {
+  RESERVE
+  RELEASE
+  COMMIT
+  RESTOCK
+  ADJUST
+  RECEIVE
+}
+
+enum ReservationStatus {
+  PENDING
+  COMMITTED
+  RELEASED
+  EXPIRED
+}
+
+enum OversellMode {
+  PREVENT
+  ALLOW
+}
+
+/// Warehouse master (DB-063). V1 seeds one default; every inventory row carries warehouse_id.
+model Warehouse {
+  id        String          @id @default(uuid()) @db.Uuid
+  code      String
+  name      String
+  status    WarehouseStatus @default(ACTIVE)
+  isDefault Boolean         @default(false) @map("is_default")
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  balances         InventoryBalance[]
+  movements        StockMovement[]
+  reservationLines StockReservationLine[]
+
+  @@unique([code])
+  @@index([isDefault])
+  @@index([status])
+  @@map("warehouses")
+}
+
+/// Materialized balance projection (DB-042) — not independently authoritative.
+model InventoryBalance {
+  id               String   @id @default(uuid()) @db.Uuid
+  warehouseId      String   @map("warehouse_id") @db.Uuid
+  productVariantId String   @map("product_variant_id") @db.Uuid
+  quantityOnHand   Int      @default(0) @map("quantity_on_hand")
+  quantityReserved Int      @default(0) @map("quantity_reserved")
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@unique([warehouseId, productVariantId])
+  @@index([productVariantId])
+  @@index([warehouseId])
+  @@map("inventory_balances")
+}
+
+/// Append-only inventory ledger — source of truth (DB-043).
+model StockMovement {
+  id               String            @id @default(uuid()) @db.Uuid
+  warehouseId      String            @map("warehouse_id") @db.Uuid
+  productVariantId String            @map("product_variant_id") @db.Uuid
+  movementType     StockMovementType @map("movement_type")
+  quantityDelta    Int               @map("quantity_delta")
+  orderId          String?           @map("order_id") @db.Uuid
+  reservationId    String?           @map("reservation_id") @db.Uuid
+  actorUserId      String?           @map("actor_user_id") @db.Uuid
+  reason           String?
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  warehouse   Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  reservation StockReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([warehouseId, productVariantId, createdAt])
+  @@index([orderId])
+  @@index([reservationId])
+  @@index([movementType, createdAt])
+  @@map("stock_movements")
+}
+
+/// Reservation header (DB-064).
+model StockReservation {
+  id        String            @id @default(uuid()) @db.Uuid
+  orderId   String?           @map("order_id") @db.Uuid
+  status    ReservationStatus @default(PENDING)
+  expiresAt DateTime?         @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  lines     StockReservationLine[]
+  movements StockMovement[]
+
+  @@index([orderId])
+  @@index([status, expiresAt])
+  @@map("stock_reservations")
+}
+
+/// Reservation lines (DB-065) — warehouse required on every line.
+model StockReservationLine {
+  id               String @id @default(uuid()) @db.Uuid
+  reservationId    String @map("reservation_id") @db.Uuid
+  warehouseId      String @map("warehouse_id") @db.Uuid
+  productVariantId String @map("product_variant_id") @db.Uuid
+  quantity         Int
+
+  reservation StockReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse        @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@index([reservationId])
+  @@index([warehouseId, productVariantId])
+  @@map("stock_reservation_lines")
+}
+
+/// Platform-wide inventory policies singleton row (DB-066).
+model InventoryPolicy {
+  id                         String      @id @default(uuid()) @db.Uuid
+  /// Singleton marker — only one row with code "default".
+  code                       String      @unique @default("default")
+  oversellMode               OversellMode @default(PREVENT) @map("oversell_mode")
+  reservationTimeoutMinutes  Int         @default(60) @map("reservation_timeout_minutes")
+  lowStockThreshold          Int         @default(5) @map("low_stock_threshold")
+  allowNegativeStock         Boolean     @default(false) @map("allow_negative_stock")
+  /// Future FEFO/FIFO selector (named extension; unused in V1 logic).
+  allocationStrategy         String?     @map("allocation_strategy")
+  updatedByUserId            String?     @map("updated_by_user_id") @db.Uuid
+  createdAt                  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("inventory_policies")
+}

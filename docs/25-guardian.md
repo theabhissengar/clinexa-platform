@@ -66,7 +66,7 @@ Define the Guardian context so that:
 | Area | Coverage |
 | --- | --- |
 | Guardian context | Administrative context of the Internal Platform, served under `/guardian/*` |
-| Modules | Dashboard, catalog (products, categories, variants, pricing, inventory policy), content (pages, blogs, Asset Library, homepage, FAQs, review moderation), marketing (coupons, campaigns, templates), users (full administrative lifecycle), orders (administration, financial corrections, overrides), subscriptions (plans and administrative lifecycle), questionnaires and workflow configuration, platform settings, feature flags, taxes, shipping, payment providers, webhooks, integrations, API keys, audit/activity/system logs, administrative analytics and reports |
+| Modules | Dashboard, catalog (products, categories, variants, pricing, **Inventory** administration), content (pages, blogs, Asset Library, homepage, FAQs, review moderation), marketing (coupons, campaigns, templates), users (full administrative lifecycle), orders (administration, financial corrections, overrides), subscriptions (plans and administrative lifecycle), questionnaires and workflow configuration, platform settings, feature flags, taxes, shipping, payment providers, webhooks, integrations, API keys, audit/activity/system logs, administrative analytics and reports |
 | Navigation | Grouped enterprise navigation, nesting, fly-outs, permission filtering |
 | Routing | `/guardian/*` prefix and the module page hierarchy |
 | Governance rules | CRUD responsibilities, destructive-operation ownership and enforcement |
@@ -140,7 +140,7 @@ Define the Guardian context so that:
 | Responsibility | Guardian owns (UX) | Server owns (truth) |
 | --- | --- | --- |
 | Administrative dashboard | Platform KPIs, governance shortcuts, system signals | Aggregates and AuthZ (`PERM-GRD-001`) |
-| Catalog | Products, categories, variants, pricing, images (via Asset Library IDs), DIN/dosage attributes, inventory policy | Publish safety validation and bindings (`FR-PRD-002`, `FR-CAT-002`, `OR-14`) |
+| Catalog | Products, categories, variants, pricing, images (via Asset Library IDs), DIN/dosage attributes, **Inventory** (warehouses, stock, adjustments, receiving, policies) | Publish safety validation and bindings (`FR-PRD-002`, `FR-CAT-002`, `OR-14`); inventory ledger rules (`FR-INV-*`, [34](34-inventory-module.md)) |
 | Content | Pages, blogs, homepage, FAQs, review moderation, SEO fields | Draft/publish enforcement; moderation before public display (`FR-CMS-*`, `FR-BLG-*`, `FR-REV-003`) |
 | Marketing | Coupons, campaigns, notification templates | Coupon validation and template usage (`FR-CPN-*`, `FR-NTF-002`) |
 | Users | Full administrative lifecycle: create, edit administrative fields, role assignment, delete, archive, restore | Users/RBAC persistence, last-admin safeguard, audit (`FR-ADM-001`, `FR-ADM-002`) |
@@ -273,7 +273,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-030 | Dashboard | Dashboard | Shared (context-specific content) | `FR-ANL-*` | — |
 | GRD-031 | Products | Commerce | No | `FR-PRD-002`, `FR-CRM-007` | Delete, archive, restore |
 | GRD-032 | Categories | Commerce | No | `FR-CAT-002` | Delete, archive, restore |
-| GRD-033 | Inventory policy | Commerce | Shared (CRM owns operational balances) | `FR-INV-*`, `FR-SET-002` | Bulk adjustment cleanup |
+| GRD-033 | Inventory | Commerce | Consume-only in CRM (no CRM admin) | `FR-INV-*`; blueprint [34](34-inventory-module.md) | Bulk cleanup; warehouse archive (Class D) |
 | GRD-034 | Orders (administration) | Commerce | Shared | `FR-ORD-*`, `FR-PAY-003` | Delete, archive, restore, financial correction, override |
 | GRD-035 | Subscriptions (administration) | Commerce | Shared | `FR-SUB-*` | Delete, archive, restore |
 | GRD-036 | Pricing, taxes, shipping | Commerce | No | `FR-SET-*` | Delete configuration entries |
@@ -544,7 +544,7 @@ Guardian consumes documented APIs only ([11](11-api-design.md)); it never invent
 | Products / categories / Asset Library | `API-021`–`037`, `API-177`–`186` | Catalog authoring and reusable assets |
 | Plans / workflows | `API-095`–`096`, `API-172`–`174` | Plan and consultation workflow configuration (questionnaire staff UI is CRM-only) |
 | Orders / refunds / subscriptions | `API-072`–`076`, `API-067`, `API-083`–`087` | Administrative orders, corrections, subscription administration |
-| Inventory | `API-105`–`109` | Policy and administrative adjustment |
+| Inventory | `API-187`–`203` | Guardian admin + domain reservation/availability ([34](34-inventory-module.md)); supersedes prior `/crm/inventory` adjust catalog |
 | Coupons | `API-143`–`147` | Marketing configuration |
 | CMS / blogs / reviews | `API-150`–`160`, `API-139`–`141` | Content authoring, publish, moderation |
 | Notifications | `API-135`–`136` | Template administration |
@@ -677,6 +677,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | 1.1 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`GRD-046`) and Prescriptions are not Guardian Internal Platform surfaces; staff UI is CRM-only | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users §6.1 links blueprint [32](32-users-module.md); suspend/deactivate vs Class D clarified | Draft for review |
 | 1.3 | 2026-08-03 | Platform Engineering | Pending | `GRD-039` Asset library; `PERM-AST-*`; blueprint [33](33-asset-library-module.md); drop `FR-DOC-*` as Asset Library primary | Draft for review |
+| 1.4 | 2026-08-03 | Platform Engineering | Pending | `GRD-033` full Inventory admin (not policy-only); CRM consume-only; blueprint [34](34-inventory-module.md); APIs `API-187`–`203` | Draft for review |
 
 ---
 

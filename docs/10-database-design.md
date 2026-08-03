@@ -59,7 +59,7 @@ Define a production-grade relational data architecture so that:
 
 | Area | Coverage |
 | --- | --- |
-| Logical entities | Identity, catalog, commerce, clinical, inventory, portal, content (incl. Asset Library), notifications, audit, settings, analytics/report metadata (`DB-001`–`DB-062`) |
+| Logical entities | Identity, catalog, commerce, clinical, inventory, portal, content (incl. Asset Library), notifications, audit, settings, analytics/report metadata (`DB-001`–`DB-066`) |
 | Surfaces served | Store Web (`ARCH-011`), Patient Portal (`ARCH-012`), CRM (`ARCH-013`), Backend API (`ARCH-014`) |
 | Persistence model | Single-operator PostgreSQL SoR; object-storage metadata for documents/media; Redis session/cache/queue coordination (`ARCH-017`, `ARCH-018`) |
 | Lifecycles | Canonical statuses from [03 §14](03-functional-requirements.md#14-state-machine-summary) |
@@ -342,7 +342,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- |
 | Purpose | SKU-level variants (size/strength/pack) with price and fulfillability |
 | Primary key | `id` |
-| Relationships | N:1 Product; 0:1 InventoryBalance; referenced by CartItems, OrderItems, StockMovements |
+| Relationships | N:1 Product; 0:N InventoryBalances (per warehouse projection; Inventory owns); referenced by CartItems, OrderItems, StockMovements |
 | Notable columns | `price_cents`, optional `sale_price_cents`, `sku`, `is_fulfillable` |
 | Business rules | Inventory tracked per fulfillable SKU (`FR-INV-001`); checkout revalidates published state |
 | Retention | Archive with product; historical order lines keep snapshot + variant FK |
@@ -676,27 +676,67 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 
 ### 3.6 Inventory and fulfillment
 
+> **Ledger-first.** Stock Movements (`DB-043`) are the append-only source of truth. Inventory Balances (`DB-042`) are a derived projection. Every Adjust, Receive, Reserve, Release, Commit, and Restock appends a movement. Blueprint: [34](34-inventory-module.md).
+
 #### DB-042 InventoryBalances
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Current stock level per fulfillable SKU |
+| Purpose | Materialized current stock **projection** per fulfillable SKU per warehouse (not independently authoritative) |
 | Primary key | `id` |
-| Relationships | 1:1 ProductVariant; 1:N StockMovements |
-| Business rules | Prevent oversell per settings policy (`FR-INV-003`, FR-SET-001); low-stock alerts (`FR-INV-004`) |
-| Retention | Current balance; history via movements |
-| Trace | FR-INV-001–005, ARCH-064, ROAD-014 |
+| Relationships | Unique (`warehouse_id`, `product_variant_id`); movements keyed by same; N:1 Warehouses (`DB-063`) |
+| Notable columns | `warehouse_id` FK (required), `product_variant_id` FK, `quantity_on_hand`, `quantity_reserved` |
+| Business rules | Updated only as consequence of appending movements in the same transaction; rebuildable from ledger; oversell/negative rules from `DB-066` / INV policies (`FR-INV-003`); low-stock **events** emitted by Inventory (`FR-INV-004`) |
+| Retention | Current projection |
+| Trace | FR-INV-001–005, ARCH-064, ROAD-014, [34](34-inventory-module.md) |
 
 #### DB-043 StockMovements
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Reserve, decrement, restock, manual adjustment ledger |
+| Purpose | Append-only inventory **ledger** (source of truth) |
 | Primary key | `id` |
-| Relationships | N:1 InventoryBalance / ProductVariant; optional Order; optional actor User |
-| Business rules | Tied to order lifecycle (`FR-INV-002`); restock on refund/cancel when applicable (`FR-INV-005`); manual adjust audited |
-| Retention | Retain movement history for reports |
-| Trace | FR-INV-002/005, OR-12 |
+| Relationships | N:1 warehouse + variant; optional Order; optional reservation; optional actor User |
+| Notable columns | `warehouse_id` FK (required), `product_variant_id` FK, `movement_type` (`reserve` \| `release` \| `commit` \| `restock` \| `adjust` \| `receive` \| …), `quantity_delta`, optional `order_id`, optional `reservation_id`, `reason`, `created_at` |
+| Business rules | Immutable after insert; Orders never write this table directly — only Inventory services; restock on refund/cancel when applicable (`FR-INV-005`); manual adjust Guardian-only |
+| Retention | Retain movement history for reports and projection rebuild |
+| Trace | FR-INV-002/005, OR-12, [34](34-inventory-module.md) |
+
+#### DB-063 Warehouses
+
+| Field | Detail |
+| --- | --- |
+| Purpose | Warehouse master; V1 seeds one default warehouse |
+| Primary key | `id` |
+| Notable columns | `code`, `name`, `status`, `is_default` |
+| Business rules | Every inventory entity carries `warehouse_id` from day one; multi-WH without schema redesign |
+| Trace | ROAD-014, [34](34-inventory-module.md) |
+
+#### DB-064 StockReservations
+
+| Field | Detail |
+| --- | --- |
+| Purpose | Reservation header (`pending` \| `committed` \| `released` \| `expired`) |
+| Primary key | `id` |
+| Relationships | Optional Order; 1:N StockReservationLines |
+| Trace | FR-INV-002, OR-12 |
+
+#### DB-065 StockReservationLines
+
+| Field | Detail |
+| --- | --- |
+| Purpose | Reservation line quantities |
+| Notable columns | `reservation_id`, `warehouse_id` FK (required), `product_variant_id`, `quantity` |
+| Trace | FR-INV-002 |
+
+#### DB-066 InventoryPolicies
+
+| Field | Detail |
+| --- | --- |
+| Purpose | Platform-wide inventory administrative configuration (or INV-namespaced PlatformSettings) |
+| Notable keys | Oversell mode, reservation timeout, low-stock threshold, negative stock rules, warehouse defaults, future FEFO/FIFO selector |
+| Business rules | Guardian-only mutation; not per-order overrides |
+| Trace | FR-INV-003/004, FR-SET-001, [34](34-inventory-module.md) |
 
 ### 3.7 Portal and support
 
@@ -980,6 +1020,10 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | DB-060 | AnalyticsEvents | Admin |
 | DB-061 | ReportMetadata | Admin |
 | DB-062 | Assets | Content (Asset Library) |
+| DB-063 | Warehouses | Inventory |
+| DB-064 | StockReservations | Inventory |
+| DB-065 | StockReservationLines | Inventory |
+| DB-066 | InventoryPolicies | Inventory |
 
 ---
 
@@ -991,7 +1035,11 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- | --- |
 | Users | AccountSecurityStates | Lockout state |
 | Users | StaffProfiles | Optional staff attributes |
-| ProductVariants | InventoryBalances | One balance row per fulfillable SKU |
+| ProductVariants | InventoryBalances | One balance projection row per fulfillable SKU per warehouse |
+| Warehouses | InventoryBalances | Warehouse required on every balance |
+| Warehouses | StockMovements | Warehouse required on every movement |
+| Warehouses | StockReservationLines | Warehouse required on every reservation line |
+| StockReservations | StockReservationLines | Reservation header to lines |
 | Users | NotificationPreferences | Or 1:N by preference key |
 
 ### 4.2 One-to-Many
@@ -1204,26 +1252,46 @@ erDiagram
 ```mermaid
 erDiagram
   Products ||--o{ ProductVariants : has
-  ProductVariants ||--o| InventoryBalances : stocks
-  InventoryBalances ||--o{ StockMovements : ledger
+  Warehouses ||--o{ InventoryBalances : stocks
+  ProductVariants ||--o{ InventoryBalances : projects
+  InventoryBalances ||--o{ StockMovements : ledger_keyed
+  Warehouses ||--o{ StockMovements : at
   Orders ||--o{ StockMovements : drives
+  Orders ||--o{ StockReservations : may_hold
+  StockReservations ||--o{ StockReservationLines : lines
+  Warehouses ||--o{ StockReservationLines : at
+  ProductVariants ||--o{ StockReservationLines : sku
   Orders ||--o{ OrderItems : lines
   ProductVariants ||--o{ OrderItems : sku
 
+  Warehouses {
+    uuid id PK
+    string code
+    boolean is_default
+  }
   InventoryBalances {
     uuid id PK
+    uuid warehouse_id FK
     uuid product_variant_id FK
     int quantity_on_hand
     int quantity_reserved
   }
   StockMovements {
     uuid id PK
+    uuid warehouse_id FK
     uuid product_variant_id FK
     uuid order_id FK
     string movement_type
     int quantity_delta
   }
+  StockReservations {
+    uuid id PK
+    uuid order_id FK
+    string status
+  }
 ```
+
+> Movements are append-only SoT; balances are projections. See [34](34-inventory-module.md).
 
 ### 5.6 Content
 
@@ -1405,7 +1473,7 @@ Append-only insert on sensitive actions; never update/delete in application path
 | Subscriptions | `(status, next_renewal_at)`; `patient_user_id` | Renewal worker + Portal |
 | Reports | Orders/payments/refunds/stock_movements by `created_at` ranges | FR-RPT, NFR-011 |
 | Audit logs | `(created_at)`; `(object_type, object_id)`; `(actor_user_id, created_at)` | Investigation; append-only |
-| Inventory | Unique `product_variant_id` on balances; movements `(variant_id, created_at)` | Oversell checks |
+| Inventory | Unique (`warehouse_id`, `product_variant_id`) on balances; movements `(warehouse_id, variant_id, created_at)` | Oversell checks; multi-WH ready |
 | Coupons | Unique `code` where active | Checkout validation |
 | Idempotency | Unique webhook `idempotency_key` | FR-PAY-002 |
 | Tickets | `(status, updated_at)`; `patient_user_id` | Support queue |
@@ -1438,7 +1506,7 @@ See §4.5. Summary: cascade only contained children (cart items, answers, ticket
 | Categories / Products / Blogs / CMS | slug (within publish scope as designed) |
 | Coupons | code |
 | PaymentWebhookIdempotencyKeys | idempotency_key |
-| InventoryBalances | product_variant_id |
+| InventoryBalances | (warehouse_id, product_variant_id) |
 | PlatformSettings | key |
 | ProductCategoryLinks | (product_id, category_id) |
 
@@ -1521,7 +1589,7 @@ V1 may run unpartitioned. Future candidates: `audit_logs`, `domain_events`, `ana
 ### 10.6 Write-heavy optimization
 
 - Checkout and webhook handlers: short transactions; idempotency keys; fail-safe no unpaid fulfillment orders (`FR-CHK-004`).
-- Inventory reserve/decrement in same transaction as relevant order transition.
+- Inventory reserve/decrement/commit via Inventory services in same transaction as relevant order transition; always append StockMovements (ledger SoT).
 - Outbox (DomainEvents) for async NTF/analytics/search to keep API latency within NFR-009/013–014.
 
 ### 10.7 Search optimization
@@ -1611,7 +1679,7 @@ V1 may run unpartitioned. Future candidates: `audit_logs`, `domain_events`, `ana
 | BO-1 Care conversion | STO, CART, CHK, QST, ORD, PAY | DB-010–014, DB-022–029, DB-035–036 |
 | BO-2 Clinical throughput | CRM, QST, ORD | DB-037–041, DB-018–020 |
 | BO-3 Retention | SUB, PRT, PAY | DB-032–034, DB-030 |
-| BO-4 Operate | INV, SUP, CMS/BLG, RPT, ANL, NTF | DB-042–043, DB-048–055, DB-050–052, DB-060–061 |
+| BO-4 Operate | INV, SUP, CMS/BLG, RPT, ANL, NTF | DB-042–043, DB-063–066, DB-048–055, DB-050–052, DB-060–061 |
 | BO-5 Reuse/config | PRD, CAT, QST, ADM, SET | DB-010–021, DB-058 |
 | OR-01/02 Questionnaire gate | QST | DB-017–020, DB-035–036 |
 | OR-03–05 Clinical/Rx/pharmacy | CRM, ORD | DB-037–041, DB-026 |
@@ -1619,7 +1687,7 @@ V1 may run unpartitioned. Future candidates: `audit_logs`, `domain_events`, `ana
 | OR-08/09 Order lifecycle | ORD | DB-026–027 |
 | OR-10 Subscriptions | SUB | DB-032–034 |
 | OR-11 Refunds | PAY, ORD, INV | DB-029, DB-043 |
-| OR-12 Inventory | INV | DB-042–043 |
+| OR-12 Inventory | INV | DB-042–043, DB-063–066 |
 | OR-13 Reviews | REV | DB-053 |
 | OR-14 Publish safety | ADM | DB-010–021, DB-057–058 |
 
@@ -1639,7 +1707,7 @@ V1 may run unpartitioned. Future candidates: `audit_logs`, `domain_events`, `ana
 | APT | DB-044–046 | ARCH-051 | Portal, CRM, API |
 | DOC | DB-047 | ARCH-054 | Portal, CRM, API |
 | NTF | DB-054–056 | ARCH-055 | API workers |
-| INV | DB-042–043 | ARCH-064 | CRM, API |
+| INV | DB-042–043, DB-063–066 | ARCH-064 | Guardian admin, CRM consume, API |
 | SUP | DB-048–049 | ARCH-059 | Portal, CRM, API |
 | BLG/CMS | DB-050–052 | ARCH-060/061 | Store, CRM, API |
 | REV | DB-053 | ARCH-062 | Store, CRM, API |
@@ -1696,6 +1764,7 @@ flowchart LR
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | TBD | Initial logical database design: principles, DB-001–DB-061 entity catalog, relationship matrix, split Mermaid ER diagrams, lifecycles, indexing, integrity, performance, security, and BO/OR/FR→DB→ARCH traceability | Draft for review |
 | 1.1 | 2026-08-02 | Platform Engineering | TBD | §7.1 User lifecycle expanded to platform statuses; avatar opaque ref; Address remains §14; link [32](32-users-module.md) | Draft for review |
 | 1.2 | 2026-08-03 | Platform Engineering | TBD | `DB-062` Assets; DB-013 clarified as product-owned associations; avatar → User Media not Asset Library; Document Management labeling for DB-047; link [33](33-asset-library-module.md) | Draft for review |
+| 1.3 | 2026-08-03 | Platform Engineering | TBD | Inventory ledger-first (`DB-043` SoT); `DB-063`–`066` warehouses/reservations/policies; warehouse FK on balances/movements; link [34](34-inventory-module.md) | Draft for review |
 
 ---
 
@@ -2208,8 +2277,12 @@ Security appendix classifying major entities from §3. Classifications support H
 | ClinicalNotes | DB-039 | PHI | Yes | Yes | Yes | Yes | Clinical retention | Doc; deny Mkt/Content default |
 | Prescriptions | DB-040 | PHI | Yes | Yes | Yes | Yes | Clinical retention | Patient status-appropriate; Doc/Pharm/Ops |
 | PharmacistReviews | DB-041 | PHI | Yes | Yes | Yes | Yes | Clinical retention | Pharmacist; Doc; Ops context |
-| InventoryBalances | DB-042 | Internal | No | No | Yes | Manual adjust audited | Current + movements | Ops/Admin |
-| StockMovements | DB-043 | Internal | No | No | Yes | Yes (manual) | Report retention | Ops/Admin |
+| InventoryBalances | DB-042 | Internal | No | No | Yes | Via ledger only (Guardian adjust/receive) | Current projection + movements SoT | Guardian admin; CRM consume |
+| StockMovements | DB-043 | Internal | No | No | Yes | Yes (manual adjust) | Report retention | Guardian; CRM order-scoped read |
+| Warehouses | DB-063 | Internal | No | No | Yes | Config | Soft-deactivate | Guardian |
+| StockReservations | DB-064 | Internal | No | No | Yes | Service ops | With order lifecycle | Orders/CRM/SYS via Inventory |
+| StockReservationLines | DB-065 | Internal | No | No | Yes | Service ops | With reservation | Orders/CRM/SYS via Inventory |
+| InventoryPolicies | DB-066 | Internal | No | No | Yes | Guardian | Current | Guardian |
 | AppointmentTypes | DB-044 | Internal | No | No | Yes | Config | Archive careful | Admin; Portal read |
 | AppointmentSlots | DB-045 | Internal | No | No | Yes | Low | Soft-close | System; staff |
 | Appointments | DB-046 | Sensitive / PHI-adjacent | Possible | Yes | Yes | Recommended | Retention policy | Patient (own); staff RBAC |

@@ -73,8 +73,15 @@ export const Permissions = {
   NTF_MANAGE_TEMPLATES: 'PERM-NTF-003',
 
   INV_VIEW: 'PERM-INV-001',
-  INV_ADJUST: 'PERM-INV-002',
+  /** Reserve / release / commit / restock via Inventory services (not admin adjust). */
+  INV_RESERVE: 'PERM-INV-002',
   INV_LOW_STOCK: 'PERM-INV-003',
+  /** Guardian admin — adjust / receive ledger writes. */
+  INV_MANAGE_STOCK: 'PERM-INV-004',
+  /** Guardian admin — warehouses / policies. */
+  INV_MANAGE_WAREHOUSE: 'PERM-INV-005',
+  /** Class D — bounded inventory purge / cleanup. */
+  INV_DESTRUCTIVE: 'PERM-INV-010',
 
   RPT_VIEW: 'PERM-RPT-001',
   RPT_EXPORT: 'PERM-RPT-002',
@@ -548,25 +555,53 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.INV_VIEW,
     module: 'INV',
     name: 'View inventory',
-    description: 'View stock levels and inventory status.',
+    description:
+      'View stock projections, availability, and movement ledger (read).',
     resource: 'inventory',
     action: 'view',
   },
   {
-    code: Permissions.INV_ADJUST,
+    code: Permissions.INV_RESERVE,
     module: 'INV',
-    name: 'Adjust/reserve/decrement inventory',
-    description: 'Reserve, decrement, or adjust inventory.',
+    name: 'Reserve / release / commit inventory',
+    description:
+      'Call Inventory reservation services (Reserve, Release, Commit, Restock). Does not grant admin adjust.',
     resource: 'inventory',
-    action: 'adjust',
+    action: 'reserve',
   },
   {
     code: Permissions.INV_LOW_STOCK,
     module: 'INV',
-    name: 'Low-stock alerts',
-    description: 'Receive and act on low-stock operational alerts.',
+    name: 'Low-stock signals',
+    description:
+      'Subscribe to low-stock signals emitted by Inventory (consumers decide reaction).',
     resource: 'inventory',
     action: 'low_stock',
+  },
+  {
+    code: Permissions.INV_MANAGE_STOCK,
+    module: 'INV',
+    name: 'Adjust / receive inventory',
+    description:
+      'Guardian admin ledger writes (adjust, receive). Never CRM inventory admin.',
+    resource: 'inventory',
+    action: 'manage_stock',
+  },
+  {
+    code: Permissions.INV_MANAGE_WAREHOUSE,
+    module: 'INV',
+    name: 'Manage warehouses and inventory policies',
+    description: 'Warehouses and platform-wide INV policies. Guardian only.',
+    resource: 'inventory',
+    action: 'manage_warehouse',
+  },
+  {
+    code: Permissions.INV_DESTRUCTIVE,
+    module: 'INV',
+    name: 'Inventory Class D cleanup',
+    description: 'Bounded purge / bulk cleanup. Guardian only. Class D.',
+    resource: 'inventory',
+    action: 'destructive',
   },
   {
     code: Permissions.RPT_VIEW,

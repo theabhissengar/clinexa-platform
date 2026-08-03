@@ -184,7 +184,7 @@ Guardian uses **grouped enterprise navigation**. Group membership comes from the
 | Group key | Label | Intent | Representative modules |
 | --- | --- | --- | --- |
 | `dashboard` | Dashboard | Home, platform KPIs | `GRD-030` |
-| `commerce` | Commerce | Catalog and commerce administration | Products, categories, inventory policy, orders (admin), subscriptions (admin), pricing, taxes, shipping |
+| `commerce` | Commerce | Catalog and commerce administration | Products, categories, Inventory (Guardian admin), orders (admin), subscriptions (admin), pricing, taxes, shipping |
 | `content` | Content | Content and reusable asset administration | Pages, blogs, Asset Library, homepage, FAQs, review moderation |
 | `users` | Users | Identity administration | Users (`/guardian/users` — list + tabbed editor per [32](32-users-module.md)), Roles and permissions (`/guardian/roles`) |
 | `marketing` | Marketing | Growth configuration | Coupons, campaigns, templates |
@@ -215,6 +215,8 @@ CRM navigation is a short, role-scoped operational list. It does **not** adopt t
 | NAV-073 | CRM never lists destructive actions (`NAV-008`) |
 
 Representative CRM ordering: Dashboard → primary queue (Clinical Review for Doctor, Pharmacy for Pharmacist, Support for Support, Orders for Operations) → Orders → Prescriptions → Patients → Documents → Appointments → Subscriptions → Reports.
+
+CRM does **not** list Inventory as an administration module. Ops observe availability and low-stock signals inside Orders/fulfillment; escalate to Guardian Inventory (`/guardian/inventory`) for adjust/receive/warehouse/policy work ([34](34-inventory-module.md), `NAV-105`).
 
 ---
 
@@ -355,6 +357,7 @@ Detailed test cases live in [22 — Testing strategy](22-testing-strategy.md); p
 | 1.1 | 2026-07-28 | Platform Engineering | Pending | Legacy `/questionnaires` redirects only to CRM; Platform group no longer lists questionnaires | Draft for review |
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users group pages clarified (Users list/editor tabs, Roles); link [32](32-users-module.md) | Draft for review |
 | 1.3 | 2026-08-03 | Platform Engineering | Pending | Asset Library routes `/guardian/assets`; Content group label; link [33](33-asset-library-module.md) | Draft for review |
+| 1.4 | 2026-08-03 | Platform Engineering | Pending | Commerce Inventory (Guardian admin); CRM has no Inventory admin nav; escalate to `/guardian/inventory`; link [34](34-inventory-module.md) | Draft for review |
 
 ---
 

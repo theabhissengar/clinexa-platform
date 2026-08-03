@@ -809,11 +809,13 @@ flowchart TB
 
 | Aspect | Detail |
 | --- | --- |
-| Purpose | Stock truth for fulfillment |
-| Responsibilities | Reserve/decrement per lifecycle; oversell policy; low-stock alerts; restock on cancel/refund rules |
-| Dependencies | Orders, Settings, Notifications/CRM alerts |
-| Events | Stock changes; low-stock alerts |
+| Purpose | Authoritative stock and reservation truth (append-only movement ledger; balance projections) |
+| Responsibilities | Reserve/Release/Commit/Restock via services; Guardian admin (warehouses, adjust, receive, policies); emit low-stock events; oversell policy |
+| Dependencies | Products (variants / track flags), Orders (service callers), Settings/Policies, Notifications (event consumers) |
+| Events | Stock movements appended; `inventory.low_stock` emitted (consumers react) |
 | External integrations | None |
+| Surfaces | Guardian admin (`GRD-033`); CRM consume (`CRM-037`); blueprint [34](34-inventory-module.md) |
+| Invariant | Orders and Products never write inventory tables directly |
 
 ### 6.26 Domain module relationship overview
 
@@ -1478,6 +1480,7 @@ Maps architecture components → functional modules → representative NFR requi
 | 1.0 | 2026-07-23 | Abhishek Singh Sengar | — | Initial System Architecture draft for review | Pending review |
 | 1.1 | 2026-07-27 | Architecture (Clinexa planning) | — | Added Clinexa Ecosystem view (ARCH-170–173), Internal Platform contexts (CRM + Guardian), application-agnostic backend and platform-module principles (ARCH-160–166), Guardian client section (§4.4), ADRs ARCH-113–116, assumptions ARCH-132–134, constraints ARCH-151–154 | Pending review |
 | 1.2 | 2026-08-03 | Platform Engineering | — | Object storage shared across Document Management / Asset Library / exports; ARCH-017/103/123 and Products consumers clarified; ID-only asset refs; link [33](33-asset-library-module.md) | Pending review |
+| 1.3 | 2026-08-03 | Platform Engineering | — | ARCH-064 Inventory: ledger SoT, Guardian admin, CRM consume, low-stock events, service-only Orders; link [34](34-inventory-module.md) | Pending review |
 
 ---
 

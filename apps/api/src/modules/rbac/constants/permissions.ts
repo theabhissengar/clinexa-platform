@@ -85,6 +85,15 @@ export const Permissions = {
   CMS_MANAGE: 'PERM-CMS-001',
   CMS_PUBLISH: 'PERM-CMS-002',
 
+  /** View / browse / select from Asset Library. */
+  AST_VIEW: 'PERM-AST-001',
+  /** Upload and edit metadata (Guardian). */
+  AST_MANAGE: 'PERM-AST-002',
+  /** Class D — archive / restore / delete asset. */
+  AST_DESTRUCTIVE: 'PERM-AST-010',
+  /** Class D — bounded bulk archive/delete. */
+  AST_BULK_DESTRUCTIVE: 'PERM-AST-011',
+
   BLG_MANAGE: 'PERM-BLG-001',
 
   CPN_CONFIGURE: 'PERM-CPN-001',
@@ -606,6 +615,41 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     description: 'Publish or unpublish CMS content to the Store.',
     resource: 'cms',
     action: 'publish',
+  },
+  {
+    code: Permissions.AST_VIEW,
+    module: 'AST',
+    name: 'View / select Asset Library',
+    description:
+      'Browse Asset Library and select existing Active assets (picker). Does not imply upload or Class D.',
+    resource: 'asset',
+    action: 'view',
+  },
+  {
+    code: Permissions.AST_MANAGE,
+    module: 'AST',
+    name: 'Manage Asset Library',
+    description: 'Upload assets and edit metadata in Guardian.',
+    resource: 'asset',
+    action: 'manage',
+  },
+  {
+    code: Permissions.AST_DESTRUCTIVE,
+    module: 'AST',
+    name: 'Archive / restore / delete asset',
+    description:
+      'Archive, restore, or soft-delete a reusable business asset in Guardian. Class D.',
+    resource: 'asset',
+    action: 'destructive',
+  },
+  {
+    code: Permissions.AST_BULK_DESTRUCTIVE,
+    module: 'AST',
+    name: 'Bulk asset destructive',
+    description:
+      'Bounded bulk archive/delete of Asset Library assets. Class D.',
+    resource: 'asset',
+    action: 'bulk_destructive',
   },
   {
     code: Permissions.BLG_MANAGE,

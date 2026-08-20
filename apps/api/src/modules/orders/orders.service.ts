@@ -29,6 +29,7 @@ import type {
   AddOrderNoteInput,
   ClassDOrderInput,
   CreateOrderInput,
+  OverrideOrderInput,
   TransitionOrderInput,
   UpdateOrderFieldsInput,
 } from './order.types';
@@ -61,8 +62,10 @@ export class OrdersService {
     createdTo?: string;
     skip?: number;
     take?: number;
-    /** When true, exclude soft-deleted (CRM default). */
+    /** When true, include soft-deleted (Guardian admin). CRM default false. */
     includeDeleted?: boolean;
+    /** ACTIVE = not archived; ARCHIVED = archived only; ALL = both. */
+    archived?: 'ACTIVE' | 'ARCHIVED' | 'ALL';
   }) {
     const skip = params.skip ?? 0;
     const take = Math.min(params.take ?? 50, 100);
@@ -92,6 +95,8 @@ export class OrdersService {
           isRxOrder: true,
           trackingNumber: true,
           shippedAt: true,
+          archivedAt: true,
+          deletedAt: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -185,6 +190,7 @@ export class OrdersService {
     createdFrom?: string;
     createdTo?: string;
     includeDeleted?: boolean;
+    archived?: 'ACTIVE' | 'ARCHIVED' | 'ALL';
   }): Prisma.OrderWhereInput {
     const createdAt: Prisma.DateTimeFilter = {};
     if (params.createdFrom) {
@@ -194,8 +200,18 @@ export class OrdersService {
       createdAt.lte = new Date(params.createdTo);
     }
 
+    const archivedFilter =
+      params.archived === 'ARCHIVED'
+        ? { archivedAt: { not: null } }
+        : params.archived === 'ALL'
+          ? {}
+          : params.archived === 'ACTIVE'
+            ? { archivedAt: null }
+            : {};
+
     const where: Prisma.OrderWhereInput = {
       ...(params.includeDeleted === true ? {} : { deletedAt: null }),
+      ...archivedFilter,
       ...(params.status && params.status !== 'ALL'
         ? { status: params.status }
         : {}),
@@ -733,6 +749,79 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Class D administrative override — may bypass the normal transition graph.
+   * Requires non-empty reason. Records history/activity with override source.
+   * Platform Audit (GRD-053) is deferred; metadata marks `platformAuditDeferred`.
+   */
+  async overrideOrder(input: OverrideOrderInput) {
+    this.assertClassD(input);
+    const reason = input.reason?.trim();
+    if (!reason) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_MISSING_FIELD,
+        message: 'Override requires a non-empty reason',
+      });
+    }
+    if (!Object.values(OrderStatus).includes(input.toStatus)) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_INVALID_FORMAT,
+        message: 'Invalid override toStatus',
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const order = await this.requireActiveOrder(tx, input.orderId);
+      const fromStatus = order.status;
+      if (fromStatus === input.toStatus) {
+        throw new BadRequestException({
+          code: ErrorCodes.ORD_INVALID_TRANSITION,
+          message: 'Override toStatus must differ from current status',
+        });
+      }
+
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data: { status: input.toStatus },
+      });
+
+      await tx.orderStatusHistory.create({
+        data: {
+          orderId: order.id,
+          fromStatus,
+          toStatus: input.toStatus,
+          actorUserId: input.actorUserId ?? null,
+          source: 'guardian_override',
+          reason,
+          metadata: {
+            classD: true,
+            override: true,
+            platformAuditDeferred: true,
+            ...(input.metadata ?? {}),
+          },
+        },
+      });
+
+      await tx.orderActivity.create({
+        data: {
+          orderId: order.id,
+          actorUserId: input.actorUserId ?? null,
+          kind: 'administrative_override',
+          summary: `Override ${fromStatus} → ${input.toStatus}`,
+          metadata: {
+            classD: true,
+            fromStatus,
+            toStatus: input.toStatus,
+            reason,
+            platformAuditDeferred: true,
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
   async softDeleteOrder(input: ClassDOrderInput) {
     this.assertClassD(input);
     return this.prisma.$transaction(async (tx) => {
@@ -747,7 +836,11 @@ export class OrdersService {
           actorUserId: input.actorUserId ?? null,
           kind: 'order_soft_deleted',
           summary: 'Order soft-deleted (Class D)',
-          metadata: { reason: input.reason ?? null },
+          metadata: {
+            reason: input.reason ?? null,
+            classD: true,
+            platformAuditDeferred: true,
+          },
         },
       });
       return updated;
@@ -768,7 +861,11 @@ export class OrdersService {
           actorUserId: input.actorUserId ?? null,
           kind: 'order_archived',
           summary: 'Order archived (Class D)',
-          metadata: { reason: input.reason ?? null },
+          metadata: {
+            reason: input.reason ?? null,
+            classD: true,
+            platformAuditDeferred: true,
+          },
         },
       });
       return updated;
@@ -785,6 +882,12 @@ export class OrdersService {
           message: 'Order not found',
         });
       }
+      if (order.deletedAt == null && order.archivedAt == null) {
+        throw new BadRequestException({
+          code: ErrorCodes.ORD_EDIT_FORBIDDEN,
+          message: 'Order is not archived or soft-deleted',
+        });
+      }
       const updated = await tx.order.update({
         where: { id: order.id },
         data: { deletedAt: null, archivedAt: null },
@@ -795,7 +898,11 @@ export class OrdersService {
           actorUserId: input.actorUserId ?? null,
           kind: 'order_restored',
           summary: 'Order restored (Class D)',
-          metadata: { reason: input.reason ?? null },
+          metadata: {
+            reason: input.reason ?? null,
+            classD: true,
+            platformAuditDeferred: true,
+          },
         },
       });
       return updated;

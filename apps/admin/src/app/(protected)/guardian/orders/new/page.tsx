@@ -4,13 +4,13 @@ import { Suspense } from "react";
 
 import { RequirePagePermission } from "@/components/auth/require-page-permission";
 import { Permissions } from "@/features/auth/permissions";
-import { GuardianOrdersListPage } from "@/features/orders/components/guardian-orders-list-page";
+import { GuardianOrderCreatePage } from "@/features/orders/components/guardian-order-create-page";
 
-export default function GuardianOrdersPage() {
+export default function GuardianOrderNewPage() {
   return (
-    <RequirePagePermission permission={Permissions.ORD_VIEW}>
+    <RequirePagePermission permission={Permissions.ORD_CREATE}>
       <Suspense fallback={<main className="px-6 py-10">Loading…</main>}>
-        <GuardianOrdersListPage />
+        <GuardianOrderCreatePage />
       </Suspense>
     </RequirePagePermission>
   );

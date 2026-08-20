@@ -107,3 +107,17 @@ export type ClassDOrderInput = {
   /** Must be true — domain refuses otherwise. */
   classDAuthorized: true;
 };
+
+/**
+ * Administrative Override (PERM-ORD-014 / Class D).
+ * Forces a status change that may bypass the normal transition graph.
+ * Requires an explicit non-empty reason. Never silent.
+ */
+export type OverrideOrderInput = {
+  orderId: string;
+  toStatus: OrderStatus;
+  reason: string;
+  actorUserId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  classDAuthorized: true;
+};

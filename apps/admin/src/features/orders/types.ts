@@ -29,6 +29,8 @@ export type OrderListItem = {
   isRxOrder: boolean;
   trackingNumber: string | null;
   shippedAt: string | null;
+  archivedAt?: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -79,6 +81,16 @@ export type OrderPatientRef = {
   status: string;
 };
 
+export type OrderAdjustment = {
+  id: string;
+  kind: string;
+  amountCents: number;
+  reason: string | null;
+  actorUserId: string | null;
+  paymentRef: string | null;
+  createdAt: string;
+};
+
 export type OrderDetail = OrderListItem & {
   discountTotalCents: number;
   shippingTotalCents: number;
@@ -94,8 +106,11 @@ export type OrderDetail = OrderListItem & {
   questionnaireResponseId: string | null;
   questionnaireVersionId: string | null;
   carrier: string | null;
+  adminTags?: unknown;
+  reconciliationFlags?: unknown;
   items: OrderItem[];
   addresses: OrderAddress[];
+  adjustments?: OrderAdjustment[];
   patient: OrderPatientRef;
   allowedNextStatuses: OrderStatus[];
   canCancel: boolean;
@@ -138,4 +153,44 @@ export type UpdateCrmOrderPayload = {
   carrier?: string | null;
   shippedAt?: string | null;
   shippingPhone?: string | null;
+};
+
+export type UpdateAdminOrderPayload = UpdateCrmOrderPayload & {
+  adminTags?: Record<string, unknown> | null;
+  reconciliationFlags?: Record<string, unknown> | null;
+};
+
+export type CreateAdminOrderPayload = {
+  patientUserId: string;
+  lines: Array<{
+    variantId: string;
+    quantity: number;
+    discountCents?: number;
+    taxCents?: number;
+  }>;
+  shippingAddress: {
+    fullName?: string;
+    line1: string;
+    line2?: string;
+    city: string;
+    region?: string;
+    postalCode?: string;
+    country?: string;
+    phone?: string;
+  };
+  billingAddress: {
+    fullName?: string;
+    line1: string;
+    line2?: string;
+    city: string;
+    region?: string;
+    postalCode?: string;
+    country?: string;
+    phone?: string;
+  };
+  orderType?: OrderType;
+  shippingTotalCents?: number;
+  discountTotalCents?: number;
+  taxTotalCents?: number;
+  initialStatus?: "DRAFT" | "PAYMENT_PENDING";
 };

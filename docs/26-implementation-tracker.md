@@ -306,16 +306,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Orders as the shared platform commerce aggregate: canonical lifecycle, immutable line/customer snapshots, server-computed totals, CRM operational workflows, Guardian administrative Create/Edit and Class D, Inventory orchestration via services only, Payments reference/reaction boundary |
-| **Status** | In progress (P13a–P13c complete; P13d+ not started) |
+| **Status** | In progress (P13a–P13d complete; P13e+ not started) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/orders-platform-blueprint` |
+| **Branch** | `feature/orders-guardian` (P13d); prior CRM work on `dev` via #48 |
 | **PR** | — |
-| **Dependencies** | P5 shell; P8 Products (variants/snapshots); P9 Users (patient FK + snapshots); P12 Inventory Reserve/Release/Commit/Restock (P12f closed by P13e); Class D gates (align with P6); blueprint [35](35-orders-module.md) |
-| **Scope** | **P13a (complete):** Prisma models + migration. **P13b (complete):** Nest `OrdersModule` domain services. **P13c (complete):** CRM `/v1/crm/orders` APIs + `/crm/orders` list/detail/edit UI; cancel/fulfill via lifecycle; notes/history/activity; `PERM-ORD-004`/`005`/`010`–`014` seeded — CRM never receives Create/Class D. **Next:** P13d Guardian → P13e Inventory → P13f Payments → P13g verification |
-| **Architecture changes** | Shared domain services context-agnostic; CRM thin controllers; inventory/payment hooks still no-op until P13e/f; money in cents; optimistic concurrency on transitions |
+| **Dependencies** | P5 shell; P8 Products; P9 Users; P12 Inventory (P12f closed by P13e); Class D gates; blueprint [35](35-orders-module.md) |
+| **Scope** | **P13a–c (complete on `dev`).** **P13d (complete):** Guardian `/v1/admin/orders` (API-204–212) + `/guardian/orders` UI — create, edit, Class D delete/archive/restore, financial correction, administrative override; shared `OrdersService`. **Next:** P13e Inventory → P13f Payments → P13g verification |
+| **Architecture changes** | Shared domain; CRM thin + Guardian thin; override bypasses normal graph with required reason; Platform Audit (`GRD-053`) deferred (activity metadata marks `platformAuditDeferred`) |
 | **Documentation updates** | [35](35-orders-module.md), this record |
-| **Notes** | On `feature/orders-platform-blueprint`. CRM Create still locked unavailable. Fulfill uses domain transition; Inventory Commit deferred to P13e. Optional `SEED_DEV_DATASET` seeds ~150 patients + ~100 `ORD-SEED-*` orders for CRM UI testing (dev-only; refused when `NODE_ENV=production`). |
-| **Verification** | API typecheck/lint/tests (109); admin typecheck/lint/build |
+| **Notes** | CRM Create still locked. Corrections do not execute Payments. Inventory Commit still deferred to P13e. |
+| **Verification** | API typecheck/lint/Orders tests; admin typecheck/lint/build |
 
 ### P10 — Internal Platform UX/UI Modernization
 
@@ -481,6 +481,7 @@ A phase is complete when all of the following hold.
 | 2.2 | 2026-08-20 | Platform Engineering | P13a Orders DB foundation: Prisma models + migration `20260820120000_orders_platform_module_foundation`; money in cents |
 | 2.3 | 2026-08-20 | Platform Engineering | P13b Orders domain services on `OrdersModule` (lifecycle/totals/snapshots/edit policy); no controllers |
 | 2.4 | 2026-08-20 | Platform Engineering | P13c CRM Orders: `/v1/crm/orders` APIs + CRM list/detail/edit UI; ORD_EDIT/Class D codes seeded; no CRM create |
+| 2.5 | 2026-08-20 | Platform Engineering | P13d Guardian Orders on `feature/orders-guardian`: `/v1/admin/orders` + `/guardian/orders` UI; Class D, Correct, Override |
 
 ---
 

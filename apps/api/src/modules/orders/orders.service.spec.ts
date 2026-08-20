@@ -479,4 +479,41 @@ describe('OrdersService', () => {
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('override bypasses normal graph but requires reason and Class D', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.DRAFT;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    tx.order.update = jest.fn().mockResolvedValue({
+      ...createdOrder,
+      status: OrderStatus.FULFILLED,
+    });
+    const service = buildService(prisma);
+
+    await expect(
+      service.overrideOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.FULFILLED,
+        reason: '',
+        classDAuthorized: true,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    await service.overrideOrder({
+      orderId: 'ord-1',
+      toStatus: OrderStatus.FULFILLED,
+      reason: 'documented exception',
+      classDAuthorized: true,
+      actorUserId: 'admin-1',
+    });
+
+    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          source: 'guardian_override',
+          toStatus: OrderStatus.FULFILLED,
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
 });

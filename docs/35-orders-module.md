@@ -5,7 +5,7 @@
 | Document | Orders Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | In delivery — P13a–P13c complete (CRM operational); P13d+ not started |
+| Status | In delivery — P13a–P13d complete (CRM + Guardian); P13e+ not started |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md) |
@@ -447,9 +447,11 @@ Server-side only: subtotal, discounts, shipping, tax, total, adjustments, refund
 | `OrderEditPolicyService` | CRM vs Guardian field allowlists by status |
 | `OrderSideEffectHooks` | Injectable no-op hooks for P13e Inventory / P13f Payments |
 
-Still deferred: `OrdersInventoryOrchestrator` execution (P13e), `OrdersPaymentReactionService` PSP wiring (P13f), **Guardian** HTTP controllers (P13d).
+Still deferred: `OrdersInventoryOrchestrator` execution (P13e), `OrdersPaymentReactionService` PSP wiring (P13f). Platform Audit writer (`GRD-053`) still deferred — Class D currently records Order History/Activity with `platformAuditDeferred: true`.
 
 **P13c delivered:** `CrmOrdersController` at `/v1/crm/orders` (`API-072`–`076d`) — list/detail/items/notes/history/activity, operational PATCH, cancel, fulfill. Thin controllers call `OrdersService`. CRM UI: `/crm/orders`, `/crm/orders/:id`, `/crm/orders/:id/edit`. **No** CRM create, **no** Class D endpoints.
+
+**P13d delivered:** `AdminOrdersController` at `/v1/admin/orders` (`API-204`–`212`) — list/detail/create/edit, Class D delete/archive/restore, corrections, overrides, notes/history/activity, normal transitions. Guardian UI: `/guardian/orders`, `/new`, `/:id`, `/:id/edit`.
 
 ### 13.2 Endpoint families
 
@@ -564,7 +566,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | **P13a** | Prisma Order, OrderItem, History, Activity, Notes, Adjustments, addresses/snapshots, enums | **Complete** |
 | **P13b** | Shared domain: snapshots, totals, lifecycle, edit allowlists, notes/activity/adjustments/Class D primitives | **Complete** |
 | **P13c** | CRM operational APIs + UI (`/crm/orders…`; no create; no Class D) | **Complete** |
-| **P13d** | Guardian admin APIs + UI + Class D | Not started |
+| **P13d** | Guardian admin APIs + UI + Class D (`/admin/orders…`, `/guardian/orders…`) | **Complete** |
 | **P13e** | Inventory orchestration (closes P12f) | Not started |
 | **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | Not started |
 | **P13g** | RBAC seed, verification, documentation freeze | Not started |

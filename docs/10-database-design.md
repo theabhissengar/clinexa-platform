@@ -499,22 +499,36 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- |
 | Purpose | Canonical commerce + clinical order aggregate |
 | Primary key | `id` |
-| Relationships | N:1 User (patient); 1:N OrderItems, Payments, Refunds; optional Consultation, Prescription, Subscription, CouponRedemption |
-| Business rules | Canonical statuses (`FR-ORD-002`, OR-08); Rx blocked until doctor + pharmacist rules (`FR-ORD-003`); non-Rx skip clinical states (`FR-ORD-004`, OR-09); no hard delete of paid clinical orders |
-| Key attributes (logical) | `status`, money totals snapshot, clinical_prerequisite flags, shipping fields, timestamps |
-| Retention | Retain indefinitely for clinical/commerce audit intent; cancel/refund via status |
-| Trace | FR-ORD-001–006, ARCH-047, ROAD-010 |
+| Relationships | N:1 User (patient, RESTRICT); 1:N OrderItems; optional opaque refs to Payments/Refunds (Payments-owned), Consultation, Prescription, QuestionnaireResponse(+version), Subscription, CouponRedemption; optional inventory reservation id(s) |
+| Business rules | Canonical statuses (`FR-ORD-002`, OR-08); Rx blocked until doctor + pharmacist rules (`FR-ORD-003`); non-Rx skip clinical states (`FR-ORD-004`, OR-09); no hard delete of paid clinical orders; CRM has no Create in V1; Class D soft-delete/archive Guardian-only ([35](35-orders-module.md)) |
+| Key attributes (logical) | `status`; `orderType` (`ONE_TIME` \| `SUBSCRIPTION_INITIAL` \| `SUBSCRIPTION_RENEWAL`); nullable `subscriptionId`; server-computed money totals **in cents**; customer + shipping/billing **snapshots** (`OrderAddress`); clinical prerequisite flags; payment status summary refs; timestamps; soft-delete/archive fields as designed |
+| Inventory coupling | **Reserve on successful payment authorization** when leaving `payment_pending`; Release/Commit/Restock via Inventory services only — Orders never writes inventory tables ([35 §10](35-orders-module.md), [34](34-inventory-module.md)) |
+| Persistence (P13a) | Prisma models `Order`, `OrderItem`, `OrderAddress`, `OrderStatusHistory`, `OrderActivity`, `OrderNote`, `OrderAdjustment`; migration `20260820120000_orders_platform_module_foundation` |
+| Retention | Retain indefinitely for clinical/commerce audit intent; cancel/refund via status; prefer terminal status over hard delete |
+| Trace | FR-ORD-001–006, ARCH-047, ROAD-010; blueprint [35](35-orders-module.md) |
 
 #### DB-027 OrderItems
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Line items with **price snapshots**, qty, Rx-eligibility snapshot, variant reference |
+| Purpose | Line items with **immutable catalog/price snapshots**, qty, Rx-eligibility snapshot, variant reference |
 | Primary key | `id` |
-| Relationships | N:1 Order; N:1 ProductVariant (historical FK) |
-| Business rules | Snapshot unit price, discount allocation, tax/shipping share as designed; catalog edits do not mutate lines |
+| Relationships | N:1 Order; N:1 ProductVariant (historical FK; RESTRICT when referenced); N:1 Product (RESTRICT) |
+| Business rules | Snapshot at finalize: product ID, variant ID, product name, SKU, product type (string), quantity, unit/sale price **cents**, tax/discount cents, Rx/catalog metadata; catalog edits do **not** mutate historical lines; historical rendering must not depend on live Product rows |
 | Retention | With order |
-| Trace | FR-ORD-001, FR-CHK-003 |
+| Trace | FR-ORD-001, FR-CHK-003; [35](35-orders-module.md) |
+
+#### DB-026a Order supporting entities (Orders-owned; blueprint precision)
+
+| Entity | Purpose |
+| --- | --- |
+| OrderStatusHistory | Append-only status transitions (Order History) |
+| OrderActivity | Operational interaction events |
+| OrderNote | Human-authored internal notes |
+| OrderAdjustment | Administrative/financial adjustments (Correct path; distinct from Payment refunds); kinds `CORRECTION`/`WRITE_OFF`/`CREDIT`/`DEBIT`/`OTHER` |
+| OrderAddress | Shipping + billing historical addresses (`SHIPPING`/`BILLING`, unique per order+kind) — survive user address changes/deletes |
+
+Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables (`DB-028`/`029`) remain **Payments-owned**.
 
 #### DB-028 Payments
 
@@ -1765,6 +1779,8 @@ flowchart LR
 | 1.1 | 2026-08-02 | Platform Engineering | TBD | §7.1 User lifecycle expanded to platform statuses; avatar opaque ref; Address remains §14; link [32](32-users-module.md) | Draft for review |
 | 1.2 | 2026-08-03 | Platform Engineering | TBD | `DB-062` Assets; DB-013 clarified as product-owned associations; avatar → User Media not Asset Library; Document Management labeling for DB-047; link [33](33-asset-library-module.md) | Draft for review |
 | 1.3 | 2026-08-03 | Platform Engineering | TBD | Inventory ledger-first (`DB-043` SoT); `DB-063`–`066` warehouses/reservations/policies; warehouse FK on balances/movements; link [34](34-inventory-module.md) | Draft for review |
+| 1.4 | 2026-08-20 | Platform Engineering | TBD | Orders `DB-026`/`027` snapshot/address precision; supporting history/activity/notes/adjustments; Reserve-at-auth; Payments-owned refs; link [35](35-orders-module.md) | Draft for review |
+| 1.5 | 2026-08-20 | Platform Engineering | TBD | P13a Prisma: money in cents; `OrderAddress` SHIPPING/BILLING; migration `20260820120000_orders_platform_module_foundation` | Draft for review |
 
 ---
 

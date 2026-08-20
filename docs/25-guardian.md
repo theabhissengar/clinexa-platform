@@ -274,7 +274,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-031 | Products | Commerce | No | `FR-PRD-002`, `FR-CRM-007` | Delete, archive, restore |
 | GRD-032 | Categories | Commerce | No | `FR-CAT-002` | Delete, archive, restore |
 | GRD-033 | Inventory | Commerce | Consume-only in CRM (no CRM admin) | `FR-INV-*`; blueprint [34](34-inventory-module.md) | Bulk cleanup; warehouse archive (Class D) |
-| GRD-034 | Orders (administration) | Commerce | Shared | `FR-ORD-*`, `FR-PAY-003` | Delete, archive, restore, financial correction, override |
+| GRD-034 | Orders (administration) | Commerce | Shared | `FR-ORD-*`, `FR-PAY-003`; [35](35-orders-module.md) | Delete, archive, restore, financial correction, override; admin Create |
 | GRD-035 | Subscriptions (administration) | Commerce | Shared | `FR-SUB-*` | Delete, archive, restore |
 | GRD-036 | Pricing, taxes, shipping | Commerce | No | `FR-SET-*` | Delete configuration entries |
 | GRD-037 | Pages | Content | No | `FR-CMS-*` | Delete, archive, restore |
@@ -409,18 +409,18 @@ Authoritative module blueprint: [32 — Users Module](32-users-module.md). Guard
 
 | Action | Guardian | CRM |
 | --- | --- | --- |
-| Create | Yes (administrative path if ever needed) | No (commerce creation happens via Store checkout) |
+| Create | Yes (administrative path, `PERM-ORD-004`) | **No** — Store checkout / System renewal later; no CRM create |
 | View | Yes | Yes |
-| Edit | Yes (administrative) | Yes (operational workflow) |
-| Delete | Yes | No |
-| Archive | Yes | No |
-| Restore | Yes | No |
-| Refunds | Yes (administrative corrections) | Policy-scoped operational assist per existing FRs |
-| Financial corrections | Yes | No |
-| Administrative overrides | Yes | No |
-| Doctor / pharmacy / fulfillment / timeline / documents / internal notes | No (view-only where needed) | Yes |
+| Edit | Yes (administrative + ops fields, `PERM-ORD-005`) | Yes (operational field allowlist only — [35 §7](35-orders-module.md)) |
+| Delete | Yes (Class D) | No |
+| Archive | Yes (Class D) | No |
+| Restore | Yes (Class D) | No |
+| Refunds | Yes (administrative corrections via Payments) | Policy-scoped operational assist (`PERM-PAY-003`) |
+| Financial corrections | Yes (`PERM-ORD-013`) | No |
+| Administrative overrides | Yes (`PERM-ORD-014`) | No |
+| Doctor / pharmacy / fulfillment / timeline / notes | No (view-only where needed) | Yes |
 
-**Refund taxonomy (`GRD-082`).** Operational refund assist and policy cancel remain in CRM where functional requirements already allow them (`OR-11`, `FR-SUP-005`, `FR-PAY-003`). Financial corrections, administrative overrides, archive, delete, and restore are Guardian-only.
+**Refund taxonomy (`GRD-082`).** Operational refund assist and policy cancel remain in CRM where functional requirements already allow them (`OR-11`, `FR-SUP-005`, `FR-PAY-003`). Financial corrections, administrative overrides, archive, delete, and restore are Guardian-only. Full Orders blueprint: [35](35-orders-module.md).
 
 ### 6.3 Subscriptions
 
@@ -678,6 +678,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users §6.1 links blueprint [32](32-users-module.md); suspend/deactivate vs Class D clarified | Draft for review |
 | 1.3 | 2026-08-03 | Platform Engineering | Pending | `GRD-039` Asset library; `PERM-AST-*`; blueprint [33](33-asset-library-module.md); drop `FR-DOC-*` as Asset Library primary | Draft for review |
 | 1.4 | 2026-08-03 | Platform Engineering | Pending | `GRD-033` full Inventory admin (not policy-only); CRM consume-only; blueprint [34](34-inventory-module.md); APIs `API-187`–`203` | Draft for review |
+| 1.5 | 2026-08-20 | Platform Engineering | Pending | `GRD-034` Orders admin Create/Class D clarified; link [35](35-orders-module.md) | Draft for review |
 
 ---
 

@@ -76,6 +76,7 @@ model User {
   staffProfile         StaffProfile?
   changeHistory        UserChangeHistory[]
   activities           UserActivity[]
+  orders               Order[]
 
   @@index([status])
   @@index([deletedAt])
@@ -377,6 +378,7 @@ model Product {
   activities     ProductActivity[]
   relationsFrom  ProductRelation[] @relation("ProductRelationSource")
   relationsTo    ProductRelation[] @relation("ProductRelationTarget")
+  orderItems     OrderItem[]
 
   @@unique([slug])
   @@index([lifecycleStatus])
@@ -401,6 +403,7 @@ model ProductVariant {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
 
   @@unique([sku])
   @@index([productId])
@@ -726,4 +729,252 @@ model InventoryPolicy {
   updatedAt                  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("inventory_policies")
+}
+
+// ---------------------------------------------------------------------------
+// Orders (DB-026, DB-027 + supporting — docs/35) — P13a foundation
+// ---------------------------------------------------------------------------
+
+/// Canonical OR-08 order lifecycle statuses.
+enum OrderStatus {
+  DRAFT
+  PAYMENT_PENDING
+  AWAITING_CLINICAL_REVIEW
+  CLINICAL_APPROVED
+  CLINICAL_DECLINED
+  AWAITING_FULFILLMENT
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+/// Forward-compat order classification (Subscriptions produce orders later).
+enum OrderType {
+  ONE_TIME
+  SUBSCRIPTION_INITIAL
+  SUBSCRIPTION_RENEWAL
+}
+
+enum OrderAddressKind {
+  SHIPPING
+  BILLING
+}
+
+/// Adjustment kinds for Guardian Correct path (distinct from Payment refunds).
+enum OrderAdjustmentKind {
+  CORRECTION
+  WRITE_OFF
+  CREDIT
+  DEBIT
+  OTHER
+}
+
+/// Canonical commerce order aggregate (DB-026).
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  /// Human-readable reference (unique).
+  orderNumber String      @unique @map("order_number")
+  patientUserId String    @map("patient_user_id") @db.Uuid
+  status      OrderStatus @default(DRAFT)
+  orderType   OrderType   @default(ONE_TIME) @map("order_type")
+  /// Opaque Subscription id — no Subscription table FK in V1.
+  subscriptionId String?  @map("subscription_id") @db.Uuid
+
+  /// Historical customer snapshot (authoritative for this order; not live User profile).
+  customerFirstName String? @map("customer_first_name")
+  customerLastName  String? @map("customer_last_name")
+  customerEmail     String? @map("customer_email")
+  customerPhone     String? @map("customer_phone")
+
+  /// Server-computed money totals (cents; catalog convention).
+  currency            String @default("USD")
+  subtotalCents       Int    @default(0) @map("subtotal_cents")
+  discountTotalCents  Int    @default(0) @map("discount_total_cents")
+  shippingTotalCents  Int    @default(0) @map("shipping_total_cents")
+  taxTotalCents       Int    @default(0) @map("tax_total_cents")
+  totalCents          Int    @default(0) @map("total_cents")
+  adjustmentTotalCents Int   @default(0) @map("adjustment_total_cents")
+  refundedTotalCents  Int    @default(0) @map("refunded_total_cents")
+
+  /// Opaque Payments refs / status summary (Payments owns transaction records).
+  paymentIntentId       String? @map("payment_intent_id")
+  latestPaymentId       String? @map("latest_payment_id") @db.Uuid
+  paymentStatusSummary  String? @map("payment_status_summary")
+
+  /// Opaque Inventory reservation ref (Inventory owns StockReservation; no FK).
+  reservationId String? @map("reservation_id") @db.Uuid
+
+  /// Opaque clinical / questionnaire refs (owning modules later).
+  consultationId              String? @map("consultation_id") @db.Uuid
+  prescriptionId              String? @map("prescription_id") @db.Uuid
+  questionnaireResponseId     String? @map("questionnaire_response_id") @db.Uuid
+  questionnaireVersionId      String? @map("questionnaire_version_id") @db.Uuid
+
+  requiresClinicalReview Boolean @default(false) @map("requires_clinical_review")
+  isRxOrder              Boolean @default(false) @map("is_rx_order")
+
+  /// CRM-operational fulfillment fields.
+  trackingNumber String?   @map("tracking_number")
+  carrier        String?
+  shippedAt      DateTime? @map("shipped_at") @db.Timestamptz(3)
+
+  /// Guardian-administrative metadata.
+  adminTags            Json? @map("admin_tags")
+  reconciliationFlags  Json? @map("reconciliation_flags")
+
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  patient         User                 @relation(fields: [patientUserId], references: [id], onDelete: Restrict)
+  items           OrderItem[]
+  addresses       OrderAddress[]
+  statusHistory   OrderStatusHistory[]
+  activities      OrderActivity[]
+  notes           OrderNote[]
+  adjustments     OrderAdjustment[]
+
+  @@index([patientUserId, createdAt])
+  @@index([status, createdAt])
+  @@index([orderType])
+  @@index([subscriptionId])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([deletedAt])
+  @@index([archivedAt])
+  @@index([reservationId])
+  @@map("orders")
+}
+
+/// Line items with immutable catalog/price snapshots (DB-027).
+model OrderItem {
+  id        String @id @default(uuid()) @db.Uuid
+  orderId   String @map("order_id") @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  variantId String @map("variant_id") @db.Uuid
+
+  /// Immutable snapshots at finalize — authoritative for historical rendering.
+  productName      String  @map("product_name")
+  sku              String
+  productType      String  @map("product_type")
+  isRxEligible     Boolean @default(false) @map("is_rx_eligible")
+  catalogMetadata  Json?   @map("catalog_metadata")
+
+  quantity         Int
+  unitPriceCents   Int     @map("unit_price_cents")
+  salePriceCents   Int     @map("sale_price_cents")
+  taxCents         Int     @default(0) @map("tax_cents")
+  discountCents    Int     @default(0) @map("discount_cents")
+  lineSubtotalCents Int    @default(0) @map("line_subtotal_cents")
+  lineTotalCents   Int     @default(0) @map("line_total_cents")
+
+  /// Optional ops metadata (not Inventory SoT).
+  fulfillmentMetadata Json? @map("fulfillment_metadata")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
+  @@map("order_items")
+}
+
+/// Historical shipping/billing address snapshots for an order.
+model OrderAddress {
+  id        String           @id @default(uuid()) @db.Uuid
+  orderId   String           @map("order_id") @db.Uuid
+  kind      OrderAddressKind
+  fullName  String?          @map("full_name")
+  line1     String           @map("line1")
+  line2     String?          @map("line2")
+  city      String
+  region    String?
+  postalCode String?         @map("postal_code")
+  country   String           @default("US")
+  phone     String?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, kind])
+  @@index([orderId])
+  @@map("order_addresses")
+}
+
+/// Append-only status transition ledger (Order History — status dimension).
+model OrderStatusHistory {
+  id          String       @id @default(uuid()) @db.Uuid
+  orderId     String       @map("order_id") @db.Uuid
+  fromStatus  OrderStatus? @map("from_status")
+  toStatus    OrderStatus  @map("to_status")
+  actorUserId String?      @map("actor_user_id") @db.Uuid
+  /// e.g. system | crm | guardian | payment | clinical | inventory
+  source      String
+  reason      String?
+  metadata    Json?
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+/// Operational interaction events (not History diffs, not Platform Audit, not Notes bodies).
+model OrderActivity {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  kind        String
+  summary     String
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_activities")
+}
+
+/// Human-authored internal notes.
+model OrderNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  authorUserId String  @map("author_user_id") @db.Uuid
+  body        String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([authorUserId])
+  @@map("order_notes")
+}
+
+/// Administrative/financial adjustments (Correct path) — not Payment refunds.
+model OrderAdjustment {
+  id          String              @id @default(uuid()) @db.Uuid
+  orderId     String              @map("order_id") @db.Uuid
+  kind        OrderAdjustmentKind @default(CORRECTION)
+  /// Signed cents relative to order (positive increases customer credit / reduces owed as designed by domain).
+  amountCents Int                 @map("amount_cents")
+  reason      String?
+  actorUserId String?             @map("actor_user_id") @db.Uuid
+  /// Opaque Payments correction/refund linkage when money moves.
+  paymentRef  String?             @map("payment_ref")
+  metadata    Json?
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_adjustments")
 }

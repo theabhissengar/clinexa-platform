@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Engineering leadership, architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [35 — Orders module](35-orders-module.md) |
 
 This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
 
@@ -96,9 +96,10 @@ Every phase record in §5 carries these fields.
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
 | **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | In progress | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
-| **P9+** | Subsequent business modules (CMS depth, Orders admin depth, …) | Not started | P9 (or parallel after P8 where independent) |
+| **P9+** | Subsequent business modules (CMS depth, …) — Orders extracted to P13 | Not started | P9 (or parallel after P8 where independent) |
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
-| **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f |
+| **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
+| **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (blueprint) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -300,6 +301,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | Implementation on `feature/inventory-platform-blueprint-refinement`. Guardian-only admin. Movements SoT; balances projections. Low-stock emit-only. Digital products skip tracking. Multi-WH/FEFO/FIFO/serials reserved. |
 | **Verification** | API/admin typecheck + lint; inventory unit tests; nest build; migrate + seed (default warehouse, policies, demo stock) |
 
+### P13 — Orders Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Orders as the shared platform commerce aggregate: canonical lifecycle, immutable line/customer snapshots, server-computed totals, CRM operational workflows, Guardian administrative Create/Edit and Class D, Inventory orchestration via services only, Payments reference/reaction boundary |
+| **Status** | In progress (P13a–P13c complete; P13d+ not started) |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/orders-platform-blueprint` |
+| **PR** | — |
+| **Dependencies** | P5 shell; P8 Products (variants/snapshots); P9 Users (patient FK + snapshots); P12 Inventory Reserve/Release/Commit/Restock (P12f closed by P13e); Class D gates (align with P6); blueprint [35](35-orders-module.md) |
+| **Scope** | **P13a (complete):** Prisma models + migration. **P13b (complete):** Nest `OrdersModule` domain services. **P13c (complete):** CRM `/v1/crm/orders` APIs + `/crm/orders` list/detail/edit UI; cancel/fulfill via lifecycle; notes/history/activity; `PERM-ORD-004`/`005`/`010`–`014` seeded — CRM never receives Create/Class D. **Next:** P13d Guardian → P13e Inventory → P13f Payments → P13g verification |
+| **Architecture changes** | Shared domain services context-agnostic; CRM thin controllers; inventory/payment hooks still no-op until P13e/f; money in cents; optimistic concurrency on transitions |
+| **Documentation updates** | [35](35-orders-module.md), this record |
+| **Notes** | On `feature/orders-platform-blueprint`. CRM Create still locked unavailable. Fulfill uses domain transition; Inventory Commit deferred to P13e. Optional `SEED_DEV_DATASET` seeds ~150 patients + ~100 `ORD-SEED-*` orders for CRM UI testing (dev-only; refused when `NODE_ENV=production`). |
+| **Verification** | API typecheck/lint/tests (109); admin typecheck/lint/build |
+
 ### P10 — Internal Platform UX/UI Modernization
 
 | Field | Value |
@@ -350,6 +367,7 @@ flowchart TD
   P9[P9_Users_platform_module]
   P11[P11_Asset_Library_platform_module]
   P12[P12_Inventory_platform_module]
+  P13[P13_Orders_platform_module]
   P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
@@ -367,12 +385,17 @@ flowchart TD
   P5 --> P9
   P5 --> P11
   P5 --> P12
+  P5 --> P13
   P8 --> P11
   P8 --> P12
+  P8 --> P13
+  P9 --> P13
+  P12 --> P13
   P8 --> P10
   P9 --> P10
   P11 --> P10
   P12 --> P10
+  P13 --> P10
   P7 --> PF
 ```
 
@@ -454,6 +477,10 @@ A phase is complete when all of the following hold.
 | 1.8 | 2026-08-03 | Platform Engineering | P11 In progress on `feature/asset-library-platform-module`: schema, Local storage, APIs, Guardian UI |
 | 1.9 | 2026-08-03 | Platform Engineering | P12 Inventory planning complete; blueprint [34](34-inventory-module.md); Guardian-only admin; ledger-first SoT; Inventory removed from P9+ catch-all |
 | 2.0 | 2026-08-03 | Platform Engineering | P12 In progress: Prisma inventory schema, Nest module, Guardian UI, seed, APIs `API-187`–`203` |
+| 2.1 | 2026-08-20 | Platform Engineering | P13 Orders blueprint on `feature/orders-platform-blueprint`; [35](35-orders-module.md); Orders removed from P9+ catch-all; Reserve-at-auth; CRM no Create/Class D |
+| 2.2 | 2026-08-20 | Platform Engineering | P13a Orders DB foundation: Prisma models + migration `20260820120000_orders_platform_module_foundation`; money in cents |
+| 2.3 | 2026-08-20 | Platform Engineering | P13b Orders domain services on `OrdersModule` (lifecycle/totals/snapshots/edit policy); no controllers |
+| 2.4 | 2026-08-20 | Platform Engineering | P13c CRM Orders: `/v1/crm/orders` APIs + CRM list/detail/edit UI; ORD_EDIT/Class D codes seeded; no CRM create |
 
 ---
 

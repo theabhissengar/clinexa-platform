@@ -98,6 +98,29 @@ Asset Library V1 omits folders/collections/tags routes (reserved). See [33](33-a
 
 The same shape applies in CRM, for example `/crm/orders/:id/history`.
 
+**Orders mini-app routes** ([35](35-orders-module.md)):
+
+```text
+# CRM (operational — no create)
+/crm/orders
+/crm/orders/:id
+/crm/orders/:id/edit
+/crm/orders/:id/history
+/crm/orders/:id/activity
+/crm/orders/:id/notes
+
+# Guardian (administrative + Class D)
+/guardian/orders
+/guardian/orders/new
+/guardian/orders/:id
+/guardian/orders/:id/edit
+/guardian/orders/:id/history
+/guardian/orders/:id/activity
+/guardian/orders/:id/notes
+```
+
+CRM must **not** expose `/crm/orders/new`. Class D actions render only under Guardian detail.
+
 | ID | Rule |
 | --- | --- |
 | NAV-015 | Not every module implements every page; the hierarchy is the standard shape, not a mandate (`GRD-074`, `GRD-075`) |
@@ -358,6 +381,7 @@ Detailed test cases live in [22 — Testing strategy](22-testing-strategy.md); p
 | 1.2 | 2026-08-02 | Platform Engineering | Pending | Users group pages clarified (Users list/editor tabs, Roles); link [32](32-users-module.md) | Draft for review |
 | 1.3 | 2026-08-03 | Platform Engineering | Pending | Asset Library routes `/guardian/assets`; Content group label; link [33](33-asset-library-module.md) | Draft for review |
 | 1.4 | 2026-08-03 | Platform Engineering | Pending | Commerce Inventory (Guardian admin); CRM has no Inventory admin nav; escalate to `/guardian/inventory`; link [34](34-inventory-module.md) | Draft for review |
+| 1.5 | 2026-08-20 | Platform Engineering | Pending | Orders mini-app routes CRM (no create) + Guardian (`/new` + Class D); link [35](35-orders-module.md) | Draft for review |
 
 ---
 

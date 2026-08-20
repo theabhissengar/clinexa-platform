@@ -107,7 +107,7 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Product** | View, Create, Edit, Publish, Unpublish, Delete, Archive, Restore | View | View published | View purchased context | Index | Mobile: View published; Public API: View published |
 | **Category** | View, Create, Edit, Publish, Delete, Archive, Restore | View | View published | — | Index | Public API: View published |
 | **Cart** | — | — | Create own, Edit own, Delete own | View own | Merge on sign-in, Expire | Mobile: Create own, Edit own |
-| **Order** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (operational fields), Transition, Assist (policy refund and cancel), Export | Create (checkout finalize) | View own, Assist request (cancel or support path) | Create (renewal), Transition | Mobile: View own; Admin mobile: View |
+| **Order** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (**operational fields only** — see [35](35-orders-module.md) §7), Transition (fulfill/cancel), Assist (policy refund and cancel), Notes, History/Activity, Export — **no Create; no Class D** | Create (checkout finalize) | View own, Assist request (cancel or support path) | Create (renewal), Transition | Mobile: View own; Admin mobile: View |
 | **Payment** | View, Correct, Configure providers, Rotate credentials | View, Assist (policy-scoped refund) | Initiate intent | Update own payment method | Capture, Reconcile from webhooks | Mobile: Update own method |
 | **Subscription** | View, Create, Edit (administrative fields), Delete, Archive, Restore | View, Create (operational assist), Edit (operational fields), Transition (renew, pause, resume) | Create (plan purchase) | View own, Edit own, Cancel own | Renew, Apply grace, Expire | Mobile: View own, Cancel own |
 | **Subscription plan** | View, Create, Edit, Publish, Delete, Archive | View | View published | View own plan | — | — |
@@ -220,6 +220,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.3 | 2026-08-02 | Platform Engineering | Users module in delivery (`feature/users-platform-module`); CRM no Class D confirmed in APIs |
 | 1.4 | 2026-08-03 | Platform Engineering | Media asset → Asset (Asset Library); CRM select-only; `PERM-AST-010`/`011`; link [33](33-asset-library-module.md) |
 | 1.5 | 2026-08-03 | Platform Engineering | Inventory: Guardian-only admin; CRM consume + service reserve/commit; warehouse/reservation/movement rows; link [34](34-inventory-module.md) |
+| 1.6 | 2026-08-20 | Platform Engineering | Order row: CRM no Create/Class D; operational edit allowlist; pointer to [35](35-orders-module.md) |
 
 ---
 

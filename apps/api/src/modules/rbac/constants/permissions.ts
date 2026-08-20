@@ -51,6 +51,20 @@ export const Permissions = {
   ORD_VIEW: 'PERM-ORD-001',
   ORD_CANCEL: 'PERM-ORD-002',
   ORD_FULFILL: 'PERM-ORD-003',
+  /** Guardian admin create path only — never grant to CRM. */
+  ORD_CREATE: 'PERM-ORD-004',
+  /** Edit order fields (context allowlist enforced in domain). */
+  ORD_EDIT: 'PERM-ORD-005',
+  /** Class D — soft-delete order (Guardian only). */
+  ORD_DELETE: 'PERM-ORD-010',
+  /** Class D — archive order (Guardian only). */
+  ORD_ARCHIVE: 'PERM-ORD-011',
+  /** Class D — restore order (Guardian only). */
+  ORD_RESTORE: 'PERM-ORD-012',
+  /** Class D — financial correction (Guardian only). */
+  ORD_CORRECT: 'PERM-ORD-013',
+  /** Class D — administrative override (Guardian / Super Admin). */
+  ORD_OVERRIDE: 'PERM-ORD-014',
 
   SUB_MANAGE_OWN: 'PERM-SUB-001',
   SUB_CONFIGURE_PLANS: 'PERM-SUB-002',
@@ -430,6 +444,66 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     description: 'Record fulfillment after clinical and pharmacy gates.',
     resource: 'order',
     action: 'fulfill',
+  },
+  {
+    code: Permissions.ORD_CREATE,
+    module: 'ORD',
+    name: 'Create order (admin)',
+    description:
+      'Create an order via Guardian administrative path. Never granted to CRM in V1.',
+    resource: 'order',
+    action: 'create',
+  },
+  {
+    code: Permissions.ORD_EDIT,
+    module: 'ORD',
+    name: 'Edit order',
+    description:
+      'Edit order fields subject to CRM-operational vs Guardian-administrative allowlists. Does not imply Class D.',
+    resource: 'order',
+    action: 'edit',
+  },
+  {
+    code: Permissions.ORD_DELETE,
+    module: 'ORD',
+    name: 'Delete order',
+    description: 'Soft-delete an order in Guardian. Class D.',
+    resource: 'order',
+    action: 'delete',
+  },
+  {
+    code: Permissions.ORD_ARCHIVE,
+    module: 'ORD',
+    name: 'Archive order',
+    description: 'Archive an order in Guardian. Class D.',
+    resource: 'order',
+    action: 'archive',
+  },
+  {
+    code: Permissions.ORD_RESTORE,
+    module: 'ORD',
+    name: 'Restore order',
+    description: 'Restore an archived or soft-deleted order. Class D.',
+    resource: 'order',
+    action: 'restore',
+  },
+  {
+    code: Permissions.ORD_CORRECT,
+    module: 'ORD',
+    name: 'Financial correction',
+    description:
+      'Apply administrative financial correction to an order. Class D. Calls Payments when money moves.',
+    resource: 'order',
+    action: 'correct',
+  },
+  {
+    code: Permissions.ORD_OVERRIDE,
+    module: 'ORD',
+    name: 'Administrative override',
+    description:
+      'Force an administratively justified state transition or policy exemption. Class D. Super Administrator.',
+    resource: 'order',
+    action: 'override',
   },
   {
     code: Permissions.SUB_MANAGE_OWN,

@@ -69,8 +69,8 @@ Products **consume Inventory only through Inventory services** (e.g. availabilit
 
 | Service | When (examples) |
 | --- | --- |
-| `Reserve()` | Hold quantity for an order per lifecycle policy |
-| `Release()` | Cancel, clinical decline, reservation expiry |
+| `Reserve()` | **V1 primary:** on successful payment authorization when order leaves `payment_pending` ([35 §10](35-orders-module.md)) |
+| `Release()` | Cancel, clinical decline, reservation expiry, pre-fulfill refund |
 | `Commit()` | Successful fulfillment |
 | `Restock()` | Refund/cancel when unfulfilled/returned stock rules apply (`FR-INV-005`) |
 

@@ -285,7 +285,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Cart | CART | `PERM-CART-001` Create/update/delete cart lines; `PERM-CART-002` Apply coupon staging | Guest, Patient |
 | Checkout | CHK | `PERM-CHK-001` Start checkout; `PERM-CHK-002` Finalize order (auth required) | Patient |
 | Payments | PAY | `PERM-PAY-001` Pay; `PERM-PAY-002` Manage saved methods (own); `PERM-PAY-003` Initiate refund | Patient; Support/Ops |
-| Orders | ORD | `PERM-ORD-001` View own/staff-scoped; `PERM-ORD-002` Cancel; `PERM-ORD-003` Fulfill/ship | Patient; Support; Ops |
+| Orders | ORD | `PERM-ORD-001` View own/staff-scoped; `PERM-ORD-002` Cancel; `PERM-ORD-003` Fulfill/ship; `PERM-ORD-004` Admin Create (Guardian only); `PERM-ORD-005` Edit (context field allowlist) | Patient; Support; Ops; Admin |
 | Subscriptions | SUB | `PERM-SUB-001` View/manage own; `PERM-SUB-002` Configure plans; `PERM-SUB-003` Assist renewal (no gate bypass) | Patient; Admin; Support |
 | Questionnaires | QST | `PERM-QST-001` Submit responses; `PERM-QST-002` View own status; `PERM-QST-003` View full answers (clinical); `PERM-QST-004` Configure definitions | Patient; Doctor; Admin |
 | Doctor Reviews | CRM | `PERM-CRM-001` Open consult queue; `PERM-CRM-002` Approve; `PERM-CRM-003` Decline; `PERM-CRM-004` Request info; `PERM-CRM-005` Clinical notes | Doctor |
@@ -369,6 +369,8 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-ORD-001 | View orders | View order records—own for patients; role-scoped for authorized staff. | ORD | Patient (own); Doctor, Pharmacist, Support, Operations, Admin (scoped) |
 | PERM-ORD-002 | Cancel order | Cancel an order or apply cancel/refund outcomes when policy allows. | ORD | Patient (own, scoped); Support, Operations; Admin (scoped) |
 | PERM-ORD-003 | Fulfill/ship order | Record fulfillment/shipment after required clinical and pharmacy gates clear for Rx. | ORD | Operations |
+| PERM-ORD-004 | Create order (admin) | Create an order via Guardian administrative path. **Never granted to CRM principals in V1.** | ORD | Admin (Guardian) |
+| PERM-ORD-005 | Edit order | Edit order fields subject to CRM-operational vs Guardian-administrative allowlists ([35 §7](35-orders-module.md)). Does **not** imply Class D, totals rewrite, or clinical decisions. | ORD | Support/Ops (ops fields); Admin (admin + ops fields) |
 | PERM-SUB-001 | Manage own subscription | View, update, and cancel the patient’s own subscriptions. | SUB | Patient; Support (assist, scoped); Admin |
 | PERM-SUB-002 | Configure subscription plans | Create and publish subscription plan configuration. | SUB | Admin |
 | PERM-SUB-003 | Assist renewal | Assist with renewal failures without bypassing clinical gates. | SUB | Support |
@@ -482,6 +484,8 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Payments (pay / own methods) | — | ✓ | — | — | — | — | — | — | — | PERM-PAY-001–002 |
 | Refunds initiate | — | ◐ | — | — | ✓ | ✓ | — | — | ◐ | PERM-PAY-003 |
 | Orders view | — | ◐ | ◐ | ◐ | ◐ | ◐ | — | — | ◐ | PERM-ORD-001 |
+| Orders create (admin) | — | — | — | — | — | — | — | — | ✓ | PERM-ORD-004 (Guardian only; never CRM) |
+| Orders edit | — | — | — | — | ◐ | ◐ | — | — | ◐ | PERM-ORD-005 (context allowlist) |
 | Orders fulfill / ship | — | — | — | — | — | ✓† | — | — | — | PERM-ORD-003 |
 | Subscriptions own manage | — | ✓ | — | — | ◐ | — | — | — | M | PERM-SUB-001–002 |
 | QST submit / own status | — | ✓ | — | — | — | — | — | — | M | PERM-QST-001–002,004 |
@@ -586,7 +590,7 @@ The matrix above answers *which role* may perform an action. This table answers 
 | Entity | Create | View | Edit | Delete / Archive / Restore | Notes |
 | --- | --- | --- | --- | --- | --- |
 | Users | Guardian | Both | Guardian (administrative fields), CRM (operational, clinical, support fields as permitted) | Guardian only | `PERM-ADM-030`–`032` |
-| Orders | Guardian (administrative path), Store checkout (patient path) | Both | Guardian (administrative), CRM (operational workflow) | Guardian only | `PERM-ORD-010`–`012` |
+| Orders | Guardian (administrative path), Store checkout (patient path) | Both | Guardian (administrative), CRM (operational workflow — **no Create**) | Guardian only | `PERM-ORD-010`–`012`; create `PERM-ORD-004` Guardian-only ([35](35-orders-module.md)) |
 | Orders — financial | Guardian: corrections and administrative overrides (`PERM-ORD-013`, `PERM-ORD-014`) | — | CRM: policy-scoped operational refund and cancel assist (`PERM-PAY-003`) | Guardian only | Corrections ≠ operational refunds |
 | Subscriptions | Both | Both | Guardian (administrative), CRM (operational: renew, pause, resume) | Guardian only | `PERM-SUB-010`–`012` |
 | Products, Categories, CMS, Blogs, Coupons | Guardian | Both (published content readable from Store) | Guardian | Guardian only | `PERM-PRD/CAT/CMS/BLG/CPN-010` |
@@ -921,6 +925,7 @@ flowchart TB
 | 1.6 | 2026-08-02 | Platform Engineering | — | Clarify `PERM-ADM-001` covers suspend/deactivate/reactivate; Class D remains archive/restore/delete only; link [32](32-users-module.md) | Draft for review |
 | 1.7 | 2026-08-03 | Platform Engineering | — | Asset Library `PERM-AST-001`/`002`/`010`/`011`; Documents labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 | 1.8 | 2026-08-03 | Platform Engineering | — | Split `PERM-INV-002` vs `004`/`005`/`010`; Guardian-only inventory admin; link [34](34-inventory-module.md) | Draft for review |
+| 1.9 | 2026-08-20 | Platform Engineering | — | `PERM-ORD-004` admin create (Guardian only); `PERM-ORD-005` context-scoped edit; CRM never Create/Class D; link [35](35-orders-module.md) | Draft for review |
 
 ---
 

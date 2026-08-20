@@ -209,13 +209,10 @@ export function GuardianOrderCreatePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (selectedPatient) return;
+
     const q = patientQuery.trim();
-    if (selectedPatient || q.length < 2) {
-      setPatientResults([]);
-      setPatientSearchLoading(false);
-      setPatientSearchError(null);
-      return;
-    }
+    if (q.length < 2) return;
 
     let cancelled = false;
     const handle = window.setTimeout(() => {
@@ -248,10 +245,23 @@ export function GuardianOrderCreatePage() {
     };
   }, [patientQuery, selectedPatient]);
 
+  function resetPatientSearch() {
+    setPatientResults([]);
+    setPatientSearchLoading(false);
+    setPatientSearchError(null);
+  }
+
+  function onPatientQueryChange(next: string) {
+    setPatientQuery(next);
+    if (next.trim().length < 2) {
+      resetPatientSearch();
+    }
+  }
+
   function selectPatient(user: AdminUser) {
     setSelectedPatient(user);
     setPatientQuery("");
-    setPatientResults([]);
+    resetPatientSearch();
     setShipping(addressFromUser(user, user.shippingAddress));
     setBilling(
       addressFromUser(user, user.billingAddress ?? user.shippingAddress),
@@ -261,7 +271,7 @@ export function GuardianOrderCreatePage() {
   function clearPatient() {
     setSelectedPatient(null);
     setPatientQuery("");
-    setPatientResults([]);
+    resetPatientSearch();
   }
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
@@ -381,7 +391,7 @@ export function GuardianOrderCreatePage() {
                 <Input
                   id="patientSearch"
                   value={patientQuery}
-                  onChange={(event) => setPatientQuery(event.target.value)}
+                  onChange={(event) => onPatientQueryChange(event.target.value)}
                   placeholder="e.g. Avery, or dev.patient.001@clinexa.test"
                   autoComplete="off"
                 />

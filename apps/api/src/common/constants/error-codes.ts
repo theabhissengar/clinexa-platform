@@ -71,6 +71,23 @@ export const ErrorCodes = {
   INV_WAREHOUSE_INVALID: 'ERR-INV-004',
   /** Policy or validation failure. */
   INV_POLICY_VIOLATION: 'ERR-INV-005',
+
+  /** Invalid order lifecycle transition. */
+  ORD_INVALID_TRANSITION: 'ERR-ORD-001',
+  /** Order not found or soft-deleted. */
+  ORD_NOT_FOUND: 'ERR-ORD-002',
+  /** Immutable order field/snapshot mutation refused. */
+  ORD_IMMUTABLE: 'ERR-ORD-003',
+  /** Invalid line item / quantity / catalog reference. */
+  ORD_INVALID_ITEM: 'ERR-ORD-004',
+  /** Totals validation failure. */
+  ORD_INVALID_TOTALS: 'ERR-ORD-005',
+  /** Concurrent lifecycle update conflict. */
+  ORD_CONFLICT: 'ERR-ORD-006',
+  /** Destructive Class D operation refused without authorization. */
+  ORD_CLASS_D_DENIED: 'ERR-ORD-007',
+  /** Edit field not allowed for context/status. */
+  ORD_EDIT_FORBIDDEN: 'ERR-ORD-008',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

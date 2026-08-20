@@ -358,7 +358,7 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 | CRM-030 | Dashboard | Both | Must | `FR-CRM-001`, `FR-ANL-*` | Staff home; `NFR-006` |
 | CRM-031 | User Management | Guardian | Must | `FR-ADM-001` | `JRN-031` |
 | CRM-032 | Patient Management | CRM | Must | `FR-CRM-001`, `FR-SRCH-002`, `PERM-CRM-010` | Clinical/ops context |
-| CRM-033 | Orders | Both | Must | `FR-CRM-005`, `FR-ORD-003`–`006` | `JRN-016`; `BP-05` |
+| CRM-033 | Orders | Both | Must | `FR-CRM-005`, `FR-ORD-003`–`006` | `JRN-016`; `BP-05`; blueprint [35](35-orders-module.md) |
 | CRM-034 | Clinical Review | CRM | Must | `FR-CRM-002` | `JRN-011`–`014`; `BP-03` |
 | CRM-035 | Prescriptions | CRM | Must | `FR-CRM-003` | `JRN-012`; `BP-04`; cross-module |
 | CRM-036 | Pharmacy | CRM | Must | `FR-CRM-004` | `JRN-015`; `BP-04`/`05` |
@@ -405,9 +405,9 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 
 | Aspect | Detail |
 | --- | --- |
-| Responsibilities | Staff order list/detail; cancel within policy; fulfill/ship when gates clear; refund coordination with Support |
-| Ownership | Operations primary for fulfill (`PERM-ORD-003`); Doctor/Pharmacist/Support/Admin scoped views |
-| Boundaries | Payment ≠ dispensing (`OR-03`); Rx fulfill requires doctor approve + pharmacist review (`FR-ORD-003`); Marketing/Content denied order lists |
+| Responsibilities | Staff order list/detail; operational field edits (allowlist); cancel within policy; fulfill/ship when gates clear; refund assist with Support; notes, history, activity |
+| Ownership | Operations primary for fulfill (`PERM-ORD-003`); Doctor/Pharmacist/Support/Admin scoped views; edit via `PERM-ORD-005` ops scope |
+| Boundaries | **No CRM Order Create** in V1 (no route/API/UI); **no Class D** (delete/archive/restore/Correct/Override); payment ≠ dispensing (`OR-03`); Rx fulfill requires doctor approve + pharmacist review (`FR-ORD-003`); Marketing/Content denied order lists; inventory only via Inventory services; clinical approve/decline owned by Consultations — see blueprint [35](35-orders-module.md). **P13c:** CRM list/detail/edit/cancel/fulfill/notes/history/activity live at `/crm/orders` via shared Orders domain. |
 
 ### 3.6 Clinical Review (`CRM-034`)
 
@@ -1106,6 +1106,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.4 | 2026-07-28 | Platform Engineering | Pending | Questionnaires (`CRM-040`) are CRM-only Internal Platform UI (definitions + case view); not dual-mounted with Guardian | Draft for review |
 | 1.5 | 2026-08-02 | Platform Engineering | Pending | `CRM-031` aligned to operational-only Users surface; escalate to Guardian; link [32](32-users-module.md) | Draft for review |
 | 1.6 | 2026-08-03 | Platform Engineering | Pending | `CRM-037` Inventory consume-only; Guardian owns inventory admin; CRM-075 visibility/service calls; link [34](34-inventory-module.md) | Draft for review |
+| 1.7 | 2026-08-20 | Platform Engineering | Pending | `CRM-033` Orders: no Create/Class D; operational edit allowlist; link [35](35-orders-module.md) | Draft for review |
 
 ---
 

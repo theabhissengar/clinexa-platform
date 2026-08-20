@@ -821,13 +821,33 @@ Reusable business assets only. Business modules store opaque `assetId` values an
 | API-069 | GET | `/orders` | List own orders | Yes | P | FR-ORD-005, FR-PRT-001 | Own only; paginated |
 | API-070 | GET | `/orders/{id}` | Own order detail | Yes | P | FR-ORD-005, FR-PRT-003 | Status clarity for clinical pending/decline |
 | API-071 | POST | `/orders/{id}/cancel` | Cancel own order | Yes | P◐ | FR-ORD-006 | Policy-scoped; may trigger refund path |
-| API-072 | GET | `/crm/orders` | Staff order list | Yes | Dr, Ph, Su, Op, Ad | FR-ORD-005, FR-CRM-005 | RBAC scoped; Mk/Ct denied |
+| API-072 | GET | `/crm/orders` | Staff order list | Yes | Dr, Ph, Su, Op, Ad | FR-ORD-005, FR-CRM-005 | RBAC scoped; Mk/Ct denied; **no Create endpoint under `/crm/orders`** |
 | API-073 | GET | `/crm/orders/{id}` | Staff order detail | Yes | Dr, Ph, Su, Op, Ad | FR-ORD-005 | Need-to-know fields by role |
-| API-074 | POST | `/crm/orders/{id}/cancel` | Staff cancel | Yes | Su, Op, Ad◐ | FR-ORD-006 | Audit |
-| API-075 | POST | `/crm/orders/{id}/fulfill` | Mark fulfilled / ship | Yes | Op | FR-ORD-003/004, FR-INV-002, FR-CRM-005 | Rx requires doctor approve + pharmacist review; non-Rx skips clinical; inventory decrement |
-| API-076 | GET | `/crm/orders/{id}/items` | Order lines | Yes | Dr, Ph, Su, Op, Ad | FR-ORD-001 | |
+| API-074 | POST | `/crm/orders/{id}/cancel` | Staff cancel | Yes | Su, Op, Ad◐ | FR-ORD-006 | Audit; `PERM-ORD-002` |
+| API-075 | POST | `/crm/orders/{id}/fulfill` | Mark fulfilled / ship | Yes | Op | FR-ORD-003/004, FR-INV-002, FR-CRM-005 | Rx requires doctor approve + pharmacist review; non-Rx skips clinical; Inventory **Commit** via services ([35 §10](35-orders-module.md)); `PERM-ORD-003` |
+| API-076 | GET | `/crm/orders/{id}/items` | Order lines | Yes | Dr, Ph, Su, Op, Ad | FR-ORD-001 | Snapshots; not live catalog |
+| API-076a | PATCH | `/crm/orders/{id}` | Operational edit | Yes | Su◐, Op, Ad◐ | FR-ORD-001 | `PERM-ORD-005` CRM field allowlist only ([35 §7](35-orders-module.md)) |
+| API-076b | GET/POST | `/crm/orders/{id}/notes` | List / add notes | Yes | Dr◐, Ph◐, Su, Op, Ad | — | Internal notes |
+| API-076c | GET | `/crm/orders/{id}/history` | Order History | Yes | Dr◐, Ph◐, Su, Op, Ad | — | Field/status diffs |
+| API-076d | GET | `/crm/orders/{id}/activity` | Order Activity | Yes | Dr◐, Ph◐, Su, Op, Ad | — | Operational events |
 
-Canonical order statuses: `draft`, `payment_pending`, `awaiting_clinical_review`, `clinical_approved`, `clinical_declined`, `awaiting_fulfillment`, `fulfilled`, `cancelled`, `refunded` ([03 §14](03-functional-requirements.md#14-state-machine-summary)). Payment success ≠ dispensing (`FR-STO-006`).
+Canonical order statuses: `draft`, `payment_pending`, `awaiting_clinical_review`, `clinical_approved`, `clinical_declined`, `awaiting_fulfillment`, `fulfilled`, `cancelled`, `refunded` ([03 §14](03-functional-requirements.md#14-state-machine-summary)). Payment success ≠ dispensing (`FR-STO-006`). Shared domain services own lifecycle/totals/snapshots; CRM controllers must not duplicate Guardian business logic ([35](35-orders-module.md)).
+
+#### Admin / Guardian Orders (Class D and admin create)
+
+| API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| API-204 | GET | `/admin/orders` | Admin order list | Yes | Ad | FR-ORD-005 | `PERM-ORD-001` |
+| API-205 | GET | `/admin/orders/{id}` | Admin order detail | Yes | Ad | FR-ORD-005 | Includes admin fields |
+| API-206 | POST | `/admin/orders` | Admin create | Yes | Ad | FR-ORD-001 | `PERM-ORD-004`; **CRM must never expose equivalent** |
+| API-207 | PATCH | `/admin/orders/{id}` | Admin edit | Yes | Ad | FR-ORD-001 | `PERM-ORD-005` Guardian allowlist |
+| API-208 | POST | `/admin/orders/{id}/delete` | Soft-delete | Yes | Ad◐ | — | Class D `PERM-ORD-010`; audited; fail-closed |
+| API-209 | POST | `/admin/orders/{id}/archive` | Archive | Yes | Ad◐ | — | Class D `PERM-ORD-011` |
+| API-210 | POST | `/admin/orders/{id}/restore` | Restore | Yes | Ad◐ | — | Class D `PERM-ORD-012` |
+| API-211 | POST | `/admin/orders/{id}/corrections` | Financial correction | Yes | Ad◐ | FR-PAY-003 boundary | Class D `PERM-ORD-013`; **calls Payments** when money moves |
+| API-212 | POST | `/admin/orders/{id}/overrides` | Administrative override | Yes | SA | — | Class D `PERM-ORD-014`; never silent clinical/payment bypass; audited |
+
+Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`071` (later). Orders must not execute PSP operations.
 
 ### 6.13 Subscriptions
 
@@ -1058,7 +1078,8 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 | API-053–059 | Cart | 7 |
 | API-060–061 | Checkout | 2 |
 | API-062–068 | Payments (+ webhook) | 7 |
-| API-069–076 | Orders | 8 |
+| API-069–076 (+076a–d) | Orders CRM/Portal | 12 |
+| API-204–212 | Orders Guardian/admin Class D | 9 |
 | API-077–087 | Subscriptions | 11 |
 | API-088–096 | Consultations | 9 |
 | API-097–101 | Prescriptions | 5 |
@@ -1569,7 +1590,7 @@ Payment and webhook paths must be replay-safe (`FR-PAY-002`, NFR-118).
 | CART / CHK | API-053–061 |
 | PAY | API-062–068 |
 | QST | API-040–052 |
-| ORD | API-069–076 |
+| ORD | API-069–076 (+076a–d), API-204–212 |
 | SUB | API-077–087 |
 | APT | API-115–124 |
 | PRT | Profile + patient-scoped resources |
@@ -1773,6 +1794,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.3 | 2026-08-02 | Platform Engineering | TBD | P9 implementation note: `/v1/admin/users`, CRM users, profile, roles admin, Auth register/reset delivered | Draft for review |
 | 1.4 | 2026-08-03 | Platform Engineering | TBD | Asset Library `API-177`–`186`; ID-only consumer rule; Documents section labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 | 1.5 | 2026-08-03 | Platform Engineering | TBD | Inventory `API-187`–`203`; deprecate `API-105`–`109` CRM adjust paths; ledger-first; link [34](34-inventory-module.md) | Draft for review |
+| 1.6 | 2026-08-20 | Platform Engineering | TBD | Orders CRM notes/history/edit (`API-076a`–`d`); Guardian/admin Class D `API-204`–`212`; shared domain; no CRM create; link [35](35-orders-module.md) | Draft for review |
 
 ---
 

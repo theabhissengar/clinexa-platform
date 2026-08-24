@@ -76,9 +76,22 @@ describe('Guardian Admin Subscriptions permissions (P14d)', () => {
     expect(
       requiredPermissions(AdminSubscriptionsController, 'openRenewal'),
     ).toEqual([Permissions.SUB_RENEW]);
-    expect(
-      requiredPermissions(AdminSubscriptionsController, 'retryRenewal'),
-    ).toEqual([Permissions.SUB_RENEW]);
+  });
+
+  it('allows SUB_RENEW or SUB_ASSIST_RENEWAL on admin retry (OR semantics)', () => {
+    const handler = (AdminSubscriptionsController.prototype as Record<
+      string,
+      unknown
+    >).retryRenewal;
+    const { REQUIRE_ANY_PERMISSIONS_KEY } = require('../rbac/constants/rbac.constants');
+    const metadata: unknown = Reflect.getMetadata(
+      REQUIRE_ANY_PERMISSIONS_KEY,
+      handler,
+    );
+    expect(metadata).toEqual([
+      Permissions.SUB_RENEW,
+      Permissions.SUB_ASSIST_RENEWAL,
+    ]);
   });
 
   it('wires plan endpoints to PERM-SUB-002 only (not subscription Class D)', () => {

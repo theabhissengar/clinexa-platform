@@ -10,6 +10,7 @@ import {
   OrderAdjustmentKind,
   OrderStatus,
   OrderType,
+  PaymentLifecycleState,
   Prisma,
   UserStatus,
 } from '../../../generated/prisma';
@@ -28,7 +29,9 @@ import type {
   AddOrderAdjustmentInput,
   AddOrderNoteInput,
   ClassDOrderInput,
+  CreateOrderFromSnapshotsInput,
   CreateOrderInput,
+  OrderAddressInput,
   OverrideOrderInput,
   TransitionOrderInput,
   UpdateOrderFieldsInput,
@@ -381,6 +384,7 @@ export class OrdersService {
           status: initialStatus,
           orderType,
           subscriptionId: input.subscriptionId ?? null,
+          idempotencyKey: input.idempotencyKey ?? null,
           ...customer,
           currency: input.currency ?? 'USD',
           ...orderTotals,
@@ -440,6 +444,321 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Create order from immutable snapshot lines (subscription renewal).
+   * Does not re-price from live catalog. Honors idempotencyKey replay.
+   */
+  async createOrderFromSnapshots(input: CreateOrderFromSnapshotsInput) {
+    if (!input.lines?.length) {
+      throw new BadRequestException({
+        code: ErrorCodes.ORD_INVALID_ITEM,
+        message: 'Order requires at least one line item',
+      });
+    }
+    if (!input.idempotencyKey?.trim()) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_MISSING_FIELD,
+        message: 'idempotencyKey is required for snapshot order create',
+      });
+    }
+
+    const existing = await this.prisma.order.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: {
+        items: true,
+        addresses: true,
+        statusHistory: true,
+        activities: true,
+      },
+    });
+    if (existing) {
+      if (
+        existing.subscriptionId !== input.subscriptionId ||
+        existing.patientUserId !== input.patientUserId ||
+        existing.orderType !== input.orderType
+      ) {
+        throw new ConflictException({
+          code: ErrorCodes.ORD_CONFLICT,
+          message: 'Order idempotency key replay with mismatched body',
+        });
+      }
+      return existing;
+    }
+
+    const initialStatus = input.initialStatus ?? OrderStatus.PAYMENT_PENDING;
+    if (
+      initialStatus !== OrderStatus.DRAFT &&
+      initialStatus !== OrderStatus.PAYMENT_PENDING
+    ) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_INVALID_FORMAT,
+        message: 'initialStatus must be DRAFT or PAYMENT_PENDING',
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const raced = await tx.order.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: {
+          items: true,
+          addresses: true,
+          statusHistory: true,
+          activities: true,
+        },
+      });
+      if (raced) {
+        return raced;
+      }
+
+      const user = await tx.user.findUnique({
+        where: { id: input.patientUserId },
+      });
+      if (
+        !user ||
+        user.deletedAt != null ||
+        user.status === UserStatus.DELETED
+      ) {
+        throw new NotFoundException({
+          code: ErrorCodes.RES_NOT_FOUND,
+          message: 'Patient user not found',
+        });
+      }
+
+      // Ensure catalog FKs still exist (Restrict); prices come from snapshots.
+      for (const line of input.lines) {
+        if (!Number.isInteger(line.quantity) || line.quantity < 1) {
+          throw new BadRequestException({
+            code: ErrorCodes.ORD_INVALID_ITEM,
+            message: 'Each line quantity must be an integer >= 1',
+          });
+        }
+        const variant = await tx.productVariant.findUnique({
+          where: { id: line.variantId },
+          include: { product: true },
+        });
+        if (
+          !variant ||
+          variant.deletedAt != null ||
+          !variant.product ||
+          variant.product.deletedAt != null ||
+          variant.productId !== line.productId
+        ) {
+          throw new BadRequestException({
+            code: ErrorCodes.ORD_INVALID_ITEM,
+            message: `Invalid product variant for snapshot line: ${line.variantId}`,
+          });
+        }
+      }
+
+      const preparedLines = input.lines.map((line) => {
+        const lineTotals = this.totals.computeLine({
+          unitPriceCents: line.unitPriceCents,
+          salePriceCents: line.salePriceCents,
+          quantity: line.quantity,
+          discountCents: line.discountCents ?? 0,
+          taxCents: line.taxCents ?? 0,
+        });
+        return { line, lineTotals };
+      });
+
+      const isRxOrder = input.lines.some((l) => l.isRxEligible);
+      const orderTotals = this.totals.computeOrder({
+        lines: preparedLines.map((p) => p.lineTotals),
+        shippingTotalCents: input.shippingTotalCents ?? 0,
+        discountTotalCents: input.discountTotalCents ?? 0,
+        taxTotalCents: input.taxTotalCents ?? 0,
+      });
+
+      const customer = this.snapshots.snapshotCustomer(user, input.customer);
+      const shipping = this.snapshots.snapshotAddress(
+        OrderAddressKind.SHIPPING,
+        input.shippingAddress,
+      );
+      const billing = this.snapshots.snapshotAddress(
+        OrderAddressKind.BILLING,
+        input.billingAddress,
+      );
+
+      if (!shipping.line1 || !shipping.city) {
+        throw new BadRequestException({
+          code: ErrorCodes.VAL_MISSING_FIELD,
+          message: 'shippingAddress.line1 and city are required',
+        });
+      }
+      if (!billing.line1 || !billing.city) {
+        throw new BadRequestException({
+          code: ErrorCodes.VAL_MISSING_FIELD,
+          message: 'billingAddress.line1 and city are required',
+        });
+      }
+
+      const orderNumber = await this.allocateOrderNumber(tx);
+      const source = input.source ?? 'system';
+
+      try {
+        return await tx.order.create({
+          data: {
+            orderNumber,
+            patientUserId: user.id,
+            status: initialStatus,
+            orderType: input.orderType,
+            subscriptionId: input.subscriptionId,
+            idempotencyKey: input.idempotencyKey,
+            ...customer,
+            currency: input.currency ?? input.lines[0]?.currency ?? 'USD',
+            ...orderTotals,
+            requiresClinicalReview: isRxOrder,
+            isRxOrder,
+            items: {
+              create: preparedLines.map(({ line, lineTotals }) => ({
+                productId: line.productId,
+                variantId: line.variantId,
+                productName: line.productName,
+                sku: line.sku,
+                productType: line.productType,
+                isRxEligible: line.isRxEligible,
+                catalogMetadata: (line.catalogMetadata ??
+                  {}) as Prisma.InputJsonValue,
+                quantity: lineTotals.quantity,
+                unitPriceCents: lineTotals.unitPriceCents,
+                salePriceCents: lineTotals.salePriceCents,
+                taxCents: lineTotals.taxCents,
+                discountCents: lineTotals.discountCents,
+                lineSubtotalCents: lineTotals.lineSubtotalCents,
+                lineTotalCents: lineTotals.lineTotalCents,
+              })),
+            },
+            addresses: {
+              create: [shipping, billing],
+            },
+            statusHistory: {
+              create: {
+                fromStatus: null,
+                toStatus: initialStatus,
+                actorUserId: input.actorUserId ?? null,
+                source,
+                reason: 'renewal_order_created',
+              },
+            },
+            activities: {
+              create: {
+                actorUserId: input.actorUserId ?? null,
+                kind: 'order_created',
+                summary: `Order ${orderNumber} created from snapshots`,
+                metadata: {
+                  status: initialStatus,
+                  lineCount: preparedLines.length,
+                  idempotencyKey: input.idempotencyKey,
+                },
+              },
+            },
+          },
+          include: {
+            items: true,
+            addresses: true,
+            statusHistory: true,
+            activities: true,
+          },
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          const again = await tx.order.findUnique({
+            where: { idempotencyKey: input.idempotencyKey },
+            include: {
+              items: true,
+              addresses: true,
+              statusHistory: true,
+              activities: true,
+            },
+          });
+          if (again) {
+            return again;
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
+  async recordPaymentRefs(input: {
+    orderId: string;
+    paymentId: string;
+    paymentStatusSummary: string;
+    paymentIntentId?: string | null;
+  }) {
+    await this.prisma.order.update({
+      where: { id: input.orderId },
+      data: {
+        latestPaymentId: input.paymentId,
+        paymentStatusSummary: input.paymentStatusSummary,
+        ...(input.paymentIntentId !== undefined
+          ? { paymentIntentId: input.paymentIntentId }
+          : {}),
+      },
+    });
+  }
+
+  /**
+   * Resolve SHIPPING+BILLING from the latest order for a subscription (read-only).
+   */
+  async getLatestSubscriptionOrderAddresses(subscriptionId: string): Promise<{
+    shipping: OrderAddressInput;
+    billing: OrderAddressInput;
+  } | null> {
+    const order = await this.prisma.order.findFirst({
+      where: {
+        subscriptionId,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'desc' },
+      include: { addresses: true },
+    });
+    if (!order) {
+      return null;
+    }
+    const shipping = order.addresses.find(
+      (a) => a.kind === OrderAddressKind.SHIPPING,
+    );
+    const billing = order.addresses.find(
+      (a) => a.kind === OrderAddressKind.BILLING,
+    );
+    if (
+      !shipping ||
+      !billing ||
+      !shipping.line1?.trim() ||
+      !shipping.city?.trim() ||
+      !billing.line1?.trim() ||
+      !billing.city?.trim()
+    ) {
+      return null;
+    }
+    return {
+      shipping: {
+        fullName: shipping.fullName,
+        line1: shipping.line1,
+        line2: shipping.line2,
+        city: shipping.city,
+        region: shipping.region,
+        postalCode: shipping.postalCode,
+        country: shipping.country,
+        phone: shipping.phone,
+      },
+      billing: {
+        fullName: billing.fullName,
+        line1: billing.line1,
+        line2: billing.line2,
+        city: billing.city,
+        region: billing.region,
+        postalCode: billing.postalCode,
+        country: billing.country,
+        phone: billing.phone,
+      },
+    };
+  }
+
   async transitionOrder(input: TransitionOrderInput) {
     const { result, fromStatus, toStatus } = await this.prisma.$transaction(
       async (tx) => {
@@ -463,6 +782,28 @@ export class OrdersService {
         }
 
         this.lifecycle.assertTransition(current, input.toStatus);
+
+        // Renewal-scoped: do not fulfill without captured payment (P14e C10).
+        if (
+          input.toStatus === OrderStatus.FULFILLED &&
+          order.orderType === OrderType.SUBSCRIPTION_RENEWAL
+        ) {
+          const payment = await tx.payment.findFirst({
+            where: { orderId: order.id },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (
+            !payment ||
+            payment.lifecycleState !== PaymentLifecycleState.CAPTURED
+          ) {
+            throw new BadRequestException({
+              code: ErrorCodes.ORD_INVALID_TRANSITION,
+              message:
+                'Subscription renewal orders require captured payment before fulfillment',
+            });
+          }
+        }
+
         if (current === input.toStatus) {
           return {
             result: order,

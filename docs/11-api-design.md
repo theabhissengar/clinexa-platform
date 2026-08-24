@@ -474,7 +474,7 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 | Authorization | `PERM-SUB-001`–`009`; destructive `PERM-SUB-010`–`012`/`014` |
 | Primary Resources | `DB-032`–`DB-034` |
 | Referenced FRs | `FR-SUB-001`–`005`; [36](36-subscriptions-module.md) |
-| Implementation | **P14d:** CRM `/v1/crm/subscriptions` (`API-083`, `API-213`–`224`) and Guardian `/v1/admin/subscriptions` (`API-225`–`240`) + `/v1/admin/subscription-plans` (`API-084`–`087`) are mounted. Public `API-077`–`082` remain unmounted until later slices. |
+| Implementation | **P14d:** CRM `/v1/crm/subscriptions` (`API-083`, `API-213`–`224`) and Guardian `/v1/admin/subscriptions` (`API-225`–`240`) + `/v1/admin/subscription-plans` (`API-084`–`087`) are mounted. **P14e:** renew/retry invoke the payment processor; webhook `API-068` and Internal renewal job mounted. Public `API-077`–`082` remain unmounted until later slices. |
 
 ### 5.14 Consultations
 
@@ -811,7 +811,7 @@ Reusable business assets only. Business modules store opaque `assetId` values an
 | API-065 | POST | `/payment-methods` | Attach saved method | Yes | P | FR-PAY-001/004 | PSP token reference |
 | API-066 | DELETE | `/payment-methods/{id}` | Remove saved method | Yes | P | FR-PRT-004 | Soft-deactivate |
 | API-067 | POST | `/payments/{id}/refunds` | Initiate refund | Yes | Su, Op, Ad◐, P◐ | FR-PAY-003, FR-ORD-006, FR-SUP-005 | OR-11 tiers; clinical decline path eligible |
-| API-068 | POST | `/webhooks/payments` | PSP webhook ingest | No† | Sys (PSP) | FR-PAY-002/004/005, FR-SUB-002/003 | Verify signature; idempotent by provider event id; drive order/sub state |
+| API-068 | POST | `/webhooks/payments` | PSP webhook ingest | No† | Sys (PSP) | FR-PAY-002/004/005, FR-SUB-002/003 | Verify signature (`X-Payments-Webhook-Secret`); idempotent by `(provider, providerEventId)` insert-before-apply; drive order/sub state; **P14e mounted** |
 
 †Not user JWT; provider verification required.
 
@@ -871,8 +871,8 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-216 | POST | `/crm/subscriptions/{id}/resume` | Resume | Yes | Su◐, Op, Ad | FR-SUB-004 | Skip missed paused periods ([36](36-subscriptions-module.md)) |
 | API-217 | POST | `/crm/subscriptions/{id}/cancel` | Policy cancel assist | Yes | Su◐, Op, Ad | FR-SUB-004 | Not Class D |
 | API-218 | GET | `/crm/subscriptions/{id}/renewals` | Attempt history | Yes | Su◐, Op, Ad | FR-SUB-003 | Child of subscription |
-| API-219 | POST | `/crm/subscriptions/{id}/renewals` | Manual renewal | Yes | Su◐, Op, Ad | FR-SUB-002 | Period-key idempotent |
-| API-220 | POST | `/crm/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | Su◐, Op, Ad | FR-SUB-003 | Same attempt/order |
+| API-219 | POST | `/crm/subscriptions/{id}/renewals` | Manual renewal | Yes | Su◐, Op, Ad | FR-SUB-002 | `PERM-SUB-008`; period-key idempotent; recommended `Idempotency-Key`; runs authorize/capture path (**P14e**) |
+| API-220 | POST | `/crm/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | Su◐, Op, Ad | FR-SUB-003 | **any of** `PERM-SUB-008` **or** `PERM-SUB-003`; same attempt/order |
 | API-221 | GET | `/crm/subscriptions/{id}/notes` | Notes | Yes | Su◐, Op, Ad | — | `PERM-SUB-004` |
 | API-222 | POST | `/crm/subscriptions/{id}/notes` | Add note | Yes | Su◐, Op, Ad | — | `PERM-SUB-006` |
 | API-223 | GET | `/crm/subscriptions/{id}/history` | History | Yes | Su◐, Op, Ad | — | |
@@ -899,16 +899,17 @@ Additive Guardian paths (same domain; not a parallel catalog family):
 | Method | Resource | Purpose | Auth | Notes |
 | --- | --- | --- | --- | --- |
 | POST | `/admin/subscriptions/{id}/activate` | Activate `PENDING_SETUP` | Yes | `PERM-SUB-007`; domain `activateInitial` |
-| POST | `/admin/subscriptions/{id}/renewals` | Manual renewal | Yes | `PERM-SUB-008`; same as CRM `API-219` |
-| POST | `/admin/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | `PERM-SUB-008`; same as CRM `API-220` |
+| POST | `/admin/subscriptions/{id}/renewals` | Manual renewal | Yes | `PERM-SUB-008`; same as CRM `API-219` (payment path; `Idempotency-Key` recommended) |
+| POST | `/admin/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | **any of** `PERM-SUB-008` or `PERM-SUB-003`; same as CRM `API-220` |
 | GET | `/admin/subscription-plans/{id}` | Admin plan detail | Yes | `PERM-SUB-002` |
 | POST | `/admin/subscription-plans/{id}/unpublish` | Unpublish plan | Yes | `PERM-SUB-002` |
 | POST | `/admin/subscription-plans/{id}/archive` | Archive plan | Yes | `PERM-SUB-002` (not `PERM-SUB-011`) |
 | POST | `/admin/subscription-plans/{id}/restore` | Restore plan | Yes | `PERM-SUB-002` (not `PERM-SUB-012`) |
+| POST | `/internal/jobs/subscription-renewals` | Due/grace renewal worker tick | No† | `AUTH-015` `X-Clinexa-Worker-Secret`; period-key + SKIP LOCKED; **P14e** |
 
 Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain services—not a public patient endpoint.
 
-> **P14d:** CRM `API-083` / `API-213`–`224` and Guardian `API-225`–`240` / `API-084`–`087` are mounted. Patient `API-077`–`082` remain unmounted.
+> **P14e:** CRM `API-083` / `API-213`–`224` and Guardian `API-225`–`240` / `API-084`–`087` remain mounted; renew/retry run the payment processor. `API-068` webhook and Internal renewal job are mounted. Patient `API-077`–`082` remain unmounted. `API-062`–`067` Store/Portal payment HTTP remain unmounted.
 
 ### 6.14 Consultations
 
@@ -1706,8 +1707,9 @@ Centralized replay contract for critical mutations. Aligns with §2.5, §7.8, §
 | Checkout finalize | `API-061` | **Yes** — client `Idempotency-Key` | Same key + same actor + equivalent body → return original order/payment-pending outcome; no second order | Prevents duplicate orders on client retry; fail-safe with payment (`FR-CHK-004`) |
 | Payment intent | `API-062` | **Yes** — client `Idempotency-Key` | Replay returns the original intent/reference; no second PSP authorization | NFR-118; tokenization path must not double-authorize |
 | Refund initiate | `API-067` | **Yes** — client `Idempotency-Key` | Replay returns original refund record; no second PSP refund | OR-11 / `FR-PAY-003`; money-safety |
-| Payment webhook | `API-068` | **Yes** — provider event id (`DB-031`) | Duplicate verified events → **no-op success**; state already applied is left unchanged | At-least-once delivery (`FR-PAY-002`, `ARCH-007`) |
-| Subscription renewal worker | Internal (domain service; not a Stable client route) | **Yes** — renewal attempt / billing period key | Replay of the same period key does not create a second charge or duplicate renewal order | `FR-SUB-002`/`003`; worker at-least-once |
+| Payment webhook | `API-068` | **Yes** — provider event id (`DB-031`) | Duplicate verified events → **no-op success**; state already applied is left unchanged | At-least-once delivery (`FR-PAY-002`, `ARCH-007`); **P14e mounted** |
+| Subscription renewal (staff) | `API-219` / `API-220` + Guardian additive POSTs | **Yes** — billing period key; **recommended** client `Idempotency-Key` | Replay returns the same attempt/order; no second charge | `SUB-IDEM-001`–`006`; retry AuthZ is any of `PERM-SUB-008` or `PERM-SUB-003` |
+| Subscription renewal worker | Internal `POST /internal/jobs/subscription-renewals` | **Yes** — renewal attempt / billing period key + SKIP LOCKED | Replay of the same period key does not create a second charge or duplicate renewal order | `FR-SUB-002`/`003`; worker at-least-once; `AUTH-015` |
 | Document upload session | `API-114` | **Recommended** — client `Idempotency-Key` | Replay returns the same upload session metadata; no duplicate ACL rows for identical key | Avoid orphan sessions on flaky networks; PHI metadata hygiene (`FR-DOC-001`) |
 | Appointment booking | `API-118` | **Recommended** — client `Idempotency-Key` | Replay returns the original appointment; slot not double-booked | Conflict-safe booking (`FR-APT-003`); `ERR-APT-001` if slot taken by another key |
 | Support ticket creation | `API-126` | **Recommended** — client `Idempotency-Key` | Replay returns the original ticket; no duplicate open tickets for same key | Patient retry on Portal (`FR-SUP-001`); reduces noise in Support queue |
@@ -1847,6 +1849,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: Subscriptions domain services implemented; HTTP `API-077`–`087` / `API-213`–`240` still unmounted | Draft for review |
 | 1.9 | 2026-08-24 | Platform Engineering | TBD | P14c: CRM `API-083` / `API-213`–`224` mounted; Guardian/patient Subscription APIs still unmounted | Draft for review |
 | 1.10 | 2026-08-24 | Platform Engineering | TBD | P14d: Guardian `API-225`–`240` and `API-084`–`087` mounted; additive activate/renewal POST and plan unpublish/archive/restore; patient APIs still unmounted | Draft for review |
+| 1.11 | 2026-08-24 | Platform Engineering | TBD | P14e: `API-068` webhook + Internal renewal job mounted; renew `Idempotency-Key`; retry AuthZ 003\|008; `API-062`–`067` still unmounted | Draft for review |
 
 ---
 

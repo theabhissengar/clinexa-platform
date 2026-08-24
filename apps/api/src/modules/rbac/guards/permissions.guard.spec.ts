@@ -6,6 +6,7 @@ import { IS_PUBLIC_KEY } from '../../auth/constants/auth.constants';
 import { AuthorizationService } from '../authorization.service';
 import { Permissions } from '../constants/permissions';
 import {
+  REQUIRE_ANY_PERMISSIONS_KEY,
   REQUIRE_PERMISSIONS_KEY,
   REQUIRE_ROLES_KEY,
 } from '../constants/rbac.constants';
@@ -17,6 +18,7 @@ describe('PermissionsGuard', () => {
   let reflector: { getAllAndOverride: jest.Mock };
   let authorizationService: {
     hasAllPermissions: jest.Mock;
+    hasAnyPermissions: jest.Mock;
     hasAnyRole: jest.Mock;
   };
 
@@ -35,6 +37,7 @@ describe('PermissionsGuard', () => {
     };
     authorizationService = {
       hasAllPermissions: jest.fn(),
+      hasAnyPermissions: jest.fn(),
       hasAnyRole: jest.fn(),
     };
     guard = new PermissionsGuard(
@@ -115,5 +118,26 @@ describe('PermissionsGuard', () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it('allows any-of permission sets via REQUIRE_ANY_PERMISSIONS_KEY', () => {
+    reflector.getAllAndOverride.mockImplementation((key: string) => {
+      if (key === REQUIRE_ANY_PERMISSIONS_KEY) {
+        return [Permissions.SUB_RENEW, Permissions.SUB_ASSIST_RENEWAL];
+      }
+      return undefined;
+    });
+    authorizationService.hasAnyPermissions.mockReturnValue(true);
+
+    expect(
+      guard.canActivate(
+        createContext({
+          id: 'u1',
+          roles: [Roles.SUPPORT],
+          permissions: [Permissions.SUB_ASSIST_RENEWAL],
+        }),
+      ),
+    ).toBe(true);
+    expect(authorizationService.hasAnyPermissions).toHaveBeenCalled();
   });
 });

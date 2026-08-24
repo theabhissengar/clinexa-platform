@@ -36,6 +36,17 @@ export class AuthorizationService {
     return required.every((code) => held.has(code));
   }
 
+  hasAnyPermissions(
+    principal: PrincipalAuthorization,
+    required: readonly PermissionCode[],
+  ): boolean {
+    if (required.length === 0) {
+      return true;
+    }
+    const held = new Set(principal.permissions);
+    return required.some((code) => held.has(code));
+  }
+
   hasAnyRole(
     principal: PrincipalAuthorization,
     required: readonly RoleCode[],

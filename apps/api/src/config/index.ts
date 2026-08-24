@@ -1,6 +1,7 @@
 import appConfig from './app.config';
 import authConfig from './auth.config';
 import databaseConfig from './database.config';
+import paymentsConfig from './payments.config';
 import storageConfig from './storage.config';
 import swaggerConfig from './swagger.config';
 
@@ -9,7 +10,14 @@ export type { EnvConfig } from './env.validation';
 export { parseCorsOrigins } from './app.config';
 export { parseDurationToSeconds } from './auth.config';
 
-export { appConfig, authConfig, databaseConfig, storageConfig, swaggerConfig };
+export {
+  appConfig,
+  authConfig,
+  databaseConfig,
+  paymentsConfig,
+  storageConfig,
+  swaggerConfig,
+};
 
 /** Config factories registered with ConfigModule.forRoot({ load }) */
 export const configurations = [
@@ -18,4 +26,5 @@ export const configurations = [
   databaseConfig,
   storageConfig,
   swaggerConfig,
+  paymentsConfig,
 ];

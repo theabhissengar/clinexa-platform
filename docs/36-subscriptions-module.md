@@ -5,14 +5,14 @@
 | Document | Subscriptions Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | P14a–P14d complete — P14e–h pending |
+| Status | P14a–P14e complete — P14f–h pending |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [35](35-orders-module.md) |
 
 This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a:** Prisma/database foundation. **P14b:** NestJS domain services. **P14c:** CRM `/v1/crm/subscriptions` APIs + `/crm/subscriptions` UI. **P14d (this pass):** Guardian `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` APIs and `/guardian/subscriptions` UI (create, Class D, plans) on `feature/subscriptions-foundation`. **Not this pass:** renewal worker/cron, automatic renewal Order creation, Payments/Inventory/clinical execution.
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a:** Prisma/database foundation. **P14b:** NestJS domain services. **P14c:** CRM `/v1/crm/subscriptions` APIs + `/crm/subscriptions` UI. **P14d:** Guardian `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` APIs and `/guardian/subscriptions` UI. **P14e (this pass):** Payments domain module (simulated gateway), renewal Order create from snapshots, authorize→capture orchestration, Internal renewal worker, Payments-only webhooks — on `feature/subscriptions-renewal-payments`. **Not this pass:** Inventory-through-Orders (P14f), clinical authoring (P14g), Store/Portal, Stripe/real PSP.
 
 > **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
 
@@ -116,7 +116,7 @@ Subscriptions **must not** duplicate Order totals, OrderItems, inventory state, 
 | --- | --- |
 | Store / FE (separate repo) | Subscribe during checkout; later manage preferences / cancel via platform APIs |
 | Patient Portal (separate repo) | View own subscriptions/status/history; manage allowed actions; update payment method via Payments |
-| System | Due detection and renewal processing (worker/cron later — not this pass) |
+| System | Due detection and renewal processing via Internal worker (`POST /v1/internal/jobs/subscription-renewals`); optional local cron when `RENEWAL_CRON_ENABLED=true` |
 
 Neither Store nor Portal becomes a Subscription source of truth.
 
@@ -482,7 +482,7 @@ This is the deterministic V1 behavior. Changing it to “renew immediately if ov
 
 `SubscriptionsRenewalService` is a thin orchestrator **inside** the Subscriptions module. It is not a Nest Renewals module, not a database domain, not a nav group, and not a P14 implementation phase of its own.
 
-Cron / workers are **extension points**. This blueprint does not implement them.
+**P14e:** `SubscriptionsRenewalProcessor` runs the money path (attempt → Order → authorize → capture → period advance). Production trigger is the Internal job route; optional flagged local cron (`RENEWAL_CRON_ENABLED`, default false).
 
 ### 11.2 Due detection
 
@@ -501,12 +501,12 @@ A subscription is due when **all** hold:
 1. Compute `billingPeriodKey` for the period being billed.
 2. Insert or load `SubscriptionRenewalAttempt` (unique `subscriptionId` + `billingPeriodKey`).
 3. If attempt already has `orderId`, **reuse that Order** — never create a second order for the period.
-4. If no `orderId`, request Orders to create `orderType = SUBSCRIPTION_RENEWAL` with `subscriptionId`, copying **subscription item snapshots** (not live catalog).
+4. If no `orderId`, Orders `createOrderFromSnapshots` with `orderType = SUBSCRIPTION_RENEWAL`, `idempotencyKey = renewal:{subId}:{billingPeriodKey}`, copying **subscription item snapshots** (not live catalog). Addresses: latest order → user shipping JSON → fail `ERR-VAL-002` (no placeholders).
 5. Record `orderId` on the attempt; set `latestOrderId` on the subscription.
-6. Orders coordinates Payments (saved method), then Inventory (Reserve on auth success), then clinical gating on the **order**.
+6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize. Inventory hooks remain NOOP until P14f/P13e.
 7. Subscriptions records payment status snapshot and attempt status from those outcomes.
-8. On payment success: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle).
-9. On payment failure: attempt=`FAILED`; lifecycle `PAST_DUE`; notify `NTF-042`.
+8. On **capture** success: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle). Authorize alone does **not** consume the period.
+9. On authorize failure: attempt=`FAILED`; lifecycle `PAST_DUE`; notify `NTF-042`. Clinical decline: void/refund; `DECLINED_HOLD`; **not** PAST_DUE; **not** auto-cancel.
 10. Inventory/clinical failures do **not** invent a second period; they update the same attempt/order.
 
 ### 11.4 Idempotency invariants (locked)
@@ -520,7 +520,7 @@ A subscription is due when **all** hold:
 | **SUB-IDEM-005** | A new period key is issued only after a **successful** period advance (or an explicit skip recorded as `SKIPPED` on the old key). |
 | **SUB-IDEM-006** | Client `Idempotency-Key` on manual renewal/retry APIs is recommended in addition to the period unique constraint ([11](11-api-design.md) worker row already requires period-key idempotency). |
 
-Do not implement the worker or keys in this documentation pass.
+**P14e:** Internal worker `POST /v1/internal/jobs/subscription-renewals` (`AUTH-015`) plus optional flagged local cron (`RENEWAL_CRON_ENABLED`, default false). Duplicate ticks are safe via period/order/payment keys + `FOR UPDATE SKIP LOCKED`.
 
 ### 11.5 Manual renewal vs retry vs skip
 
@@ -600,10 +600,12 @@ NestJS `SubscriptionsModule` (`apps/api/src/modules/subscriptions/`). Shared dom
 | `SubscriptionsLifecycleService` | Centralized legal transitions including pause/resume/cancel; terminal protection | Implemented |
 | `SubscriptionsSnapshotService` | Product/variant + customer snapshots; plan binding parse; `limitSubscription` | Implemented |
 | `SubscriptionsScheduleService` | Deterministic period / `nextRenewalAt` / `billingPeriodKey` math | Implemented (split from snapshots) |
-| `SubscriptionsRenewalService` | Due detection, attempt idempotency, `RenewalOrderRequest` hook, record order refs | Implemented (no worker; default order hook is NOOP) |
+| `SubscriptionsRenewalService` | Due detection, attempt idempotency, `RenewalOrderRequest` hook, record order refs | Implemented |
+| `SubscriptionsRenewalProcessor` | Full renewal orchestration: attempt → Order → authorize → capture → period advance | **P14e implemented** |
+| `RenewalAddressResolver` | Latest order → user shipping JSON → fail (no placeholders) | **P14e implemented** |
 | `SubscriptionEditPolicyService` | CRM vs Guardian field allowlists | Implemented |
 
-Thin `CrmSubscriptionsController` is **P14c (implemented)**. `AdminSubscriptionsController` and `AdminSubscriptionPlansController` are **P14d (implemented)**. **No** RenewalsController.
+Thin `CrmSubscriptionsController` is **P14c (implemented)**. `AdminSubscriptionsController` and `AdminSubscriptionPlansController` are **P14d (implemented)**. **P14e:** `SubscriptionRenewalJobsController` (`POST /v1/internal/jobs/subscription-renewals`) + optional `SubscriptionRenewalCronService`. **No** RenewalsController / Renewals module.
 
 ### 16.2 Existing catalog (keep IDs)
 
@@ -736,18 +738,18 @@ Document only. **No UI in this repository.**
 
 ## 20. Testing strategy
 
-P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. Worker ticks, Payments execution, and Inventory-through-Orders remain later slices.
+P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. Inventory-through-Orders remains P14f.
 
 | Area | Cases |
 | --- | --- |
 | Lifecycle | Legal transitions pass; illegal rejected (`ERR-SUB-005`) — **P14b unit tests** |
 | Pause / resume | PAUSED skips auto-renewal; resume does not create attempt/order; missed periods skipped; PAST_DUE restored if that was prior status — **P14b domain** |
 | Initial subscription | `PENDING_SETUP` → `ACTIVE`; first period math — **P14b**; `SUBSCRIPTION_INITIAL` order create is later |
-| Renewal generation | Due ACTIVE opens one attempt + `RenewalOrderRequest` (NOOP hook) — **P14b**; Order create is later |
+| Renewal generation | Due ACTIVE → processor: attempt + Order + authorize/capture — **P14e** |
 | Duplicate prevention | Same period key → existing attempt (incl. P2002 race) — **P14b** |
-| Idempotent retry | Failed payment retry does not new-period — **P14b**; second order still later |
-| Payment failure | `PAST_DUE` transition + notify hook — **P14b lifecycle/hooks**; Payments execute in P14e |
-| Clinical decline | Subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14b flag only** |
+| Idempotent retry | Failed payment retry does not new-period — **P14e** continues same attempt/order |
+| Payment failure | Authorize fail → `PAST_DUE` + notify hook — **P14e** |
+| Clinical decline | Void/refund; subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14e** |
 | Inventory failure | Not in P14b (no Inventory writes) |
 | Cancellation | Stops future renewals; not Class D — **P14b**; open orders follow order rules later |
 | Manual renewal | Explicit path; same idempotency key — **P14b primitive** |
@@ -765,9 +767,9 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 - CRM has no create/Class D surfaces — **P14c complete**
 - Guardian create, plans, Class D, correction, override — **P14d complete**
 - No Renewals module, nav, or DB domain — held
-- Payments / Inventory / Clinical / Product / User boundaries held — P14b domain; execution later
-- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d
-- Verification matrix §20 passes — domain cases P14b; CRM/Guardian HTTP P14c/d; remaining later
+- Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; Inventory still NOOP (P14f)
+- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d; retry allows 003|008
+- Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory later
 - Docs remain aligned with this blueprint
 
 ---
@@ -782,7 +784,7 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | **P14b** | Domain: lifecycle, snapshots, schedule, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order hook) | **Complete** on `feature/subscriptions-foundation`. No cron; no controllers |
 | **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | **Complete** on `feature/subscriptions-foundation`. Current shell patterns |
 | **P14d** | Guardian APIs + UI + plans + Class D | **Complete** on `feature/subscriptions-foundation`. Current shell; not P10 redesign |
-| **P14e** | Payments integration boundary | Pending. Opaque refs; call Payments on provider cancel |
+| **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance on capture only; Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. Inventory hooks remain NOOP (P14f). |
 | **P14f** | Inventory through Orders | Pending. Depends on P13e |
 | **P14g** | Clinical integration | Pending. Refs/events; no clinical authoring |
 | **P14h** | RBAC seed, tests, documentation freeze | Pending |
@@ -815,5 +817,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.2 | 2026-08-24 | Platform Engineering | P14b domain services: `SubscriptionsModule` (no controllers); lifecycle/snapshots/schedule/renewal idempotency/edit policy/Class D primitives; domain tests |
 | 1.3 | 2026-08-24 | Platform Engineering | P14c CRM: `/v1/crm/subscriptions` (API-083, API-213–224) + `/crm/subscriptions` UI; no create/Class D; optional `SEED_DEV_DATASET` subscription rows |
 | 1.4 | 2026-08-24 | Platform Engineering | P14d Guardian: `/v1/admin/subscriptions` (API-225–240) + `/v1/admin/subscription-plans` (API-084–087) + `/guardian/subscriptions` UI; additive activate/renewal POST and plan unpublish/archive/restore; CRM still has no create/Class D |
+| 1.5 | 2026-08-24 | Platform Engineering | P14e: Payments Nest module (simulated gateway, DB-028–031, Order.idempotencyKey); renewal processor (attempt→Order→authorize→capture→advance); Internal worker + webhook; CRM/Guardian renew runs payment path; P13f recorded partial |
 
 *End of 36 — Subscriptions Module.*

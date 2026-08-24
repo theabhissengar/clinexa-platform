@@ -474,6 +474,7 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 | Authorization | `PERM-SUB-001`–`009`; destructive `PERM-SUB-010`–`012`/`014` |
 | Primary Resources | `DB-032`–`DB-034` |
 | Referenced FRs | `FR-SUB-001`–`005`; [36](36-subscriptions-module.md) |
+| Implementation | **P14d:** CRM `/v1/crm/subscriptions` (`API-083`, `API-213`–`224`) and Guardian `/v1/admin/subscriptions` (`API-225`–`240`) + `/v1/admin/subscription-plans` (`API-084`–`087`) are mounted. Public `API-077`–`082` remain unmounted until later slices. |
 
 ### 5.14 Consultations
 
@@ -860,10 +861,10 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-081 | POST | `/subscriptions/{id}/cancel` | Cancel subscription | Yes | P | FR-SUB-004 | Stops future renewals; open orders preserved |
 | API-082 | PATCH | `/subscriptions/{id}/payment-method` | Update renewal PM | Yes | P | FR-PRT-004, FR-PAY-004 | |
 | API-083 | GET | `/crm/subscriptions` | Staff subscription list | Yes | Su◐, Op, Ad | FR-SUB-004, FR-CRM-005 | Assist only; no create; no gate bypass |
-| API-084 | GET | `/admin/subscription-plans` | Admin plan list | Yes | Ad | FR-SUB-001, FR-ADM-002 | |
-| API-085 | POST | `/admin/subscription-plans` | Create plan | Yes | Ad | FR-SUB-001 | |
-| API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | Yes | Ad | FR-SUB-001 | |
-| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-SUB-001, FR-ADM-003 | Validate clinical bindings for Rx plans |
+| API-084 | GET | `/admin/subscription-plans` | Admin plan list | Yes | Ad | FR-SUB-001, FR-ADM-002 | `PERM-SUB-002` |
+| API-085 | POST | `/admin/subscription-plans` | Create plan | Yes | Ad | FR-SUB-001 | `PERM-SUB-002`; starts `DRAFT` |
+| API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | Yes | Ad | FR-SUB-001 | `PERM-SUB-002` |
+| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-SUB-001, FR-ADM-003 | Validate catalog bindings; clinical questionnaire authoring remains P14g |
 | API-213 | GET | `/crm/subscriptions/{id}` | Staff subscription detail | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-004`; no create |
 | API-214 | PATCH | `/crm/subscriptions/{id}` | Operational edit | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-006` CRM allowlist |
 | API-215 | POST | `/crm/subscriptions/{id}/pause` | Pause | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-007` |
@@ -893,7 +894,21 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-239 | GET | `/admin/subscriptions/{id}/activity` | Activity | Yes | Ad | — | |
 | API-240 | GET | `/admin/subscriptions/{id}/renewals` | Attempts | Yes | Ad | FR-SUB-003 | |
 
+Additive Guardian paths (same domain; not a parallel catalog family):
+
+| Method | Resource | Purpose | Auth | Notes |
+| --- | --- | --- | --- | --- |
+| POST | `/admin/subscriptions/{id}/activate` | Activate `PENDING_SETUP` | Yes | `PERM-SUB-007`; domain `activateInitial` |
+| POST | `/admin/subscriptions/{id}/renewals` | Manual renewal | Yes | `PERM-SUB-008`; same as CRM `API-219` |
+| POST | `/admin/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | `PERM-SUB-008`; same as CRM `API-220` |
+| GET | `/admin/subscription-plans/{id}` | Admin plan detail | Yes | `PERM-SUB-002` |
+| POST | `/admin/subscription-plans/{id}/unpublish` | Unpublish plan | Yes | `PERM-SUB-002` |
+| POST | `/admin/subscription-plans/{id}/archive` | Archive plan | Yes | `PERM-SUB-002` (not `PERM-SUB-011`) |
+| POST | `/admin/subscription-plans/{id}/restore` | Restore plan | Yes | `PERM-SUB-002` (not `PERM-SUB-012`) |
+
 Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain services—not a public patient endpoint.
+
+> **P14d:** CRM `API-083` / `API-213`–`224` and Guardian `API-225`–`240` / `API-084`–`087` are mounted. Patient `API-077`–`082` remain unmounted.
 
 ### 6.14 Consultations
 
@@ -1829,6 +1844,9 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.5 | 2026-08-03 | Platform Engineering | TBD | Inventory `API-187`–`203`; deprecate `API-105`–`109` CRM adjust paths; ledger-first; link [34](34-inventory-module.md) | Draft for review |
 | 1.6 | 2026-08-20 | Platform Engineering | TBD | Orders CRM notes/history/edit (`API-076a`–`d`); Guardian/admin Class D `API-204`–`212`; shared domain; no CRM create; link [35](35-orders-module.md) | Draft for review |
 | 1.7 | 2026-08-24 | Platform Engineering | TBD | Subscriptions CRM/Guardian expansion `API-213`–`240`; keep `API-077`–`087`; no CRM create; link [36](36-subscriptions-module.md) | Draft for review |
+| 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: Subscriptions domain services implemented; HTTP `API-077`–`087` / `API-213`–`240` still unmounted | Draft for review |
+| 1.9 | 2026-08-24 | Platform Engineering | TBD | P14c: CRM `API-083` / `API-213`–`224` mounted; Guardian/patient Subscription APIs still unmounted | Draft for review |
+| 1.10 | 2026-08-24 | Platform Engineering | TBD | P14d: Guardian `API-225`–`240` and `API-084`–`087` mounted; additive activate/renewal POST and plan unpublish/archive/restore; patient APIs still unmounted | Draft for review |
 
 ---
 

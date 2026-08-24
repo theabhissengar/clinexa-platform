@@ -938,6 +938,7 @@ flowchart TB
 | 1.8 | 2026-08-03 | Platform Engineering | — | Split `PERM-INV-002` vs `004`/`005`/`010`; Guardian-only inventory admin; link [34](34-inventory-module.md) | Draft for review |
 | 1.9 | 2026-08-20 | Platform Engineering | — | `PERM-ORD-004` admin create (Guardian only); `PERM-ORD-005` context-scoped edit; CRM never Create/Class D; link [35](35-orders-module.md) | Draft for review |
 | 2.0 | 2026-08-24 | Platform Engineering | — | `PERM-SUB-004`–`009`/`014`; CRM never Subscription Create/Class D; link [36](36-subscriptions-module.md) | Draft for review |
+| 2.1 | 2026-08-24 | Platform Engineering | — | P14d Guardian Subscriptions mounted using existing SUB codes; no new permission IDs; plan archive remains `PERM-SUB-002` | Draft for review |
 
 ---
 

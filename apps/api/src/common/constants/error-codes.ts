@@ -105,6 +105,19 @@ export const ErrorCodes = {
   SUB_PAUSE_RESUME_FORBIDDEN: 'ERR-SUB-007',
   /** CRM subscription create forbidden. */
   SUB_CRM_CREATE_FORBIDDEN: 'ERR-SUB-008',
+
+  /** Payment authorization failed. */
+  PAY_AUTHORIZATION_FAILED: 'ERR-PAY-001',
+  /** Idempotency conflict / replay mismatch. */
+  PAY_IDEMPOTENCY_CONFLICT: 'ERR-PAY-002',
+  /** Webhook signature invalid. */
+  PAY_WEBHOOK_INVALID: 'ERR-PAY-003',
+  /** Refund not eligible under OR-11. */
+  PAY_REFUND_INELIGIBLE: 'ERR-PAY-004',
+  /** Saved payment method missing/invalid. */
+  PAY_METHOD_INVALID: 'ERR-PAY-005',
+  /** PSP timeout / unavailable (fail-safe). */
+  PAY_PROVIDER_UNAVAILABLE: 'ERR-PAY-006',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

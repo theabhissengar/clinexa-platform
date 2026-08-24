@@ -99,8 +99,8 @@ Every phase record in §5 carries these fields.
 | **P9+** | Subsequent business modules (CMS depth, …) — Orders extracted to P13; Subscriptions extracted to P14 | Not started | P9 (or parallel after P8 where independent) |
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
-| **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13d complete; P13e+ not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
-| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (P14 blueprint + P14a–d complete; P14e–h pending) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
+| **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13d complete; **P13f partial via P14e**; P13e/P13g not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
+| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (P14 blueprint + **P14a–e complete**; P14f–h pending) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -307,15 +307,15 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Orders as the shared platform commerce aggregate: canonical lifecycle, immutable line/customer snapshots, server-computed totals, CRM operational workflows, Guardian administrative Create/Edit and Class D, Inventory orchestration via services only, Payments reference/reaction boundary |
-| **Status** | In progress (P13a–P13d complete; P13e+ not started) |
+| **Status** | In progress (P13a–P13d complete; **P13f partial** via P14e Payments hooks; P13e/P13g not started) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/orders-guardian` (P13d); prior CRM work on `dev` via #48 |
+| **Branch** | `feature/orders-guardian` (P13d); Payments reactions extended on `feature/subscriptions-renewal-payments` (P13f partial) |
 | **PR** | — |
 | **Dependencies** | P5 shell; P8 Products; P9 Users; P12 Inventory (P12f closed by P13e); Class D gates; blueprint [35](35-orders-module.md) |
-| **Scope** | **P13a–c (complete on `dev`).** **P13d (complete):** Guardian `/v1/admin/orders` (API-204–212) + `/guardian/orders` UI — create, edit, Class D delete/archive/restore, financial correction, administrative override; shared `OrdersService`. **Next:** P13e Inventory → P13f Payments → P13g verification |
+| **Scope** | **P13a–c (complete on `dev`).** **P13d (complete):** Guardian `/v1/admin/orders` (API-204–212) + `/guardian/orders` UI. **P13f (partial via P14e):** `createOrderFromSnapshots` + `Order.idempotencyKey`; payment hooks wire capture/void to Nest `PaymentsModule` (simulated); opaque payment refs only. **Not started:** P13e Inventory orchestration; full P13f Store/checkout intents; P13g verification |
 | **Architecture changes** | Shared domain; CRM thin + Guardian thin; override bypasses normal graph with required reason; Platform Audit (`GRD-053`) deferred (activity metadata marks `platformAuditDeferred`) |
 | **Documentation updates** | [35](35-orders-module.md), this record |
-| **Notes** | CRM Create still locked. Corrections do not execute Payments. Inventory Commit still deferred to P13e. |
+| **Notes** | CRM Create still locked. Corrections do not execute Payments refund HTTP. Inventory Commit still deferred to P13e. P14e advances P13f only for renewal Order create + authorize/capture/void reactions. |
 | **Verification** | API typecheck/lint/Orders tests; admin typecheck/lint/build |
 
 ### P14 — Subscriptions Platform Module
@@ -323,16 +323,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Subscriptions as the shared platform aggregate for recurring commitments: canonical lifecycle (separate from payment/renewal/clinical dimensions), in-module renewal orchestration, CRM operational surface, Guardian admin/plans/Class D — without a standalone Renewals module |
-| **Status** | In progress (P14 blueprint complete; **P14a complete**; **P14b complete**; **P14c complete**; **P14d complete**; P14e–h pending) |
+| **Status** | In progress (P14 blueprint complete; **P14a–e complete**; P14f–h pending) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/subscriptions-foundation` |
+| **Branch** | `feature/subscriptions-renewal-payments` (P14e); prior P14a–d on `feature/subscriptions-foundation` / `dev` |
 | **PR** | — |
 | **Dependencies** | P5 shell; P8 Products; P9 Users; P13 Orders (`orderType` / `subscriptionId`); Inventory via Orders (P14f after P13e); Payments boundary (P14e); Class D patterns; blueprint [36](36-subscriptions-module.md) |
-| **Scope** | **P14a (complete):** Prisma models + migration + SUB permission seed. **P14b (complete):** NestJS domain services. **P14c (complete):** CRM `/v1/crm/subscriptions` (API-083, API-213–224) + `/crm/subscriptions` list/detail/edit/history/activity/notes; no create/Class D. **P14d (complete):** Guardian `/v1/admin/subscriptions` (API-225–240) + `/v1/admin/subscription-plans` (API-084–087) + `/guardian/subscriptions` list/create/detail/edit/history/activity/notes/plans; Class D delete/archive/restore/correct/override. **Not this pass:** cron/worker, Payments/Inventory/clinical execution, automatic renewal Order creation. **Later slices:** P14e Payments → P14f Inventory-through-Orders → P14g clinical → P14h freeze. **No Renewals phase.** |
-| **Architecture changes** | Shared domain; CRM no Create/Class D; four-way status split; `SubscriptionsRenewalService` inside SUB; Order owns the renewal transaction; pause skips missed cycles |
-| **Documentation updates** | [36](36-subscriptions-module.md), this record, [11](11-api-design.md), [27](27-module-registry.md), [29](29-navigation-blueprint.md) |
-| **Notes** | CRM Create locked No. Clinical decline does not auto-cancel. Worker/cron not implemented in P14a–d. Optional `SEED_DEV_DATASET` creates `SUB-SEED-*` rows including archived/deleted Guardian examples (not production). Manual renewal opens an attempt only (NOOP order hook). Plan archive uses `PERM-SUB-002`, not subscription Class D `010`–`012`. |
-| **Verification** | API typecheck/lint/tests including CRM + Guardian Subscription specs; admin typecheck/lint/build; existing Orders tests |
+| **Scope** | **P14a–d (complete):** schema, domain, CRM, Guardian. **P14e (complete):** Nest `PaymentsModule` (simulated gateway, DB-028–031, `Order.idempotencyKey`); `SubscriptionsRenewalProcessor` (attempt → Order → authorize → capture → period advance on capture only); Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; CRM/Guardian renew/retry run the payment path; cancel → `cancelRecurring`. **Not this pass:** Inventory-through-Orders (P14f), clinical authoring (P14g), Store/Portal, Stripe. **Later:** P14f → P14g → P14h freeze. **No Renewals phase.** |
+| **Architecture changes** | Shared domain; CRM no Create/Class D; four-way status split; `SubscriptionsRenewalService` + processor inside SUB; Order owns the renewal transaction; Payments owns money tables; pause skips missed cycles |
+| **Documentation updates** | [36](36-subscriptions-module.md), [15](15-payment-flow.md), [10](10-database-design.md), [11](11-api-design.md), [35](35-orders-module.md), [27](27-module-registry.md), this record |
+| **Notes** | CRM Create locked No. Clinical decline → `DECLINED_HOLD` (not PAST_DUE / not auto-cancel). Period advances only after capture. Inventory hooks remain NOOP. Optional `RENEWAL_CRON_ENABLED` local cron (default false); production uses Internal HTTP job. |
+| **Verification** | API typecheck/lint/tests including Payments + renewal processor + CRM/Guardian Subscription specs; Orders snapshot/idempotency tests |
 
 ### P10 — Internal Platform UX/UI Modernization
 
@@ -510,6 +510,7 @@ A phase is complete when all of the following hold.
 | 2.8 | 2026-08-24 | Platform Engineering | P14b Subscriptions domain services on `feature/subscriptions-foundation`: NestJS `SubscriptionsModule` (no controllers); lifecycle/snapshots/schedule/renewal idempotency/Class D primitives; domain tests |
 | 2.9 | 2026-08-24 | Platform Engineering | P14c CRM Subscriptions: `/v1/crm/subscriptions` + `/crm/subscriptions` UI; no create/Class D; optional SUB-SEED dataset |
 | 2.10 | 2026-08-24 | Platform Engineering | P14d Guardian Subscriptions: `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` + `/guardian/subscriptions` UI (create/Class D/plans); CRM still no create/Class D |
+| 2.11 | 2026-08-24 | Platform Engineering | P14e on `feature/subscriptions-renewal-payments`: Payments Nest module (simulated), renewal Order+authorize/capture, Internal worker + webhook; P13f recorded partial |
 
 ---
 

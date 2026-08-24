@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,12 +12,18 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SubscriptionStatus } from '../../../generated/prisma';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { RequireAnyPermissions } from '../rbac/decorators/require-any-permissions.decorator';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
 import { Permissions } from '../rbac/constants/permissions';
 import { parseSubscriptionStatusFilter } from './dto/crm-subscription.dto';
@@ -29,6 +36,7 @@ import {
   AdminOverrideSubscriptionDto,
   AdminUpdateSubscriptionDto,
 } from './dto/admin-subscription.dto';
+import { SubscriptionsRenewalProcessor } from './subscriptions-renewal.processor';
 import { SubscriptionsService } from './subscriptions.service';
 
 /**
@@ -40,7 +48,10 @@ import { SubscriptionsService } from './subscriptions.service';
 @ApiBearerAuth()
 @Controller({ path: 'admin/subscriptions', version: '1' })
 export class AdminSubscriptionsController {
-  constructor(private readonly subscriptions: SubscriptionsService) {}
+  constructor(
+    private readonly subscriptions: SubscriptionsService,
+    private readonly renewalProcessor: SubscriptionsRenewalProcessor,
+  ) {}
 
   @Get()
   @RequirePermissions(Permissions.SUB_VIEW)
@@ -360,15 +371,24 @@ export class AdminSubscriptionsController {
   @RequirePermissions(Permissions.SUB_RENEW)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Manual renewal (additive admin POST; same domain as CRM API-219)',
+    summary:
+      'Manual renewal (additive admin POST; same domain as CRM API-219) — attempt + order + payment',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Recommended (SUB-IDEM-006). Period-key idempotency always applies; header documents client retry intent.',
   })
   openRenewal(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdminLifecycleReasonDto,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') _idempotencyKey?: string,
   ) {
     void dto;
-    return this.subscriptions.openRenewalAttempt({
+    void _idempotencyKey;
+    return this.renewalProcessor.processSubscription({
       subscriptionId: id,
       mode: 'manual',
       actorUserId: user.id,
@@ -377,20 +397,29 @@ export class AdminSubscriptionsController {
   }
 
   @Post(':id/renewals/:attemptId/retry')
-  @RequirePermissions(Permissions.SUB_RENEW)
+  @RequireAnyPermissions(Permissions.SUB_RENEW, Permissions.SUB_ASSIST_RENEWAL)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
       'Retry current-period attempt (additive admin POST; same domain as CRM API-220)',
   })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Recommended (SUB-IDEM-006). Same period key + order; retry continues the existing attempt.',
+  })
   retryRenewal(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') _idempotencyKey?: string,
   ) {
-    return this.subscriptions.retryRenewalAttempt({
+    void attemptId;
+    void _idempotencyKey;
+    return this.renewalProcessor.processSubscription({
       subscriptionId: id,
-      attemptId,
+      mode: 'retry',
       actorUserId: user.id,
       source: 'guardian',
     });

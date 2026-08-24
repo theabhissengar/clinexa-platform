@@ -567,8 +567,10 @@ export function GuardianSubscriptionDetailPage() {
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
-                  void runAction("Manual renewal opened.", () =>
-                    openAdminManualRenewal(row.id),
+                  void runAction(
+                    "Manual renewal started (order + payment).",
+                    () => openAdminManualRenewal(row.id),
+                    "Start a manual renewal for the current period? This creates a renewal order and attempts payment via Payments.",
                   )
                 }
               >

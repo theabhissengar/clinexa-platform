@@ -53,6 +53,49 @@ export type CreateOrderInput = {
   initialStatus?: Extract<OrderStatus, 'DRAFT' | 'PAYMENT_PENDING'>;
   actorUserId?: string | null;
   source?: string;
+  /** Optional idempotency key (unique). Replay returns the existing order. */
+  idempotencyKey?: string | null;
+};
+
+/** Renewal / historical create — lines come from snapshots, not live catalog prices. */
+export type SnapshotOrderLineInput = {
+  productId: string;
+  variantId: string;
+  productName: string;
+  sku: string;
+  productType: string;
+  isRxEligible: boolean;
+  catalogMetadata?: unknown;
+  quantity: number;
+  unitPriceCents: number;
+  salePriceCents: number;
+  currency?: string;
+  discountCents?: number;
+  taxCents?: number;
+};
+
+export type CreateOrderFromSnapshotsInput = {
+  patientUserId: string;
+  lines: SnapshotOrderLineInput[];
+  shippingAddress: OrderAddressInput;
+  billingAddress: OrderAddressInput;
+  customer?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  };
+  orderType: OrderType;
+  subscriptionId: string;
+  shippingTotalCents?: number;
+  discountTotalCents?: number;
+  taxTotalCents?: number;
+  currency?: string;
+  initialStatus?: Extract<OrderStatus, 'DRAFT' | 'PAYMENT_PENDING'>;
+  actorUserId?: string | null;
+  source?: string;
+  /** Required for renewal: renewal:{subscriptionId}:{billingPeriodKey} */
+  idempotencyKey: string;
 };
 
 export type TransitionOrderInput = {

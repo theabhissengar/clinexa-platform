@@ -532,34 +532,42 @@ Subscription payment behavior derives from `OR-10`, `FR-SUB-001`–`005`, `FR-PA
 
 ### 5.10 Subscription payment flow
 
+**P14e implementation sequence** (authoritative for renewal money path):
+
+1. Due / manual / retry opens (or reuses) a `SubscriptionRenewalAttempt` for the billing period key.
+2. Orders creates or reuses a `SUBSCRIPTION_RENEWAL` Order from **subscription snapshots** (`idempotencyKey = renewal:{subId}:{billingPeriodKey}`).
+3. Payments **authorizes** against the saved method (opaque refs only on Order/Subscription).
+4. **Rx:** order enters clinical review; capture waits for clinical approval. **Non-Rx:** capture proceeds after authorize.
+5. On **capture success**, Subscriptions advances the period (`cycleNumber` / period fields). Authorize alone does **not** consume the period.
+6. Authorize failure → attempt `FAILED` + subscription `PAST_DUE` (grace/retry). Clinical decline → void/refund + `DECLINED_HOLD` (not PAST_DUE, not auto-cancel).
+
 ```mermaid
 flowchart TD
-  Due[RenewalIntervalDue]
-  Charge[ChargeSavedMethod]
-  Success{ChargeSucceeded}
-  Order[CreateRenewalOrder]
-  Reassess{ReassessmentRequired}
-  Clinical[ClinicalGates]
-  Capture[CaptureWhenRequired]
-  Fulfill[FulfillIfCleared]
-  Fail[EnterPastDueGrace]
+  Due[RenewalDueOrManualOrRetry]
+  Attempt[OpenOrReuseAttempt]
+  Order[CreateOrReuseRenewalOrder]
+  Auth[AuthorizeSavedMethod]
+  AuthOk{AuthorizeSucceeded}
+  Rx{RequiresClinicalReview}
+  Clinical[AwaitClinicalReview]
+  Capture[CaptureAuthorizedPayment]
+  CapOk{CaptureSucceeded}
+  Advance[AdvancePeriodOnCapture]
+  PastDue[MarkPastDueGrace]
   Notify[MandatoryNotifyNTF042]
-  UpdatePM[PatientUpdatesPaymentMethod]
-  Retry[RetryWithBackoff]
+  Decline[VoidOrRefund_DECLINED_HOLD]
+  Fulfill[FulfillIfCapturedAndCleared]
 
-  Due --> Charge
-  Charge --> Success
-  Success -->|Yes| Order
-  Order --> Reassess
-  Reassess -->|Yes| Clinical
-  Reassess -->|No| Capture
-  Clinical --> Capture
-  Capture --> Fulfill
-  Success -->|No| Fail
-  Fail --> Notify
-  Notify --> UpdatePM
-  UpdatePM --> Retry
-  Retry --> Charge
+  Due --> Attempt --> Order --> Auth --> AuthOk
+  AuthOk -->|No| PastDue --> Notify
+  AuthOk -->|Yes| Rx
+  Rx -->|Yes| Clinical
+  Clinical -->|Approved| Capture
+  Clinical -->|Declined| Decline
+  Rx -->|No| Capture
+  Capture --> CapOk
+  CapOk -->|Yes| Advance --> Fulfill
+  CapOk -->|No| PastDue
 ```
 
 ---
@@ -959,6 +967,7 @@ Component-level ownership for implementation and operations handoff. Complements
 | 1.0 | 2026-07-24 | Principal Payments / Enterprise Solution / Healthcare SaaS / Backend Architect (planning) | Pending | Initial payment flow architecture: provider abstraction, Authorize→Clinical Review→Capture timing, lifecycle and state catalog (`PAY-001`–`PAY-152`), subscriptions, refunds (`OR-11`), reliability, PCI-aware security posture, traceability | Draft — Pending Review |
 | 1.0 | 2026-07-24 | Principal Payments / Enterprise Solution / Healthcare SaaS / Backend Architect (planning) | Pending | Architectural appendices: §9.6 Payment Responsibility Matrix, §9.7 Payment Event Matrix, §9.8 Authorization vs Capture Matrix, §9.9 Payment Reconciliation Flow, §9.10 Payment Ownership Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-08-24 | Platform Engineering | Pending | `PAY-023`/`PAY-070` aligned to [36](36-subscriptions-module.md): order opened with attempt; Subscriptions does not execute payments; no `renewing` lifecycle status | Draft for review |
+| 1.2 | 2026-08-24 | Platform Engineering | Pending | P14e: redraw §5.10 — attempt → Order → authorize → clinical → capture → period advance on capture only; Nest PaymentsModule simulated gateway | Draft for review |
 
 ---
 

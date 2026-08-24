@@ -282,7 +282,7 @@ export function CrmSubscriptionsListPage() {
         <p className="text-sm text-muted-foreground">No subscriptions found.</p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[1080px] text-left text-sm">
+          <table className="w-full min-w-270 text-left text-sm">
             <thead className="border-b border-border bg-muted/40 text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 font-medium">Subscription</th>

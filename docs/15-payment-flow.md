@@ -211,7 +211,7 @@ Subscription money handling is detailed in [§5](#5-subscription-payments). Arch
 
 | ID | Rule |
 | --- | --- |
-| **PAY-023** | Renewal worker creates a renewal charge attempt (`DB-034` RenewalAttempts), records success/failure, and creates a renewal order on success (`ARCH` renewal sequence). |
+| **PAY-023** | Renewal processing (inside Subscriptions, not a Renewals module) creates/loads an idempotent `DB-034` attempt and requests a `SUBSCRIPTION_RENEWAL` Order through Orders **when the attempt is opened** so failure is visible on the Order. Duplicate prevention is `(subscriptionId, billingPeriodKey)`, not “order only after money”. Payments still **executes** the charge. See [36](36-subscriptions-module.md). |
 | **PAY-024** | Successful renewal money does not bypass Rx clinical reassessment or pharmacy gates when configured (`FR-SUB-005`; `OR-10`). |
 | **PAY-025** | Patient updates payment method in Portal; Support may assist renewal without gate bypass (`FR-PRT-004`; `PERM-SUB-003`). |
 
@@ -481,7 +481,7 @@ Subscription payment behavior derives from `OR-10`, `FR-SUB-001`–`005`, `FR-PA
 | ID | Rule |
 | --- | --- |
 | **PAY-069** | On plan interval, renewal worker charges the default saved PSP method (`FR-SUB-002`; `FR-PAY-004`). |
-| **PAY-070** | Successful renewal creates a renewal order and records a renewal attempt (`DB-034`); subscription remains active/renewing per [10](10-database-design.md) semantics. |
+| **PAY-070** | Each renewal cycle records a `DB-034` attempt and a renewal Order (opened with the attempt). Subscription lifecycle stays `ACTIVE` or becomes `PAST_DUE` on payment failure — there is no `renewing` lifecycle status. See [36](36-subscriptions-module.md) and [10](10-database-design.md). |
 | **PAY-071** | Renewal Success notifies per `NTF-041`; money still respects capture/clinical rules for Rx renewal fulfillment. |
 
 ### 5.4 Failed renewal
@@ -958,6 +958,7 @@ Component-level ownership for implementation and operations handoff. Complements
 | --- | --- | --- | --- | --- | --- |
 | 1.0 | 2026-07-24 | Principal Payments / Enterprise Solution / Healthcare SaaS / Backend Architect (planning) | Pending | Initial payment flow architecture: provider abstraction, Authorize→Clinical Review→Capture timing, lifecycle and state catalog (`PAY-001`–`PAY-152`), subscriptions, refunds (`OR-11`), reliability, PCI-aware security posture, traceability | Draft — Pending Review |
 | 1.0 | 2026-07-24 | Principal Payments / Enterprise Solution / Healthcare SaaS / Backend Architect (planning) | Pending | Architectural appendices: §9.6 Payment Responsibility Matrix, §9.7 Payment Event Matrix, §9.8 Authorization vs Capture Matrix, §9.9 Payment Reconciliation Flow, §9.10 Payment Ownership Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
+| 1.1 | 2026-08-24 | Platform Engineering | Pending | `PAY-023`/`PAY-070` aligned to [36](36-subscriptions-module.md): order opened with attempt; Subscriptions does not execute payments; no `renewing` lifecycle status | Draft for review |
 
 ---
 

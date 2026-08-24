@@ -470,9 +470,9 @@ export function CrmSubscriptionDetailPage() {
                 disabled={busy}
                 onClick={() =>
                   void runAction(
-                    "Manual renewal opened.",
+                    "Manual renewal started (order + payment).",
                     () => openCrmManualRenewal(row.id),
-                    "Open a manual renewal attempt for the current period? This does not charge a card from CRM.",
+                    "Open a manual renewal for the current period? This creates a renewal order and attempts payment authorization via the Payments service.",
                   )
                 }
               >

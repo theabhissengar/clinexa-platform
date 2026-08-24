@@ -54,8 +54,17 @@ describe('Subscriptions domain boundaries', () => {
     expect(moduleFile?.text).toContain('CrmSubscriptionsController');
     expect(moduleFile?.text).toContain('AdminSubscriptionsController');
     expect(moduleFile?.text).toContain('AdminSubscriptionPlansController');
+    expect(moduleFile?.text).toContain('SubscriptionRenewalJobsController');
     expect(
       sources.some((file) => file.name === 'admin-subscriptions.controller.ts'),
     ).toBe(true);
+  });
+
+  it('does not import Stripe or call PaymentGateway from subscription sources', () => {
+    for (const file of sources) {
+      expect(file.text.toLowerCase().includes('stripe')).toBe(false);
+      expect(file.text.includes('PaymentGateway')).toBe(false);
+      expect(file.text.includes('SimulatedPaymentAdapter')).toBe(false);
+    }
   });
 });

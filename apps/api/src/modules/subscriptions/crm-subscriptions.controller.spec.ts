@@ -25,8 +25,13 @@ describe('CrmSubscriptionsController', () => {
     softDelete: jest.fn(),
   };
 
+  const renewalProcessor = {
+    processSubscription: jest.fn(),
+  };
+
   const controller = new CrmSubscriptionsController(
     subscriptions as unknown as SubscriptionsService,
+    renewalProcessor as never,
   );
   const actor = { id: 'staff-1' } as never;
 
@@ -130,11 +135,12 @@ describe('CrmSubscriptionsController', () => {
     );
   });
 
-  it('opens a manual renewal and retries via domain', async () => {
-    subscriptions.openRenewalAttempt.mockResolvedValue({ created: true });
-    subscriptions.retryRenewalAttempt.mockResolvedValue({ created: false });
+  it('opens a manual renewal and retries via renewal processor', async () => {
+    renewalProcessor.processSubscription.mockResolvedValue({
+      outcome: 'succeeded',
+    });
     await controller.openRenewal('sub-1', {}, actor);
-    expect(subscriptions.openRenewalAttempt).toHaveBeenCalledWith(
+    expect(renewalProcessor.processSubscription).toHaveBeenCalledWith(
       expect.objectContaining({
         subscriptionId: 'sub-1',
         mode: 'manual',
@@ -142,10 +148,10 @@ describe('CrmSubscriptionsController', () => {
       }),
     );
     await controller.retryRenewal('sub-1', 'att-1', actor);
-    expect(subscriptions.retryRenewalAttempt).toHaveBeenCalledWith(
+    expect(renewalProcessor.processSubscription).toHaveBeenCalledWith(
       expect.objectContaining({
         subscriptionId: 'sub-1',
-        attemptId: 'att-1',
+        mode: 'retry',
         source: 'crm',
       }),
     );

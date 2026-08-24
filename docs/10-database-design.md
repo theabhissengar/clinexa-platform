@@ -504,6 +504,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Key attributes (logical) | `status`; `orderType` (`ONE_TIME` \| `SUBSCRIPTION_INITIAL` \| `SUBSCRIPTION_RENEWAL`); nullable `subscriptionId`; server-computed money totals **in cents**; customer + shipping/billing **snapshots** (`OrderAddress`); clinical prerequisite flags; payment status summary refs; timestamps; soft-delete/archive fields as designed |
 | Inventory coupling | **Reserve on successful payment authorization** when leaving `payment_pending`; Release/Commit/Restock via Inventory services only — Orders never writes inventory tables ([35 §10](35-orders-module.md), [34](34-inventory-module.md)) |
 | Persistence (P13a) | Prisma models `Order`, `OrderItem`, `OrderAddress`, `OrderStatusHistory`, `OrderActivity`, `OrderNote`, `OrderAdjustment`; migration `20260820120000_orders_platform_module_foundation` |
+| Persistence (P14e) | Additive `Order.idempotencyKey` (unique, nullable) for renewal Order replay (`renewal:{subscriptionId}:{billingPeriodKey}`); migration `20260824180000_payments_domain_and_order_idempotency` |
 | Retention | Retain indefinitely for clinical/commerce audit intent; cancel/refund via status; prefer terminal status over hard delete |
 | Trace | FR-ORD-001–006, ARCH-047, ROAD-010; blueprint [35](35-orders-module.md) |
 
@@ -538,6 +539,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Primary key | `id` |
 | Relationships | N:1 Order and/or Subscription; optional SavedPaymentMethod; 1:N Refunds |
 | Business rules | Statuses: `pending`, `authorized_or_captured`, `failed`, `refunded` (FR §14); PSP tokens only; drives order/subscription transitions (`FR-PAY-002`) |
+| Persistence (P14e) | Prisma `Payment` (`payments`): `amountCents`, `status`/`lifecycleState`/`purpose` enums, provider refs, unique `idempotencyKey`; migration `20260824180000_payments_domain_and_order_idempotency`. Nest `PaymentsModule` owns all writes — Subscriptions/Orders must not use `prisma.payment.` |
 | Retention | Retain financial history |
 | Trace | FR-PAY-001–005, ARCH-046, ROAD-009 |
 
@@ -549,6 +551,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Primary key | `id` |
 | Relationships | N:1 Payment; N:1 Order; optional actor User (staff) |
 | Business rules | Clinical decline pre-fulfillment default eligible captured refund; post-fulfillment manual + reason; coupon-adjusted; may trigger inventory restock (`OR-11`, FR-PAY-003) |
+| Persistence (P14e) | Prisma `Refund` (`refunds`): unique `idempotencyKey`; service-path void/refund only in P14e (no public refund HTTP) |
 | Retention | Retain with payments/orders |
 | Trace | OR-11, FR-PAY-003, FR-ORD-006, AC-BR-10 |
 
@@ -560,6 +563,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Primary key | `id` |
 | Relationships | N:1 User; referenced by Subscriptions/Payments |
 | Business rules | No PAN; token + last4/brand metadata only (`FR-PAY-001/004`) |
+| Persistence (P14e) | Prisma `SavedPaymentMethod` (`saved_payment_methods`); Portal attach/list HTTP deferred |
 | Retention | Soft-delete on patient remove; retain references needed for historical payments |
 | Trace | FR-PAY-004, FR-SUB-002, FR-PRT-004 |
 
@@ -571,6 +575,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Primary key | `id` or unique `idempotency_key` |
 | Relationships | Optional link to Payment |
 | Business rules | Unique key; safe replay (`FR-PAY-002`, NFR-033) |
+| Persistence (P14e) | Prisma `PaymentWebhookEvent` (`payment_webhook_events`): unique `(provider, providerEventId)`; **insert-before-apply** on `POST /v1/webhooks/payments` |
 | Retention | Retain long enough to cover PSP retry windows; archive thereafter |
 | Trace | FR-PAY-002, NFR-033 |
 
@@ -1789,6 +1794,7 @@ flowchart LR
 | 1.6 | 2026-08-24 | Platform Engineering | TBD | Subscriptions `DB-032`–`034` aligned to [36](36-subscriptions-module.md): four-dimension status, period-key unique, no Renewals domain | Draft for review |
 | 1.7 | 2026-08-24 | Platform Engineering | TBD | P14a Prisma: `SubscriptionPlan`/`Subscription`/`SubscriptionItem`/`SubscriptionRenewalAttempt` + history/activity/notes; migration `20260824120000_subscriptions_platform_module_foundation`; `orders.subscription_id` FK | Draft for review |
 | 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: no schema change; NestJS Subscriptions domain services consume `DB-032`–`034` | Draft for review |
+| 1.9 | 2026-08-24 | Platform Engineering | TBD | P14e Prisma: `Payment`/`Refund`/`SavedPaymentMethod`/`PaymentWebhookEvent` + `Order.idempotencyKey`; migration `20260824180000_payments_domain_and_order_idempotency` | Draft for review |
 
 ---
 

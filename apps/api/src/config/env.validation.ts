@@ -59,6 +59,23 @@ const envSchema = z.object({
     .int()
     .positive()
     .optional(),
+
+  /** P14e Payments — simulated only in this phase. */
+  PAYMENTS_PROVIDER: z.enum(['simulated']).default('simulated'),
+  PAYMENTS_WEBHOOK_SECRET: z
+    .string()
+    .min(16)
+    .default('dev-payments-webhook-secret'),
+  /** Optional simulated force-fail for tests: decline | timeout */
+  PAYMENTS_SIMULATED_FORCE: z.enum(['decline', 'timeout']).optional(),
+
+  /** AUTH-015 worker shared secret for Internal job routes. */
+  WORKER_SHARED_SECRET: z.string().min(16).default('dev-worker-shared-secret'),
+  RENEWAL_CRON_ENABLED: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((val) => val === true || val === 'true' || val === '1'),
+  RENEWAL_CRON_EXPR: z.string().optional(),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

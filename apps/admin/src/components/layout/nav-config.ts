@@ -130,10 +130,7 @@ export const NAV_ITEMS: NavItem[] = [
     route: "/crm/subscriptions",
     icon: Repeat,
     context: "crm",
-    permission: [
-      Permissions.SUB_ASSIST_RENEWAL,
-      Permissions.SUB_CONFIGURE_PLANS,
-    ],
+    permission: Permissions.SUB_VIEW,
     order: 40,
   },
   {
@@ -243,10 +240,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Repeat,
     context: "guardian",
     group: "commerce",
-    permission: [
-      Permissions.SUB_CONFIGURE_PLANS,
-      Permissions.SUB_ASSIST_RENEWAL,
-    ],
+    permission: Permissions.SUB_VIEW,
     order: 40,
   },
   // Users

@@ -69,6 +69,26 @@ export const Permissions = {
   SUB_MANAGE_OWN: 'PERM-SUB-001',
   SUB_CONFIGURE_PLANS: 'PERM-SUB-002',
   SUB_ASSIST_RENEWAL: 'PERM-SUB-003',
+  /** Staff view (CRM + Guardian, role-scoped). */
+  SUB_VIEW: 'PERM-SUB-004',
+  /** Guardian admin create path only — never grant to CRM. */
+  SUB_CREATE: 'PERM-SUB-005',
+  /** Edit subscription fields (context allowlist enforced in domain). */
+  SUB_EDIT: 'PERM-SUB-006',
+  /** Staff pause / resume / policy cancel. */
+  SUB_LIFECYCLE: 'PERM-SUB-007',
+  /** Manual renewal / retry (same period-key idempotency as the worker). */
+  SUB_RENEW: 'PERM-SUB-008',
+  /** Class D-adjacent — administrative correction (not a Payment refund). */
+  SUB_CORRECT: 'PERM-SUB-009',
+  /** Class D — soft-delete subscription (Guardian only). */
+  SUB_DELETE: 'PERM-SUB-010',
+  /** Class D — archive subscription (Guardian only). */
+  SUB_ARCHIVE: 'PERM-SUB-011',
+  /** Class D — restore subscription (Guardian only). */
+  SUB_RESTORE: 'PERM-SUB-012',
+  /** Class D — administrative override (Guardian / Super Admin). PERM-SUB-013 is unused. */
+  SUB_OVERRIDE: 'PERM-SUB-014',
 
   QST_SUBMIT: 'PERM-QST-001',
   QST_VIEW_OWN_STATUS: 'PERM-QST-002',
@@ -528,6 +548,92 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     description: 'Assist with renewal failures without bypassing gates.',
     resource: 'subscription',
     action: 'assist_renewal',
+  },
+  {
+    code: Permissions.SUB_VIEW,
+    module: 'SUB',
+    name: 'View subscriptions (staff)',
+    description: 'View subscription records within role scope.',
+    resource: 'subscription',
+    action: 'view',
+  },
+  {
+    code: Permissions.SUB_CREATE,
+    module: 'SUB',
+    name: 'Create subscription (admin)',
+    description:
+      'Create a subscription via Guardian administrative path. Never granted to CRM principals in V1.',
+    resource: 'subscription',
+    action: 'create',
+  },
+  {
+    code: Permissions.SUB_EDIT,
+    module: 'SUB',
+    name: 'Edit subscription',
+    description:
+      'Edit subscription fields subject to CRM-operational vs Guardian-administrative allowlists. Does not imply Class D, payment execution, or clinical decisions.',
+    resource: 'subscription',
+    action: 'edit',
+  },
+  {
+    code: Permissions.SUB_LIFECYCLE,
+    module: 'SUB',
+    name: 'Subscription lifecycle (staff)',
+    description:
+      'Pause, resume, or policy-cancel a subscription. Patient own-cancel remains PERM-SUB-001.',
+    resource: 'subscription',
+    action: 'lifecycle',
+  },
+  {
+    code: Permissions.SUB_RENEW,
+    module: 'SUB',
+    name: 'Manual renewal / retry',
+    description:
+      'Trigger manual renewal or retry an existing attempt. Same period-key idempotency as the worker.',
+    resource: 'subscription',
+    action: 'renew',
+  },
+  {
+    code: Permissions.SUB_CORRECT,
+    module: 'SUB',
+    name: 'Administrative correction (subscription)',
+    description:
+      'Correct administrative subscription fields. Not a Payment refund. Class D-adjacent Guardian-only; never CRM.',
+    resource: 'subscription',
+    action: 'correct',
+  },
+  {
+    code: Permissions.SUB_DELETE,
+    module: 'SUB',
+    name: 'Delete subscription',
+    description: 'Soft-delete a subscription record in Guardian. Class D.',
+    resource: 'subscription',
+    action: 'delete',
+  },
+  {
+    code: Permissions.SUB_ARCHIVE,
+    module: 'SUB',
+    name: 'Archive subscription',
+    description: 'Archive a subscription record. Class D.',
+    resource: 'subscription',
+    action: 'archive',
+  },
+  {
+    code: Permissions.SUB_RESTORE,
+    module: 'SUB',
+    name: 'Restore subscription',
+    description: 'Restore an archived or soft-deleted subscription. Class D.',
+    resource: 'subscription',
+    action: 'restore',
+  },
+  {
+    code: Permissions.SUB_OVERRIDE,
+    module: 'SUB',
+    name: 'Administrative override (subscription)',
+    description:
+      'Force an administratively justified subscription state transition. Never bypasses clinical or payment gates silently. Class D. PERM-SUB-013 is unused.',
+    resource: 'subscription',
+    action: 'override',
   },
   {
     code: Permissions.QST_SUBMIT,

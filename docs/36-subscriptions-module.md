@@ -5,14 +5,14 @@
 | Document | Subscriptions Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | Blueprint complete — documentation only (P14 not started) |
+| Status | P14a–P14d complete — P14e–h pending |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [35](35-orders-module.md) |
 
 This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). Planning on `feature/subscriptions-platform-blueprint`. **No NestJS, Prisma, API, or UI code in this pass.**
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a:** Prisma/database foundation. **P14b:** NestJS domain services. **P14c:** CRM `/v1/crm/subscriptions` APIs + `/crm/subscriptions` UI. **P14d (this pass):** Guardian `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` APIs and `/guardian/subscriptions` UI (create, Class D, plans) on `feature/subscriptions-foundation`. **Not this pass:** renewal worker/cron, automatic renewal Order creation, Payments/Inventory/clinical execution.
 
 > **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
 
@@ -314,7 +314,7 @@ Aligns with [10](10-database-design.md) `DB-032`–`034` and extends precision f
 
 Configurable offering: interval, pricing, product/variant bindings, grace days, reassessment cadence, publish state. Guardian-authored (`FR-SUB-001`). Active subscriptions keep the plan FK after archive.
 
-Not a Product table. Product types `SIMPLE_SUBSCRIPTION` / `VARIABLE_SUBSCRIPTION` and `limitSubscription` remain catalog flags on Product; Subscriptions **enforce** `limitSubscription` at bind/create time.
+**P14a:** Prisma `SubscriptionPlan` stores interval (`billingInterval` + `intervalCount` / `customIntervalDays`), `priceCents`, JSON `productBindings` (`[{ productId, variantId, quantity }]`), `gracePeriodDays`, `requiresReassessment` / `reassessmentIntervalCycles`, `lifecycleStatus`, Class D `deletedAt` / `archivedAt`. Not a Product table. Product types `SIMPLE_SUBSCRIPTION` / `VARIABLE_SUBSCRIPTION` and `limitSubscription` remain catalog flags on Product; Subscriptions **enforce** `limitSubscription` at bind/create time (P14b).
 
 ### 8.2 Subscription (`DB-033`)
 
@@ -328,7 +328,7 @@ Not a Product table. Product types `SIMPLE_SUBSCRIPTION` / `VARIABLE_SUBSCRIPTIO
 | Pause | `pausedAt`, `statusBeforePause` |
 | Snapshots | Customer name/email/phone; items via `SubscriptionItem` |
 | Payment refs (opaque) | `paymentMethodId`, `providerCustomerRef`, `providerSubscriptionRef`, `latestPaymentId`, `paymentStatusSummary` |
-| Order refs | `initialOrderId`, `latestOrderId` (opaque until Orders FK is added) |
+| Order refs | `initialOrderId`, `latestOrderId` FK → Order (`onDelete: Restrict`); Orders hold `subscriptionId` FK (`OrderSubscription`) |
 | Clinical | `clinicalRequirement` (`NONE` \| `REASSESSMENT_REQUIRED` \| `DECLINED_HOLD`) |
 | Ops / admin | `adminTags`, `reconciliationFlags` |
 | Class D | `deletedAt`, `archivedAt` |
@@ -590,17 +590,20 @@ P14f depends on Orders P13e. Until then, document the contract; do not have Subs
 
 ## 16. Services and APIs
 
-### 16.1 Shared domain services (P14b — not this pass)
+### 16.1 Shared domain services (P14b — implemented)
 
-| Service | Responsibility |
-| --- | --- |
-| `SubscriptionsService` | Facade: create, edit allowlists, notes, Class D primitives |
-| `SubscriptionsLifecycleService` | Legal transitions including pause/resume/cancel |
-| `SubscriptionsSnapshotService` | Product/variant + customer snapshots |
-| `SubscriptionsRenewalService` | Due detection, attempt idempotency, request Orders, record refs |
-| `SubscriptionEditPolicyService` | CRM vs Guardian field allowlists |
+NestJS `SubscriptionsModule` (`apps/api/src/modules/subscriptions/`). Shared domain exported for CRM, Guardian, and later workers.
 
-Thin `CrmSubscriptionsController` and `AdminSubscriptionsController` call the shared facade. **No** RenewalsController.
+| Service | Responsibility | P14b status |
+| --- | --- | --- |
+| `SubscriptionsService` | Facade: create, lifecycle ops, notes, clinical-flag update, opaque payment snapshot, Class D primitives | Implemented |
+| `SubscriptionsLifecycleService` | Centralized legal transitions including pause/resume/cancel; terminal protection | Implemented |
+| `SubscriptionsSnapshotService` | Product/variant + customer snapshots; plan binding parse; `limitSubscription` | Implemented |
+| `SubscriptionsScheduleService` | Deterministic period / `nextRenewalAt` / `billingPeriodKey` math | Implemented (split from snapshots) |
+| `SubscriptionsRenewalService` | Due detection, attempt idempotency, `RenewalOrderRequest` hook, record order refs | Implemented (no worker; default order hook is NOOP) |
+| `SubscriptionEditPolicyService` | CRM vs Guardian field allowlists | Implemented |
+
+Thin `CrmSubscriptionsController` is **P14c (implemented)**. `AdminSubscriptionsController` and `AdminSubscriptionPlansController` are **P14d (implemented)**. **No** RenewalsController.
 
 ### 16.2 Existing catalog (keep IDs)
 
@@ -616,7 +619,16 @@ Thin `CrmSubscriptionsController` and `AdminSubscriptionsController` call the sh
 | API-084 | GET | `/admin/subscription-plans` | Admin plan list | |
 | API-085 | POST | `/admin/subscription-plans` | Create plan | |
 | API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | |
-| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Clinical bindings for Rx plans |
+| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Clinical questionnaire authoring remains P14g; catalog bindings are validated |
+
+Additive plan paths (same `PERM-SUB-002` family; not subscription-record Class D `010`–`012`):
+
+| Method | Path | Action |
+| --- | --- | --- |
+| GET | `/admin/subscription-plans/{id}` | Admin plan detail |
+| POST | `/admin/subscription-plans/{id}/unpublish` | Unpublish |
+| POST | `/admin/subscription-plans/{id}/archive` | Archive plan (existing subscriptions keep the FK) |
+| POST | `/admin/subscription-plans/{id}/restore` | Restore archived plan to `UNPUBLISHED` |
 
 ### 16.3 New CRM family (`API-213`–`224`)
 
@@ -657,6 +669,14 @@ Thin `CrmSubscriptionsController` and `AdminSubscriptionsController` call the sh
 | API-238 | GET | `/admin/subscriptions/{id}/history` | History | `PERM-SUB-004` |
 | API-239 | GET | `/admin/subscriptions/{id}/activity` | Activity | `PERM-SUB-004` |
 | API-240 | GET | `/admin/subscriptions/{id}/renewals` | Attempts | `PERM-SUB-004` |
+
+Additive Guardian paths (same domain as CRM `API-219`/`220`; not a second architecture):
+
+| Method | Path | Action | Permission |
+| --- | --- | --- | --- |
+| POST | `/admin/subscriptions/{id}/activate` | `PENDING_SETUP` → `ACTIVE` via `activateInitial` | `PERM-SUB-007` |
+| POST | `/admin/subscriptions/{id}/renewals` | Manual renewal | `PERM-SUB-008` |
+| POST | `/admin/subscriptions/{id}/renewals/{attemptId}/retry` | Retry current-period attempt | `PERM-SUB-008` |
 
 Renewal **worker** remains Internal (not a Stable client route); period-key idempotency already listed in [11 §13.7](11-api-design.md).
 
@@ -714,37 +734,40 @@ Document only. **No UI in this repository.**
 
 ---
 
-## 20. Testing strategy (specified, not implemented)
+## 20. Testing strategy
+
+P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. Worker ticks, Payments execution, and Inventory-through-Orders remain later slices.
 
 | Area | Cases |
 | --- | --- |
-| Lifecycle | Legal transitions pass; illegal rejected (`ERR-SUB-005`) |
-| Pause / resume | PAUSED skips auto-renewal; resume does not create attempt/order; missed periods skipped; PAST_DUE restored if that was prior status |
-| Initial subscription | `PENDING_SETUP` → `ACTIVE`; `SUBSCRIPTION_INITIAL` order |
-| Renewal generation | Due ACTIVE creates one attempt + one order |
-| Duplicate prevention | Second worker tick same period key → same attempt/order (`ERR-SUB-006` or no-op success) |
-| Idempotent retry | Failed payment retry does not new-period or second order |
-| Payment failure | `PAST_DUE` + `NTF-042` hook; attempt=`FAILED` |
-| Clinical decline | Order gated; subscription **not** auto-cancelled; `DECLINED_HOLD` |
-| Inventory failure | Attempt/order updated; SUB does not write inventory; lifecycle unchanged if money ok |
-| Cancellation | Stops future renewals; open orders follow order rules; not Class D |
-| Manual renewal | Explicit path; same idempotency key |
-| Snapshots | Product/User live edits do not rewrite subscription history |
-| RBAC | CRM cannot create/Class D; Marketing/Content denied; Class D 403 without grant |
-| History / Activity / Audit | Separation preserved; Class D `platformAuditDeferred` until `GRD-053` |
+| Lifecycle | Legal transitions pass; illegal rejected (`ERR-SUB-005`) — **P14b unit tests** |
+| Pause / resume | PAUSED skips auto-renewal; resume does not create attempt/order; missed periods skipped; PAST_DUE restored if that was prior status — **P14b domain** |
+| Initial subscription | `PENDING_SETUP` → `ACTIVE`; first period math — **P14b**; `SUBSCRIPTION_INITIAL` order create is later |
+| Renewal generation | Due ACTIVE opens one attempt + `RenewalOrderRequest` (NOOP hook) — **P14b**; Order create is later |
+| Duplicate prevention | Same period key → existing attempt (incl. P2002 race) — **P14b** |
+| Idempotent retry | Failed payment retry does not new-period — **P14b**; second order still later |
+| Payment failure | `PAST_DUE` transition + notify hook — **P14b lifecycle/hooks**; Payments execute in P14e |
+| Clinical decline | Subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14b flag only** |
+| Inventory failure | Not in P14b (no Inventory writes) |
+| Cancellation | Stops future renewals; not Class D — **P14b**; open orders follow order rules later |
+| Manual renewal | Explicit path; same idempotency key — **P14b primitive** |
+| Snapshots | Product/User live edits do not rewrite subscription history — **P14b** |
+| RBAC | Permissions seeded in P14a; HTTP guards **P14c CRM + P14d Guardian** |
+| History / Activity / Audit | Separation preserved; Class D `platformAuditDeferred` — **P14b** |
 | Store/Portal | Own-scope APIs designed; no UI in this repo |
 
 ---
 
 ## 21. Definition of done (implementation — later)
 
-- Shared domain services enforce lifecycle, snapshots, renewal idempotency, allowlists
-- CRM and Guardian UIs use one domain with distinct actions
-- CRM has no create/Class D surfaces
-- No Renewals module, nav, or DB domain
-- Payments / Inventory / Clinical / Product / User boundaries held
-- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014`
-- Verification matrix §20 passes
+- Shared domain services enforce lifecycle, snapshots, renewal idempotency, allowlists — **P14b complete**
+- CRM and Guardian UIs use one domain with distinct actions — **P14c/d complete**
+- CRM has no create/Class D surfaces — **P14c complete**
+- Guardian create, plans, Class D, correction, override — **P14d complete**
+- No Renewals module, nav, or DB domain — held
+- Payments / Inventory / Clinical / Product / User boundaries held — P14b domain; execution later
+- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d
+- Verification matrix §20 passes — domain cases P14b; CRM/Guardian HTTP P14c/d; remaining later
 - Docs remain aligned with this blueprint
 
 ---
@@ -755,14 +778,14 @@ Document only. **No UI in this repository.**
 
 | Slice | Scope | Notes |
 | --- | --- | --- |
-| **P14a** | Prisma foundation: Plan, Subscription, Item, RenewalAttempt, Status/Change History, Activity, Notes, enums | No Nest controllers |
-| **P14b** | Domain: lifecycle, snapshots, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order) | No cron |
-| **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | Current shell patterns |
-| **P14d** | Guardian APIs + UI + plans + Class D | Current shell; not P10 redesign |
-| **P14e** | Payments integration boundary | Opaque refs; call Payments on provider cancel |
-| **P14f** | Inventory through Orders | Depends on P13e |
-| **P14g** | Clinical integration | Refs/events; no clinical authoring |
-| **P14h** | RBAC seed, tests, documentation freeze | |
+| **P14a** | Prisma foundation: Plan, Subscription, Item, RenewalAttempt, Status/Change History, Activity, Notes, enums | **Complete** on `feature/subscriptions-foundation`. No Nest controllers |
+| **P14b** | Domain: lifecycle, snapshots, schedule, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order hook) | **Complete** on `feature/subscriptions-foundation`. No cron; no controllers |
+| **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | **Complete** on `feature/subscriptions-foundation`. Current shell patterns |
+| **P14d** | Guardian APIs + UI + plans + Class D | **Complete** on `feature/subscriptions-foundation`. Current shell; not P10 redesign |
+| **P14e** | Payments integration boundary | Pending. Opaque refs; call Payments on provider cancel |
+| **P14f** | Inventory through Orders | Pending. Depends on P13e |
+| **P14g** | Clinical integration | Pending. Refs/events; no clinical authoring |
+| **P14h** | RBAC seed, tests, documentation freeze | Pending |
 
 Order: schema → shared logic (including renewal primitives) → CRM ops → Guardian/Class D → payments → inventory-via-orders → clinical → verification.
 
@@ -788,5 +811,9 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | Version | Date | Author | Notes |
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-24 | Platform Engineering | Initial Subscriptions blueprint: four-dimension status, in-module renewal orchestration, Order boundary, pause/resume skip-missed, clinical safety, CRM no Create, P14 slices; docs-only on `feature/subscriptions-platform-blueprint` |
+| 1.1 | 2026-08-24 | Platform Engineering | P14a database foundation: Prisma models + migration `20260824120000_subscriptions_platform_module_foundation`; `Order.subscriptionId` FK; approved `PERM-SUB-004`–`009`/`010`–`012`/`014` seeded |
+| 1.2 | 2026-08-24 | Platform Engineering | P14b domain services: `SubscriptionsModule` (no controllers); lifecycle/snapshots/schedule/renewal idempotency/edit policy/Class D primitives; domain tests |
+| 1.3 | 2026-08-24 | Platform Engineering | P14c CRM: `/v1/crm/subscriptions` (API-083, API-213–224) + `/crm/subscriptions` UI; no create/Class D; optional `SEED_DEV_DATASET` subscription rows |
+| 1.4 | 2026-08-24 | Platform Engineering | P14d Guardian: `/v1/admin/subscriptions` (API-225–240) + `/v1/admin/subscription-plans` (API-084–087) + `/guardian/subscriptions` UI; additive activate/renewal POST and plan unpublish/archive/restore; CRM still has no create/Class D |
 
 *End of 36 — Subscriptions Module.*

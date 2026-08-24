@@ -109,8 +109,9 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Cart** | — | — | Create own, Edit own, Delete own | View own | Merge on sign-in, Expire | Mobile: Create own, Edit own |
 | **Order** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (**operational fields only** — see [35](35-orders-module.md) §7), Transition (fulfill/cancel), Assist (policy refund and cancel), Notes, History/Activity, Export — **no Create; no Class D** | Create (checkout finalize) | View own, Assist request (cancel or support path) | Create (renewal), Transition | Mobile: View own; Admin mobile: View |
 | **Payment** | View, Correct, Configure providers, Rotate credentials | View, Assist (policy-scoped refund) | Initiate intent | Update own payment method | Capture, Reconcile from webhooks | Mobile: Update own method |
-| **Subscription** | View, Create, Edit (administrative fields), Delete, Archive, Restore | View, Create (operational assist), Edit (operational fields), Transition (renew, pause, resume) | Create (plan purchase) | View own, Edit own, Cancel own | Renew, Apply grace, Expire | Mobile: View own, Cancel own |
+| **Subscription** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (**operational fields only** — see [36](36-subscriptions-module.md) §7), Transition (pause, resume), Assist (policy cancel, renewal/retry) — **no Create; no Class D** | Create (plan purchase / checkout, later) | View own, Edit own, Cancel own | Renew (due processing), Expire, Complete | Mobile: View own, Cancel own |
 | **Subscription plan** | View, Create, Edit, Publish, Delete, Archive | View | View published | View own plan | — | — |
+| **Subscription renewal attempt** | View (on the subscription) | View; Assist retry/manual renewal | — | View own (later) | Create/advance attempt (idempotent) | — |
 | **Inventory balance** | View, Adjust/Receive (Guardian admin), Edit policies, Manage warehouses, Purge (Class D bulk cleanup) | View availability / reserved / summaries; Reserve/Release/Commit via Inventory services only — never adjust/receive/warehouse/policy | Consume availability (later) | — | Reserve/Commit/Release/Restock via Inventory services on order lifecycle; emit low-stock events | — |
 | **Warehouse** | View, Create, Edit, Archive (Class D as designed) | — | — | — | Seed default warehouse | — |
 | **Stock reservation** | View | View (order context); Reserve/Release/Commit via services | — | — | Expire pending reservations | — |
@@ -180,6 +181,7 @@ Every destructive action in this document, in one place.
 | Correct | Order, Payment | Guardian | `PERM-ORD-013` | CRM (policy refund assist is a different action) |
 | Override | Order state, policy exemption | Guardian | `PERM-ORD-014` | Everywhere else; never silent, always audited |
 | Delete, Archive, Restore | Subscription | Guardian | `PERM-SUB-010`–`012` | CRM, Portal (patient cancel is not a delete) |
+| Override | Subscription state | Guardian | `PERM-SUB-014` | Everywhere else; never silent clinical/payment bypass |
 | Delete | Product, Category | Guardian | `PERM-PRD-010`, `PERM-CAT-010` | CRM, Store |
 | Delete, Archive, Restore | Asset (Asset Library) | Guardian | `PERM-AST-010` (`PERM-AST-011` bulk) | CRM (select-only), Store, Portal |
 | Delete | CMS page, Blog post, Review, Template | Guardian | `PERM-CMS-010`, `PERM-BLG-010`, and module scope | CRM, Store, Portal |
@@ -221,6 +223,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.4 | 2026-08-03 | Platform Engineering | Media asset → Asset (Asset Library); CRM select-only; `PERM-AST-010`/`011`; link [33](33-asset-library-module.md) |
 | 1.5 | 2026-08-03 | Platform Engineering | Inventory: Guardian-only admin; CRM consume + service reserve/commit; warehouse/reservation/movement rows; link [34](34-inventory-module.md) |
 | 1.6 | 2026-08-20 | Platform Engineering | Order row: CRM no Create/Class D; operational edit allowlist; pointer to [35](35-orders-module.md) |
+| 1.7 | 2026-08-24 | Platform Engineering | Subscription row: CRM no Create/Class D; pause/resume/assist; `PERM-SUB-014`; pointer to [36](36-subscriptions-module.md) |
 
 ---
 

@@ -88,6 +88,23 @@ export const ErrorCodes = {
   ORD_CLASS_D_DENIED: 'ERR-ORD-007',
   /** Edit field not allowed for context/status. */
   ORD_EDIT_FORBIDDEN: 'ERR-ORD-008',
+
+  /** Subscription not cancellable in current state. */
+  SUB_NOT_CANCELLABLE: 'ERR-SUB-001',
+  /** Renewal charge failed (past-due/grace path). */
+  SUB_RENEWAL_CHARGE_FAILED: 'ERR-SUB-002',
+  /** Clinical reassessment required before renewal fulfill. */
+  SUB_CLINICAL_REASSESSMENT: 'ERR-SUB-003',
+  /** Plan not published / not bindable. */
+  SUB_PLAN_NOT_BINDABLE: 'ERR-SUB-004',
+  /** Illegal subscription lifecycle transition. */
+  SUB_INVALID_TRANSITION: 'ERR-SUB-005',
+  /** Duplicate renewal period (idempotency). */
+  SUB_DUPLICATE_PERIOD: 'ERR-SUB-006',
+  /** Pause/resume not allowed in current state. */
+  SUB_PAUSE_RESUME_FORBIDDEN: 'ERR-SUB-007',
+  /** CRM subscription create forbidden. */
+  SUB_CRM_CREATE_FORBIDDEN: 'ERR-SUB-008',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

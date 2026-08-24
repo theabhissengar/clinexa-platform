@@ -224,6 +224,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.5 | 2026-08-03 | Platform Engineering | Inventory: Guardian-only admin; CRM consume + service reserve/commit; warehouse/reservation/movement rows; link [34](34-inventory-module.md) |
 | 1.6 | 2026-08-20 | Platform Engineering | Order row: CRM no Create/Class D; operational edit allowlist; pointer to [35](35-orders-module.md) |
 | 1.7 | 2026-08-24 | Platform Engineering | Subscription row: CRM no Create/Class D; pause/resume/assist; `PERM-SUB-014`; pointer to [36](36-subscriptions-module.md) |
+| 1.8 | 2026-08-24 | Platform Engineering | P14d Guardian Subscriptions implemented; ownership split unchanged (CRM no Create/Class D; Guardian admin + Class D + plans) |
 
 ---
 

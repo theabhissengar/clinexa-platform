@@ -583,7 +583,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Purpose | Configurable plans: interval, pricing, product/variant bindings, grace, reassessment rules |
 | Primary key | `id` |
 | Relationships | Links via TreatmentPlanLinks; 1:N Subscriptions |
-| Business rules | Guardian configurable (`FR-SUB-001`, `PERM-SUB-002`); publish validation; not a Product table |
+| Business rules | Guardian configurable (`FR-SUB-001`, `PERM-SUB-002`); publish validation; not a Product table. **P14a:** Prisma `subscription_plans` with JSON `product_bindings`, interval fields, grace days, reassessment flags, Class D timestamps |
 | Retention | Archive; active subscriptions keep plan FK |
 | Trace | FR-SUB-001, ARCH-048, ROAD-019; [36](36-subscriptions-module.md) |
 
@@ -593,8 +593,8 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | --- | --- |
 | Purpose | Patient subscription instances (recurring commitment SoT) |
 | Primary key | `id` |
-| Relationships | N:1 User; N:1 SubscriptionPlan; 1:N SubscriptionItems; 1:N RenewalAttempts; order refs opaque until Orders FK |
-| Business rules | Lifecycle statuses in [36 §9](36-subscriptions-module.md) — **not** mixed with payment, renewal-attempt, or clinical flags. Cancel stops future renewals; existing orders follow order rules; Rx reassessment is a flag + order gate (`FR-SUB-003/005`) |
+| Relationships | N:1 User (RESTRICT); N:1 SubscriptionPlan (RESTRICT); 1:N SubscriptionItems; 1:N RenewalAttempts; optional N:1 Order for `initialOrderId` / `latestOrderId` (RESTRICT); Orders `subscriptionId` FK (RESTRICT) |
+| Business rules | Lifecycle statuses in [36 §9](36-subscriptions-module.md) — **not** mixed with payment, renewal-attempt, or clinical flags. Cancel stops future renewals; existing orders follow order rules; Rx reassessment is a flag + order gate (`FR-SUB-003/005`). **P14b:** NestJS domain services consume these tables; no additional schema |
 | Retention | Retain history on cancel |
 | Trace | FR-SUB-001–005, ROAD-019; [36](36-subscriptions-module.md) |
 
@@ -1787,6 +1787,8 @@ flowchart LR
 | 1.4 | 2026-08-20 | Platform Engineering | TBD | Orders `DB-026`/`027` snapshot/address precision; supporting history/activity/notes/adjustments; Reserve-at-auth; Payments-owned refs; link [35](35-orders-module.md) | Draft for review |
 | 1.5 | 2026-08-20 | Platform Engineering | TBD | P13a Prisma: money in cents; `OrderAddress` SHIPPING/BILLING; migration `20260820120000_orders_platform_module_foundation` | Draft for review |
 | 1.6 | 2026-08-24 | Platform Engineering | TBD | Subscriptions `DB-032`–`034` aligned to [36](36-subscriptions-module.md): four-dimension status, period-key unique, no Renewals domain | Draft for review |
+| 1.7 | 2026-08-24 | Platform Engineering | TBD | P14a Prisma: `SubscriptionPlan`/`Subscription`/`SubscriptionItem`/`SubscriptionRenewalAttempt` + history/activity/notes; migration `20260824120000_subscriptions_platform_module_foundation`; `orders.subscription_id` FK | Draft for review |
+| 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: no schema change; NestJS Subscriptions domain services consume `DB-032`–`034` | Draft for review |
 
 ---
 

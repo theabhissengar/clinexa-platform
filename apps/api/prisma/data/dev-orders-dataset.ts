@@ -123,21 +123,13 @@ export function orderTypeForIndex(index1Based: number): {
   orderType: 'ONE_TIME' | 'SUBSCRIPTION_INITIAL' | 'SUBSCRIPTION_RENEWAL';
   subscriptionId: string | null;
 } {
-  // Deterministic opaque UUID-like refs (not real Subscription rows).
-  const opaqueSubId = (n: number) =>
-    `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-
+  // OrderType remains classified for UI filters. subscriptionId stays null until
+  // real Subscription rows exist (P14a FK — do not invent fake subscription ids).
   if (index1Based % 10 === 0) {
-    return {
-      orderType: 'SUBSCRIPTION_RENEWAL',
-      subscriptionId: opaqueSubId(index1Based),
-    };
+    return { orderType: 'SUBSCRIPTION_RENEWAL', subscriptionId: null };
   }
   if (index1Based % 5 === 0) {
-    return {
-      orderType: 'SUBSCRIPTION_INITIAL',
-      subscriptionId: opaqueSubId(index1Based),
-    };
+    return { orderType: 'SUBSCRIPTION_INITIAL', subscriptionId: null };
   }
   return { orderType: 'ONE_TIME', subscriptionId: null };
 }

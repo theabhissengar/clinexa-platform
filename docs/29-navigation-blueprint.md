@@ -263,6 +263,8 @@ Subscriptions mini-app (shared module; actions differ by context — [36](36-sub
 /guardian/subscriptions/:id/activity
 /guardian/subscriptions/:id/notes
 /guardian/subscriptions/plans
+/guardian/subscriptions/plans/new
+/guardian/subscriptions/plans/:id/edit
 ```
 
 ---
@@ -407,6 +409,8 @@ Detailed test cases live in [22 — Testing strategy](22-testing-strategy.md); p
 | 1.4 | 2026-08-03 | Platform Engineering | Pending | Commerce Inventory (Guardian admin); CRM has no Inventory admin nav; escalate to `/guardian/inventory`; link [34](34-inventory-module.md) | Draft for review |
 | 1.5 | 2026-08-20 | Platform Engineering | Pending | Orders mini-app routes CRM (no create) + Guardian (`/new` + Class D); link [35](35-orders-module.md) | Draft for review |
 | 1.6 | 2026-08-24 | Platform Engineering | Pending | Subscriptions mini-app routes CRM (no create) + Guardian (`/new`, plans, Class D); no Renewals nav; link [36](36-subscriptions-module.md) | Draft for review |
+| 1.7 | 2026-08-24 | Platform Engineering | Pending | P14c: CRM `/crm/subscriptions` list/detail/edit/history/activity/notes implemented; Guardian routes still placeholders | Draft for review |
+| 1.8 | 2026-08-24 | Platform Engineering | Pending | P14d: Guardian `/guardian/subscriptions` list/create/detail/edit/history/activity/notes/plans implemented; nav gated by `PERM-SUB-004` | Draft for review |
 
 ---
 

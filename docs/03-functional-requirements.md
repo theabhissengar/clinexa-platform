@@ -3191,19 +3191,27 @@ stateDiagram-v2
 
 ### 6.2 Subscription Lifecycle
 
+Canonical lifecycle, payment snapshot, renewal-attempt status, and clinical requirement are **four dimensions**. Authoritative machine: [36 — Subscriptions module](36-subscriptions-module.md).
+
 ```mermaid
 stateDiagram-v2
-  [*] --> active: Subscribe
-  active --> renewing: IntervalDue
-  renewing --> active: ChargeSuccess
-  renewing --> past_due: ChargeFailure
-  past_due --> renewing: RetryOrUpdatePayment
-  past_due --> cancelled: CancelOrExhaustPolicy
-  active --> cancelled: PatientOrPolicyCancel
-  renewing --> reassessment_required: RxReassessmentConfigured
-  reassessment_required --> active: ClinicalRequirementsMet
-  reassessment_required --> past_due: ClinicalOrPaymentBlock
+  [*] --> PENDING_SETUP: Create
+  PENDING_SETUP --> ACTIVE: InitialPaySuccess
+  PENDING_SETUP --> CANCELLED: Abort
+  ACTIVE --> PAUSED: Pause
+  PAST_DUE --> PAUSED: Pause
+  PAUSED --> ACTIVE: ResumeIfWasActive
+  PAUSED --> PAST_DUE: ResumeIfWasPastDue
+  ACTIVE --> PAST_DUE: RenewalPaymentFailure
+  PAST_DUE --> ACTIVE: RecoveryPaySuccess
+  ACTIVE --> CANCELLED: Cancel
+  PAST_DUE --> CANCELLED: Cancel
+  PAUSED --> CANCELLED: Cancel
+  ACTIVE --> EXPIRED: TermEnded
+  ACTIVE --> COMPLETED: FiniteCyclesDone
 ```
+
+`renewing` is **not** a lifecycle status (it is a renewal-attempt state). `reassessment_required` is a clinical flag, not lifecycle. Clinical decline does **not** auto-cancel the subscription. Pause skips missed cycles ([36 §10](36-subscriptions-module.md)).
 
 ### 6.3 Appointment Lifecycle
 
@@ -3695,7 +3703,7 @@ Canonical diagrams remain in [§6 State Diagrams](#6-state-diagrams). This table
 | Entity | Possible States | Initial State | Terminal States | Notes |
 | --- | --- | --- | --- | --- |
 | Orders | `draft`, `payment_pending`, `awaiting_clinical_review`, `clinical_approved`, `clinical_declined`, `awaiting_fulfillment`, `fulfilled`, `cancelled`, `refunded` | `draft` | `fulfilled`, `cancelled`, `refunded` | Rx enters clinical states; non-Rx skips to `awaiting_fulfillment` after pay (OR-08/OR-09). See §6.1. |
-| Subscriptions | `active`, `renewing`, `past_due` (grace), `reassessment_required`, `cancelled` | `active` (on create) | `cancelled` | Failed renewal → past-due/grace with notification; Rx reassessment may gate fulfillment (OR-10). See §6.2. |
+| Subscriptions | `PENDING_SETUP`, `ACTIVE`, `PAUSED`, `PAST_DUE`, `CANCELLED`, `EXPIRED`, `COMPLETED` | `PENDING_SETUP` | `CANCELLED`, `EXPIRED`, `COMPLETED` | Payment, renewal-attempt, and clinical requirement are **separate** dimensions. Failed renewal payment → `PAST_DUE` + notify; Rx gates stay on the **order** (OR-10). See [36](36-subscriptions-module.md) and §6.2. |
 | Appointments | `booked`, `confirmed`, `completed`, `cancelled`, `no_show` | `booked` | `completed`, `cancelled`, `no_show` | Scheduling-only in V1; no video session states (FR-APT-004). See §6.3. |
 | Questionnaires (response) | `in_progress`, `submitted`, `needs_info` (after clinician request) | `in_progress` | `submitted` (locked version); may re-enter `in_progress` on request-info | Definition versions are immutable; responses reference version answered (OR-02). See §6.4. |
 | Payments | `pending`, `authorized_or_captured`, `failed`, `refunded` (full/partial recorded) | `pending` | `authorized_or_captured`, `failed`, `refunded` | Webhooks idempotent; payment success ≠ Rx dispensing authority (OR-03). Physical PSP statuses map into these semantics. |
@@ -3725,7 +3733,7 @@ Canonical diagrams remain in [§6 State Diagrams](#6-state-diagrams). This table
 | Questionnaire | Configurable, versioned medical intake form bound to products/plans/workflows; required for Rx-eligible checkout finalize |
 | RBAC | Role-Based Access Control enforced server-side on privileged and PHI-adjacent operations |
 | Store | Public web application for discovery, content, and commerce entry |
-| Subscription | Recurring treatment plan with scheduled renewals, grace/past-due handling, and optional clinical reassessment |
+| Subscription | Recurring patient commitment with scheduled renewals, pause/resume, grace/past-due, and optional clinical reassessment on **renewal orders**. Lifecycle is separate from payment, renewal-attempt, and clinical flags ([36](36-subscriptions-module.md)) |
 | Treatment plan | Configurable therapy offering (products/intervals/pricing) associated with subscriptions and clinical workflows |
 | Rx-eligible product | Catalog product flagged to require questionnaire and prescription clinical workflow |
 
@@ -3766,6 +3774,7 @@ Extended module-level definitions also appear in [§1.4 Definitions](#14-definit
 | 1.2 | 2026-07-27 | Platform Engineering | Added §11.1 surface responsibility (multi-consumer exposure and Guardian-only destructive rules); surface notes on `CRM` and `ADM` modules for the CRM and Guardian contexts of the Internal Platform |
 | 1.3 | 2026-08-03 | Platform Engineering | Added Asset Library `FR-AST-001`–`004`; Document Management clarification on `FR-DOC-001`; link [33](33-asset-library-module.md) |
 | 1.4 | 2026-08-03 | Platform Engineering | §2.19 Inventory: Guardian admin, ledger SoT, service-only Orders, low-stock events, digital no-track; link [34](34-inventory-module.md) |
+| 1.5 | 2026-08-24 | Platform Engineering | §6.2 / §14 Subscription lifecycle aligned to [36](36-subscriptions-module.md) four-dimension model; pause/pending/expired/completed added |
 
 ---
 

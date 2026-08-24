@@ -171,7 +171,7 @@ The CRM context (`ARCH-013`) is the authenticated **operational control plane** 
 | Pharmacy | CRM | Pharmacy queue; ready / flag | Pharmacist review before Rx fulfillment (`FR-CRM-004`) |
 | Orders / fulfillment (operational) | CRM | Staff lists, fulfill, cancel within policy, timeline, documents, internal notes | Lifecycle gates; inventory side effects **only** via Inventory services (`FR-CRM-005`; `FR-ORD-003`; [34](34-inventory-module.md)) |
 | Inventory | **Guardian** (admin); CRM consume | CRM: availability / reserved / summaries / order-scoped movements; Reserve/Release/Commit via Inventory services | Ledger SoT and policies in Inventory module (`FR-INV-*`; [34](34-inventory-module.md)). CRM never adjusts, receives, or configures warehouses/policies |
-| Subscriptions (operational) | CRM | Renew / pause / resume assist within policy | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`; `OR-10`) |
+| Subscriptions (operational) | CRM | Pause / resume / cancel assist / renewal retry within policy — **no Create** | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`; `OR-10`; [36](36-subscriptions-module.md)) |
 | Support | CRM | Triage, reply, resolve; policy-scoped refund assist | Ticket lifecycle; never Rx approve (`FR-SUP-002`/`004`) |
 | Operational reports | CRM | Role-scoped operational dashboards and exports | Query/export AuthZ and PHI minimization (`FR-RPT-*`, `FR-ANL-*`) |
 | Questionnaires (case view) | CRM | Clinician view of full answers in case context | Versioning and redaction (`FR-QST-005`) |
@@ -331,7 +331,7 @@ Guardian (`ARCH-172`) is the **administrative** context of the same application.
 | Categories | `CRM-039` | Guardian | Catalog taxonomy |
 | Questionnaires | `CRM-040` | CRM | CRM-only Internal Platform surface: clinician case view and definition/configuration |
 | Appointments | `CRM-041` | CRM operational; Guardian types/slots configuration | Scheduling only |
-| Subscriptions | `CRM-042` | Both | CRM renew/pause/resume; Guardian plans and administrative lifecycle |
+| Subscriptions | `CRM-042` | Both | CRM pause/resume/cancel/renewal assist (**no Create**); Guardian plans, admin create, Class D ([36](36-subscriptions-module.md)) |
 | Documents | `CRM-043` | CRM | Case-scoped attachment |
 | Support | `CRM-044` | CRM | Ticket lifecycle |
 | Coupons | `CRM-045` | Guardian | Marketing administration |
@@ -367,7 +367,7 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 | CRM-039 | Categories | Guardian | Must | `FR-CAT-002`, `FR-CRM-007` | `JRN-031`; `BP-10` |
 | CRM-040 | Questionnaires | CRM | Must | `FR-QST-001`/`002`/`005`, `FR-CRM-007` | CRM-only; case view and definitions |
 | CRM-041 | Appointments | Both | Should | `FR-APT-002`/`003` | `JRN-022` |
-| CRM-042 | Subscriptions | Both | Must | `FR-SUB-003`/`004`, `OR-10` | `JRN-020` assist |
+| CRM-042 | Subscriptions | Both | Must | `FR-SUB-003`/`004`, `OR-10` | `JRN-020` assist; blueprint [36](36-subscriptions-module.md) |
 | CRM-043 | Documents | CRM | Must | `FR-DOC-003`/`004` | Clinical/ops attach |
 | CRM-044 | Support | CRM | Must | `FR-SUP-002`–`005` | `JRN-025`/`026` |
 | CRM-045 | Coupons | Guardian | Should | `FR-CPN-001`/`003` | `JRN-032` |
@@ -477,9 +477,9 @@ Context legend: **CRM** = operational surface under `/crm/*`; **Guardian** = adm
 
 | Aspect | Detail |
 | --- | --- |
-| Responsibilities | Staff visibility of past-due/grace; Admin plan configuration/publish; assist without gate bypass |
-| Ownership | Support assist; Admin plans; `OR-10`; `FR-SUB-*` |
-| Boundaries | CRM assist does not invent clinical clearance or payment success |
+| Responsibilities | Staff visibility of past-due/grace; pause/resume; policy cancel assist; renewal/retry assist without gate bypass; notes/history/activity |
+| Ownership | Support assist; Operations scoped; Admin plans in **Guardian**; `OR-10`; `FR-SUB-*`; [36](36-subscriptions-module.md) |
+| Boundaries | **No CRM Create. No Class D.** CRM assist does not invent clinical clearance, execute payments, or mutate inventory. Escalate to `/guardian/subscriptions/:id` for admin/Class D (`CRM-167`) |
 
 ### 3.15 Documents (`CRM-043`)
 
@@ -651,7 +651,7 @@ The matrix below is **module-level**, spanning both contexts. Rows marked Guardi
 | Inventory | — | View (consume) | — | View + service Reserve/Release/Commit; escalate to Guardian for admin | — | — | View (consume) |
 | Documents | Limited | Limited | Limited | Limited | — | — | Limited |
 | Appointments | Limited | Limited | Limited | Limited | — | — | Full |
-| Subscriptions | — | — | Limited | — | — | — | Full |
+| Subscriptions | Limited | Limited | Limited | Limited | — | — | Limited |
 | Support | — | — | Full | — | — | — | Limited |
 | Coupons | — | — | — | — | Full | — | Full |
 | CMS / Blogs / Reviews | — | — | Limited reviews | — | Limited | Full | Full |
@@ -802,7 +802,8 @@ CRM consumes documented APIs only ([11](11-api-design.md)). CRM must not invent 
 | Auth | `API-004`–`008` | Staff login/logout/reset/session (`AUTH-027`) |
 | Users | `API-009`–`015`, `API-168`–`171` | User management, roles, permissions, audit |
 | Patients / search | `API-039` | CRM search; patient linkage via case/order/ticket/document context |
-| Orders | `API-072`–`076`, refunds `API-067`, subscriptions `API-083` | Staff orders; fulfill; cancel; assist subscriptions |
+| Orders | `API-072`–`076`, refunds `API-067` | Staff orders; fulfill; cancel |
+| Subscriptions | `API-083`, `API-213`–`224` | Staff subscriptions; pause/resume/assist; **no create** |
 | Clinical review | `API-088`–`094` | Consult queue, approve/decline/request-info, notes |
 | Prescriptions | `API-097`–`099` | Create/update/view after approval |
 | Pharmacy | `API-102`–`104` | Pharmacy queue and reviews |
@@ -903,7 +904,7 @@ Cross-reference [12](12-authentication-flow.md), [13](13-security.md), and [08](
 | `OR-06`, `NFR-047` | `FR-CRM-001`, `FR-ADM-001` | CRM-002, CRM-031, CRM-151 | `API-004`, `API-009`–`015` | `PERM-CRM-020`, `ROLE-003`–`009` | `DB-001`–`009` |
 | `BP-09`, `OR-11` | `FR-SUP-002`–`005`, `FR-PAY-003` | CRM-044, CRM-078 | `API-129`–`132`, `API-067` | Support; never Rx approve | `DB-048`–`049`, `DB-029` |
 | `BP-11`, `OR-13` | `FR-CMS-*`, `FR-BLG-*`, `FR-REV-003` | CRM-046, CRM-045 | `API-150`–`160`, `API-139`–`141`, `API-143`–`147` | Content/Marketing/Admin | `DB-024`–`025`, `DB-050`–`053` |
-| `BP-06`, `OR-10` | `FR-SUB-003`/`004` | CRM-042, CRM-076 | `API-083`–`087` | Support/Admin | `DB-032`–`034` |
+| `BP-06`, `OR-10` | `FR-SUB-003`/`004` | CRM-042, CRM-076 | `API-083`, `API-213`–`224` | Support/Ops/Admin | `DB-032`–`034` |
 | `BP-07` | `FR-APT-002`/`003` | CRM-041, CRM-077 | `API-120`–`124` | Staff/Admin | `DB-044`–`046` |
 | Docs / audit | `FR-DOC-003`/`004`, `FR-ADM-004` | CRM-043, CRM-049, CRM-079 | `API-113`, `API-171` | Staff scoped; Admin audit | `DB-047`, `DB-057` |
 | Reports / observability | `FR-RPT-*`, `FR-ANL-*`, `AC-BR-14` | CRM-048, CRM-030 | `API-161`–`167` | Role-scoped | `DB-060`–`061` |
@@ -1107,6 +1108,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | 1.5 | 2026-08-02 | Platform Engineering | Pending | `CRM-031` aligned to operational-only Users surface; escalate to Guardian; link [32](32-users-module.md) | Draft for review |
 | 1.6 | 2026-08-03 | Platform Engineering | Pending | `CRM-037` Inventory consume-only; Guardian owns inventory admin; CRM-075 visibility/service calls; link [34](34-inventory-module.md) | Draft for review |
 | 1.7 | 2026-08-20 | Platform Engineering | Pending | `CRM-033` Orders: no Create/Class D; operational edit allowlist; link [35](35-orders-module.md) | Draft for review |
+| 1.8 | 2026-08-24 | Platform Engineering | Pending | `CRM-042` Subscriptions: no Create/Class D; pause/resume/assist; link [36](36-subscriptions-module.md) | Draft for review |
 
 ---
 
@@ -1127,6 +1129,7 @@ Governance criticality for CRM modules relative to V1 availability intent (`NFR-
 | [27 — Module registry](27-module-registry.md) | Module catalog, contexts, and consumers |
 | [28 — Ownership matrix](28-ownership-matrix.md) | Per-entity action ownership across applications |
 | [29 — Navigation blueprint](29-navigation-blueprint.md) | Sidebar, groups, breadcrumbs, context switching |
+| [36 — Subscriptions module](36-subscriptions-module.md) | Subscriptions operational vs Guardian split (`CRM-042`) |
 
 ---
 

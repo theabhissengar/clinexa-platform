@@ -1,0 +1,792 @@
+# 36 — Subscriptions Module
+
+| Field | Value |
+| --- | --- |
+| Document | Subscriptions Module — Platform blueprint instance |
+| Product | Clinexa |
+| Version | 1.0 |
+| Status | Blueprint complete — documentation only (P14 not started) |
+| Audience | Architects, backend, frontend, QA, product, operations, security |
+| Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
+| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [35](35-orders-module.md) |
+
+This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
+
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). Planning on `feature/subscriptions-platform-blueprint`. **No NestJS, Prisma, API, or UI code in this pass.**
+
+> **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
+
+---
+
+## 1. Purpose
+
+Subscriptions is the **authoritative platform aggregate for recurring customer commitments and subscription lifecycle state**. It owns subscription identity, billing/renewal schedule, lifecycle standing, pause/resume/cancel, product/customer snapshots required for historical correctness, renewal attempt state, and idempotency so Guardian, CRM, future Store/Portal, and System workers share one truth through shared domain services.
+
+**Requirements:** `FR-SUB-001`–`005`, `OR-10`, `AC-BR-11`, `FR-PAY-004`, `FR-PRT-004`; payment timing [15](15-payment-flow.md); order coupling [35](35-orders-module.md).
+
+**Not its job:** Individual order transactions; Payment authorize/capture/refund execution or PSP secrets; Inventory ledger writes; Product catalog authorship; User identity store; Clinical authoring (consultations, prescriptions, questionnaire definitions/answers); Document/file storage; Notification template delivery; Store/Portal UX shells; platform-wide UI modernization (P10).
+
+There is **no standalone Renewals module**, Renewals database domain, Renewals navigation section, or separate ownership boundary. Renewal orchestration is a **child workflow of Subscriptions**.
+
+### 1.1 Owns vs does not own
+
+| Owns | Does not own |
+| --- | --- |
+| Subscription aggregate and lifecycle status | Order records, totals, OrderItems, order lifecycle ([35](35-orders-module.md)) |
+| SubscriptionPlan configuration (`DB-032`) | Live Product / Variant mutability ([31](31-products-module.md)) |
+| Immutable product/variant/price **snapshots** on the subscription | Catalog identity (`productId` / `variantId` remain Product-owned) |
+| Customer snapshot required for historical correctness | Live User profile / identity ([32](32-users-module.md)) |
+| Renewal schedule (`nextRenewalAt`, period bounds, cycle number) | Payment execution, methods, refunds, PSP secrets ([15](15-payment-flow.md)) |
+| `SubscriptionRenewalAttempt` child entity and period idempotency | Inventory balances, reservations, movements ([34](34-inventory-module.md)) |
+| Opaque payment / provider / order / clinical **references** and snapshots | Clinical approve/decline / questionnaire authoring |
+| Notes, status history, change history, activity | Platform Audit Log (`GRD-053`) |
+| Administrative Class D subscription ops (Guardian) | Asset Library / Document binary storage |
+
+### 1.2 Guardian vs CRM
+
+| Concern | Guardian | CRM V1 |
+| --- | --- | --- |
+| View subscriptions | Yes | Yes (role-scoped) |
+| Create subscriptions | **Yes** (admin path) | **No** — no route, permission, UI, or API |
+| Edit operational fields | Yes | **Yes** (allowlist only) |
+| Edit administrative fields | **Yes** | **No** |
+| Pause / resume | Yes | **Yes** (permitted lifecycle) |
+| Cancel assistance | Yes | **Yes** (policy; not Class D delete) |
+| Renewal / retry assistance | Yes | **Yes** where permitted (`PERM-SUB-003` / `008`) |
+| Plan configuration / publish | **Yes** | **No** (view published plan context only) |
+| Payment / clinical / inventory **visibility** | Yes | Yes (read refs / status only) |
+| Execute payments | **No** | **No** |
+| Clinical approve / decline | **No** | **No** (Consultations) |
+| Direct inventory table writes | **No** | **No** |
+| Internal notes / history / activity | Yes | Yes |
+| Delete / Archive / Restore | **Yes Class D** | **Never** |
+| Administrative correction / override | **Yes Class D** | **Never** |
+
+**CRM Subscription Create is not available in V1.** Future staff-assisted create requires an explicit product decision. Store checkout (later) and Guardian admin create are the create paths — not CRM.
+
+### 1.3 One domain, two Internal Platform surfaces
+
+Guardian and CRM are **not** two Subscription systems. Both consume the same Subscriptions domain services. Controllers and UI chrome differ by context and permission; lifecycle, snapshots, renewal orchestration, and idempotency live once.
+
+This repository hosts the Internal Platform only: NestJS API, Guardian admin, CRM operational surface. **Do not** add Store or Patient Portal UI here. Those repositories are future consumers.
+
+P14 uses the **current** platform shell and established list/detail/edit patterns (Orders/Users). Full Internal Platform UX modernization is **P10** and is **not** a dependency of Subscriptions.
+
+```mermaid
+flowchart TB
+  subgraph clients [Clients]
+    CRM[CRM_ops]
+    GRD[Guardian_admin]
+    STO[Store_later]
+    PRT[Portal_later]
+    SYS[System_later]
+  end
+  subgraph domain [SubscriptionsDomain_shared]
+    Lifecycle[SubscriptionsLifecycleService]
+    Snapshots[SubscriptionsSnapshotService]
+    Renewal[SubscriptionsRenewalService]
+  end
+  CRM --> domain
+  GRD --> domain
+  STO --> domain
+  PRT --> domain
+  SYS --> domain
+  Renewal -->|"request renewal Order"| Orders[OrdersDomain]
+  Orders --> Pay[PaymentsDomain]
+  Orders --> Inv[InventoryServices]
+  Orders --> Clinical[ClinicalModules]
+  domain -.->|"opaque refs snapshots"| Pay
+```
+
+### 1.4 Order ↔ Subscription boundary (locked)
+
+```text
+Subscription  →  decides a renewal is due
+Subscription  →  creates/requests a renewal Order through the Orders domain
+Orders        →  owns the renewal transaction (totals, lines, order lifecycle)
+Orders        →  coordinates Payments / Inventory / Clinical boundaries
+Subscription  →  records the resulting attempt, order id, and payment-status snapshot
+```
+
+Subscriptions **must not** duplicate Order totals, OrderItems, inventory state, payment execution, refunds, or clinical authoring.
+
+### 1.5 Store / Portal / System (future consumers)
+
+| Consumer | Role |
+| --- | --- |
+| Store / FE (separate repo) | Subscribe during checkout; later manage preferences / cancel via platform APIs |
+| Patient Portal (separate repo) | View own subscriptions/status/history; manage allowed actions; update payment method via Payments |
+| System | Due detection and renewal processing (worker/cron later — not this pass) |
+
+Neither Store nor Portal becomes a Subscription source of truth.
+
+---
+
+## 2. Owner, context, consumers
+
+| Field | Value |
+| --- | --- |
+| Owner | Backend Platform Module (`ARCH-160`/`161`) |
+| Application context | **Both** — CRM operational; Guardian administrative + Class D + plans |
+| Consumers | `GRD`, `CRM`, later `STO`, `PRT`, `SYS`, `MOB` |
+| CRM rule | View, operational edit allowlist, pause/resume, policy cancel assist, renewal assist, notes — never Create, Class D, payment execution, clinical decisions, or inventory table writes |
+| Guardian rule | Admin create/edit, plans, Class D, correction, override; not clinical SoT; not Payments execution |
+
+---
+
+## 3. Navigation
+
+### 3.1 CRM
+
+```text
+CRM
+└── Subscriptions              ← operational queue
+    ├── (list)
+    ├── :id                    ← detail (ops actions)
+    ├── :id/edit               ← operational fields only
+    ├── :id/history
+    ├── :id/activity
+    └── :id/notes
+```
+
+**No** `/crm/subscriptions/new`. **No** Renewals nav section.
+
+### 3.2 Guardian
+
+```text
+Commerce
+├── Products
+├── Categories
+├── Inventory
+├── Orders (admin)
+└── Subscriptions (admin)      ← this module admin
+    ├── (list)
+    ├── new                    ← admin create
+    ├── :id
+    ├── :id/edit
+    ├── :id/history
+    ├── :id/activity
+    ├── :id/notes
+    └── plans                  ← plan configuration (not a separate module)
+        ├── (list)
+        ├── new
+        └── :id/edit
+```
+
+Escalation from CRM: `/guardian/subscriptions/:id` when Class D/admin work is required (`NAV-105`).
+
+---
+
+## 4. Pages (V1)
+
+| Page | CRM route | Guardian route | Permission |
+| --- | --- | --- | --- |
+| Subscriptions list | `/crm/subscriptions` | `/guardian/subscriptions` | `PERM-SUB-004` (staff); `PERM-SUB-001` (own, Portal later) |
+| Subscription detail | `/crm/subscriptions/:id` | `/guardian/subscriptions/:id` | `PERM-SUB-004` / `001` |
+| Create | — | `/guardian/subscriptions/new` | `PERM-SUB-005` |
+| Edit | `/crm/subscriptions/:id/edit` (ops fields) | `/guardian/subscriptions/:id/edit` | `PERM-SUB-006` |
+| History | `/crm/subscriptions/:id/history` | `/guardian/subscriptions/:id/history` | `PERM-SUB-004` |
+| Activity | `/crm/subscriptions/:id/activity` | `/guardian/subscriptions/:id/activity` | `PERM-SUB-004` |
+| Notes | `/crm/subscriptions/:id/notes` | `/guardian/subscriptions/:id/notes` | `PERM-SUB-004` (+ write with `006`) |
+| Pause / resume / cancel | actions on CRM detail | actions on Guardian detail | `PERM-SUB-007` |
+| Manual renewal / retry | actions on CRM detail | actions on Guardian detail | `PERM-SUB-008` (`003` for assist-only recovery) |
+| Plans list / editor | — | `/guardian/subscriptions/plans…` | `PERM-SUB-002` |
+| Class D delete/archive/restore | — | actions on Guardian detail | `PERM-SUB-010`–`012` |
+| Administrative correction | — | Guardian action | `PERM-SUB-009` |
+| Administrative override | — | Guardian action | `PERM-SUB-014` |
+
+### 4.1 Detail surface differences (same Subscription)
+
+| CRM Subscription Detail | Guardian Subscription Detail |
+| --- | --- |
+| Operational status, schedule, next renewal | Administrative controls + plan binding |
+| Pause / resume / policy cancel / renewal assist | Same + Class D, correction, override |
+| Customer + product snapshots (read) | Broader admin metadata |
+| Linked orders (read) | Same + admin create path |
+| Payment / clinical / inventory **read** refs | Same reads + admin tools |
+| Notes, history, activity | Notes, history, activity + deeper audit links |
+| Escalation link to Guardian when permitted | Full admin chrome |
+
+Shared presentational components are encouraged. Do not fork two Subscription domains. Do not invent a Renewals mini-app.
+
+### 4.2 Page ownership vs other modules
+
+| Concern | Subscriptions module? | Owner if not |
+| --- | --- | --- |
+| Index / detail / edit / notes / history / activity | Yes | — |
+| Admin create / plans | Yes (Guardian only) | — |
+| Renewal attempt list on the subscription | Yes (child of Subscription) | — |
+| Payment execution UI | No | Payments |
+| Clinical approve/decline UI | No | Consultations |
+| Questionnaire authoring | No | Questionnaires |
+| Inventory adjust/receive | No | Inventory Guardian |
+| Renewal invoices / binaries | No | Future Document Management |
+| Store checkout / Portal self-service UI | No | Future separate repositories |
+
+---
+
+## 5. Permissions
+
+| Code | Meaning | CRM | Guardian | Typical holders |
+| --- | --- | --- | --- | --- |
+| `PERM-SUB-001` | Manage own subscription (view/update/cancel scoped) | Assist scoped | — | Patient; Support assist scoped |
+| `PERM-SUB-002` | Configure / publish subscription plans | **No** | Yes | Admin |
+| `PERM-SUB-003` | Assist renewal (no gate bypass) | Yes | Scoped | Support |
+| `PERM-SUB-004` | Staff view | Yes | Yes | Doctor, Pharmacist, Support, Ops, Admin (scoped) |
+| `PERM-SUB-005` | **Admin Create** | **Never granted** | Yes | Admin |
+| `PERM-SUB-006` | Edit (context field allowlist) | Ops fields only | Admin + ops fields | Support/Ops (ops); Admin (admin) |
+| `PERM-SUB-007` | Lifecycle pause / resume / cancel (staff) | Yes | Yes | Support, Ops, Admin scoped |
+| `PERM-SUB-008` | Manual renewal / retry | Yes where granted | Yes | Support (with `003`), Ops, Admin |
+| `PERM-SUB-009` | Administrative correction (not a Payment refund) | **Never** | Yes | Admin as granted, Super Admin |
+| `PERM-SUB-010` | Soft-delete (Class D) | **Never** | Yes | Admin as granted, Super Admin |
+| `PERM-SUB-011` | Archive (Class D) | **Never** | Yes | Admin as granted, Super Admin |
+| `PERM-SUB-012` | Restore (Class D) | **Never** | Yes | Admin as granted, Super Admin |
+| `PERM-SUB-014` | Administrative override (Class D) | **Never** | Yes | Super Administrator |
+
+`PERM-SUB-013` is **intentionally unused** so it is not confused with Orders financial correction (`PERM-ORD-013`). Money movement remains `PERM-PAY-*`.
+
+Payment method update remains `PERM-PAY-002`. Policy refund assist remains `PERM-PAY-003`. Clinical approve/decline remain `PERM-CRM-002`/`003`. Inventory reserve/commit remain `PERM-INV-002`.
+
+Marketing/Content default deny staff subscription operations (existing SoD). Doctor/Pharmacist hold `PERM-SUB-004` for case-context view only.
+
+---
+
+## 6. History, Activity, Notes, Audit
+
+| Concept | Purpose | Must not |
+| --- | --- | --- |
+| **Subscription Status History** | Lifecycle transitions (`fromStatus` → `toStatus`) | Store free-text note bodies |
+| **Subscription Change History** | Field-change diffs (Products/Users pattern) | Duplicate Class D payloads |
+| **Subscription Activity** | Operational workflow events and staff actions | Duplicate full note text |
+| **Subscription Notes** | Human-authored internal notes | Serve as compliance audit SoT |
+| **Platform Audit** (`GRD-053`) | Security-sensitive / Class D / override events | Duplicate routine field history |
+
+Until `GRD-053` exists, Class D writes Status/Change History and Activity with `platformAuditDeferred: true` (same as Orders today).
+
+Activity may emit a lightweight `note_added` event referencing note id without copying note text.
+
+---
+
+## 7. Editability matrix
+
+### 7.1 Field classes
+
+| Class | Meaning | Who may change |
+| --- | --- | --- |
+| **Immutable historical** | Locked after write for historical correctness | Not via normal edit; Correction/Override only where explicitly allowed and audited |
+| **System-owned** | Server-computed or transition-driven | Lifecycle / renewal / payment-reaction services |
+| **CRM-operational** | Day-to-day ops | CRM + Guardian with `PERM-SUB-006` ops scope |
+| **Guardian-administrative** | Platform admin metadata | Guardian with `PERM-SUB-006` admin scope |
+| **Class D Correct / Override** | Controlled rewrite / forced transition | Guardian Class D only — **not** normal editing |
+
+### 7.2 Immutable / never free-edit
+
+- Subscription `id`
+- `patientUserId` after create
+- SubscriptionItem snapshots: product/variant identity, name, SKU, product type, unit price, Rx/catalog snapshot metadata
+- Captured customer snapshot fields after initial bind (Guardian Correction only if justified)
+- `initialOrderId` after set
+- Completed Status History / Change History / Platform Audit rows
+- `billingPeriodKey` on an existing renewal attempt
+
+### 7.3 Concrete field allowlists (V1)
+
+| Field / group | Class | CRM | Guardian normal edit |
+| --- | --- | --- | --- |
+| `status` | System-owned | Via lifecycle endpoints only | Via lifecycle; Override = Class D |
+| Period fields (`currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`) | System-owned | No | No (Override = Class D) |
+| Item snapshots / prices | Immutable after bind | No | No (Correction only if justified) |
+| Customer snapshot | Immutable after bind | No | Correction if justified |
+| Shipping preference notes / ops flags | CRM-operational | Yes while non-terminal | Yes |
+| Admin tags / reconciliation flags | Guardian-administrative | No | Yes |
+| Plan binding after first successful cycle | Immutable / Correction | No | Correction + audit |
+| Payment method / provider refs / payment status snapshot | System-owned (from Payments events) | No (patient uses Payments APIs) | No |
+| Clinical requirement flag | System-owned (from clinical/order events) | No | No (Override never silent bypass) |
+| Soft-delete / archive flags | Class D | No | Class D only |
+
+---
+
+## 8. Database models (Subscriptions-owned)
+
+Aligns with [10](10-database-design.md) `DB-032`–`034` and extends precision for implementation (P14a). Supporting tables are part of the Subscription aggregate — **not** a Renewals domain and **not** new ownership.
+
+### 8.1 SubscriptionPlan (`DB-032`)
+
+Configurable offering: interval, pricing, product/variant bindings, grace days, reassessment cadence, publish state. Guardian-authored (`FR-SUB-001`). Active subscriptions keep the plan FK after archive.
+
+Not a Product table. Product types `SIMPLE_SUBSCRIPTION` / `VARIABLE_SUBSCRIPTION` and `limitSubscription` remain catalog flags on Product; Subscriptions **enforce** `limitSubscription` at bind/create time.
+
+### 8.2 Subscription (`DB-033`)
+
+| Area | Logical fields |
+| --- | --- |
+| Identity | `id` (UUID), optional human `subscriptionNumber`, `createdAt`, `updatedAt` |
+| Patient | `patientUserId` FK → `users.id` (`onDelete: Restrict`) |
+| Plan | `planId` FK → SubscriptionPlan (`onDelete: Restrict`) |
+| Lifecycle | `status` (`SubscriptionStatus` — §9) |
+| Schedule | `currentPeriodStart`, `currentPeriodEnd`, `nextRenewalAt`, `cycleNumber`, optional `endsAt` (finite term) |
+| Pause | `pausedAt`, `statusBeforePause` |
+| Snapshots | Customer name/email/phone; items via `SubscriptionItem` |
+| Payment refs (opaque) | `paymentMethodId`, `providerCustomerRef`, `providerSubscriptionRef`, `latestPaymentId`, `paymentStatusSummary` |
+| Order refs | `initialOrderId`, `latestOrderId` (opaque until Orders FK is added) |
+| Clinical | `clinicalRequirement` (`NONE` \| `REASSESSMENT_REQUIRED` \| `DECLINED_HOLD`) |
+| Ops / admin | `adminTags`, `reconciliationFlags` |
+| Class D | `deletedAt`, `archivedAt` |
+
+**Do not** create Payment, Refund, Inventory, Product master, User identity, Prescription, Questionnaire, or Order transaction tables in this module.
+
+### 8.3 SubscriptionItem
+
+Immutable product/variant/price snapshots at bind (minimum):
+
+- `productId`, `variantId` (FKs with `onDelete: Restrict`)
+- `productName`, `sku`, `productType` (string snapshot), `isRxEligible`, optional `catalogMetadata` JSON
+- `quantity`
+- `unitPriceCents`, `salePriceCents`, `currency`
+
+Historical subscription rendering **must not** depend on live Product rows. Later catalog edits do not rewrite these snapshots. Renewal Orders copy from **this** snapshot (or an explicit re-price policy — V1 copies the subscription snapshot, not live catalog).
+
+### 8.4 SubscriptionRenewalAttempt (`DB-034`) — child of Subscription
+
+Not a module. Not a nav item. Child workflow/entity.
+
+| Area | Logical fields |
+| --- | --- |
+| Identity | `id`; `subscriptionId` FK |
+| Idempotency | `billingPeriodKey` — unique with `subscriptionId` |
+| Status | `PENDING` \| `PROCESSING` \| `SUCCEEDED` \| `FAILED` \| `SKIPPED` \| `CANCELLED` |
+| Order | `orderId` (at most one per attempt) |
+| Payment snapshot | Opaque `paymentId` / `paymentStatusSummary` |
+| Retry | `retryCount`, `lastErrorCode`, `lastErrorAt` |
+| Actor / source | `actorUserId`, `source` (`system` \| `crm` \| `guardian` \| `portal`) |
+
+### 8.5 Supporting entities
+
+| Entity | Purpose |
+| --- | --- |
+| `SubscriptionStatusHistory` | Append-only lifecycle transitions |
+| `SubscriptionChangeHistory` | Field diffs |
+| `SubscriptionActivity` | Operational interaction events |
+| `SubscriptionNote` | Human-authored internal notes |
+
+### 8.6 References only
+
+| Target | How Subscriptions sees it |
+| --- | --- |
+| Users | `patientUserId` FK + customer snapshot |
+| Products / Variants | Item FKs + immutable snapshots |
+| Orders | `initialOrderId` / `latestOrderId` / attempt `orderId`; Orders holds `subscriptionId` + `orderType` |
+| Payments | Opaque method / provider / payment refs + status snapshot |
+| Inventory | **None** — only via Orders |
+| Clinical / QST | Opaque requirement flag + order-carried clinical refs |
+| Documents | Future opaque refs; **not** Asset Library |
+
+---
+
+## 9. Lifecycle (four dimensions — do not collapse)
+
+Do **not** store payment outcome, renewal processing, or clinical requirement in `Subscription.status`.
+
+### 9.1 Subscription lifecycle status
+
+| Status | Meaning |
+| --- | --- |
+| `PENDING_SETUP` | Created; initial order/payment/clinical setup not complete |
+| `ACTIVE` | In good standing; automatic renewals eligible |
+| `PAUSED` | Hold; **must not** automatically generate renewal attempts |
+| `PAST_DUE` | Grace after payment failure (`FR-SUB-003`) |
+| `CANCELLED` | Future renewals stopped (terminal for this record) |
+| `EXPIRED` | Term/end date reached without cancel |
+| `COMPLETED` | Finite-cycle plan finished all entitled cycles |
+
+Terminal: `CANCELLED` | `EXPIRED` | `COMPLETED`. Resubscribe is a **new** subscription (`PAY-086`).
+
+**Mapping from prior 03/10 vocab:** `renewing` is **not** a lifecycle status — it is attempt=`PROCESSING`. `reassessment_required` is **not** a lifecycle status — it is `clinicalRequirement`. `cancelled` unchanged. `active` / `past_due` retained.
+
+Pause, pending setup, expired, and completed are **platform extensions** of original `FR-SUB-*` (additive, not silent FR rewrites).
+
+### 9.2 Payment status snapshot
+
+Projected from Payments. Vocabulary matches [15](15-payment-flow.md) / `DB-028`: `pending` | `authorized_or_captured` | `failed` | `refunded`. Subscriptions never execute the payment.
+
+### 9.3 Renewal attempt status
+
+`PENDING` | `PROCESSING` | `SUCCEEDED` | `FAILED` | `SKIPPED` | `CANCELLED` on `DB-034` only.
+
+### 9.4 Clinical requirement
+
+`NONE` | `REASSESSMENT_REQUIRED` | `DECLINED_HOLD` on the subscription as a **flag**. Clinical decisions live on Consultations / the renewal Order. Payment success ≠ dispensing (`OR-03`).
+
+### 9.5 Allowed lifecycle transitions
+
+| From | To | Trigger | Actor | Auto vs manual |
+| --- | --- | --- | --- | --- |
+| (create) | `PENDING_SETUP` | Admin create or future checkout bind | Guardian / System | Auto on create |
+| `PENDING_SETUP` | `ACTIVE` | Initial payment success (and setup complete) | System (Payments → Orders → SUB) | Auto |
+| `PENDING_SETUP` | `CANCELLED` | Abort before activation | Patient / CRM assist / Guardian | Manual |
+| `ACTIVE` | `PAUSED` | Pause | Patient (later) / CRM / Guardian | Manual |
+| `PAST_DUE` | `PAUSED` | Pause during grace | CRM / Guardian | Manual |
+| `PAUSED` | `ACTIVE` or `PAST_DUE` | Resume restores `statusBeforePause` | CRM / Guardian / Patient later | Manual |
+| `ACTIVE` | `PAST_DUE` | Renewal payment failure | System | Auto |
+| `PAST_DUE` | `ACTIVE` | Successful recovery payment | System | Auto |
+| `ACTIVE` / `PAST_DUE` / `PAUSED` / `PENDING_SETUP` | `CANCELLED` | Cancel (stops future renewals) | Patient / CRM assist / Guardian | Manual |
+| `ACTIVE` | `EXPIRED` | `endsAt` reached | System | Auto |
+| `ACTIVE` | `COMPLETED` | Last entitled cycle succeeded | System | Auto |
+
+**Forbidden (non-exhaustive):**
+
+| From | To | Why |
+| --- | --- | --- |
+| `CANCELLED` / `EXPIRED` / `COMPLETED` | `ACTIVE` | Terminal; start a new subscription |
+| `ACTIVE` | `PAST_DUE` without a failed attempt | Must come from payment failure on a renewal attempt |
+| Any | Clinical approve/decline as a subscription status | Clinical is not lifecycle |
+| Any | Silent Rx fulfill bypass | `FR-SUB-005`, `OR-03` |
+| `PAUSED` | Auto-create renewal attempt | Pause forbids automatic renewals |
+
+Override (`PERM-SUB-014`) may force a documented exception with required reason; it **must not** silently bypass clinical or payment gates.
+
+### 9.6 Side effects by transition
+
+| Transition | Order | Payments | Inventory | Notifications / events |
+| --- | --- | --- | --- | --- |
+| Create → `PENDING_SETUP` | May request `SUBSCRIPTION_INITIAL` Order | No execute in SUB | None | — |
+| → `ACTIVE` (initial) | Initial order proceeds | Snapshot payment status | Via Orders | `subscription.started` (`NTF-040`) |
+| Pause | Open orders follow order rules | No new charges | None | Future pause NTF (optional) |
+| Resume | **No** order as a side effect | None | None | Future resume NTF (optional) |
+| Renewal due (ACTIVE only) | Request `SUBSCRIPTION_RENEWAL` Order | Orders coordinates Payments | Via Orders | — |
+| Payment fail → `PAST_DUE` | Existing renewal order records failure | Payments owns fail | Release via Orders if reserved | `NTF-042` **mandatory** |
+| Recovery → `ACTIVE` | Same attempt/order succeeds | Snapshot | Via Orders | `NTF-041` |
+| Cancel | Open orders follow order rules; no new renewals | Call Payments to cancel provider-side recurring **if** a provider subscription ref exists | None from SUB | `NTF-043` |
+| Clinical decline on renewal order | Order clinical_declined / refund path | Payments refund/void via Orders | Release via Orders | `NTF-044` if reassessment; **subscription not auto-cancelled** |
+
+---
+
+## 10. Pause / resume (locked V1)
+
+| Rule | Statement |
+| --- | --- |
+| **SUB-PAUSE-001** | `PAUSED` subscriptions **must not** automatically generate renewal attempts. Due-detection skips them. |
+| **SUB-PAUSE-002** | Pause stores `pausedAt` and `statusBeforePause` (`ACTIVE` or `PAST_DUE`). |
+| **SUB-PAUSE-003** | Resume **does not** silently create a renewal attempt, a renewal Order, or a new billing period. |
+| **SUB-PAUSE-004** | Resume restores `statusBeforePause`. It does **not** clear `PAST_DUE` (payment failure is not forgiven by pause). |
+| **SUB-PAUSE-005** | **Missed cycles while paused are skipped, not billed.** If `nextRenewalAt` is still in the future, keep it. If it is in the past (or was due during pause), set `nextRenewalAt` from **resume timestamp + plan interval**. Do not catch-up charge. |
+| **SUB-PAUSE-006** | Immediate charge after pause is **only** via explicit manual renewal (`PERM-SUB-008`), which uses the normal idempotent attempt path. |
+
+This is the deterministic V1 behavior. Changing it to “renew immediately if overdue on resume” is an explicit product revision.
+
+---
+
+## 11. Renewals (inside Subscriptions)
+
+### 11.1 Placement
+
+`SubscriptionsRenewalService` is a thin orchestrator **inside** the Subscriptions module. It is not a Nest Renewals module, not a database domain, not a nav group, and not a P14 implementation phase of its own.
+
+Cron / workers are **extension points**. This blueprint does not implement them.
+
+### 11.2 Due detection
+
+A subscription is due when **all** hold:
+
+- `status = ACTIVE`
+- `nextRenewalAt <= now`
+- not archived/soft-deleted
+- not terminal
+- `clinicalRequirement` does not by itself skip due detection (the **order** still carries clinical gates; SUB may still create the renewal Order so the clinical queue can work)
+
+`PAUSED`, `PENDING_SETUP`, `PAST_DUE` (until recovery/retry), and terminal statuses are not auto-due. `PAST_DUE` recovery is retry of the **existing** period attempt, not a new period.
+
+### 11.3 Processing sequence
+
+1. Compute `billingPeriodKey` for the period being billed.
+2. Insert or load `SubscriptionRenewalAttempt` (unique `subscriptionId` + `billingPeriodKey`).
+3. If attempt already has `orderId`, **reuse that Order** — never create a second order for the period.
+4. If no `orderId`, request Orders to create `orderType = SUBSCRIPTION_RENEWAL` with `subscriptionId`, copying **subscription item snapshots** (not live catalog).
+5. Record `orderId` on the attempt; set `latestOrderId` on the subscription.
+6. Orders coordinates Payments (saved method), then Inventory (Reserve on auth success), then clinical gating on the **order**.
+7. Subscriptions records payment status snapshot and attempt status from those outcomes.
+8. On payment success: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle).
+9. On payment failure: attempt=`FAILED`; lifecycle `PAST_DUE`; notify `NTF-042`.
+10. Inventory/clinical failures do **not** invent a second period; they update the same attempt/order.
+
+### 11.4 Idempotency invariants (locked)
+
+| ID | Invariant |
+| --- | --- |
+| **SUB-IDEM-001** | At most **one** `SubscriptionRenewalAttempt` row per `(subscriptionId, billingPeriodKey)`. Unique constraint. |
+| **SUB-IDEM-002** | An attempt holds at most **one** `orderId`. Worker retry must not create a duplicate renewal Order. |
+| **SUB-IDEM-003** | `billingPeriodKey` V1 strategy: `{subscriptionId}:{periodEnd}` where `periodEnd` is `currentPeriodEnd` (ISO date, UTC) of the period whose close is being billed. Manual and automatic renewals for that close share the key. |
+| **SUB-IDEM-004** | Retry (worker, CRM, Guardian) loads the existing attempt and continues it (`retryCount++`). Payment/Order failures stay on that attempt/order; they do **not** create a new subscription period. |
+| **SUB-IDEM-005** | A new period key is issued only after a **successful** period advance (or an explicit skip recorded as `SKIPPED` on the old key). |
+| **SUB-IDEM-006** | Client `Idempotency-Key` on manual renewal/retry APIs is recommended in addition to the period unique constraint ([11](11-api-design.md) worker row already requires period-key idempotency). |
+
+Do not implement the worker or keys in this documentation pass.
+
+### 11.5 Manual renewal vs retry vs skip
+
+| Action | When | Effect |
+| --- | --- | --- |
+| Automatic due processing | `ACTIVE` and due | Same idempotent path |
+| Retry | Existing attempt `FAILED` / `PROCESSING` stuck | Same period key; same order |
+| Manual renewal | Staff/patient (later) explicit | Same path; if no open period key, uses current due key; **not** a way to duplicate periods |
+| Skip | Policy / inventory skip | attempt=`SKIPPED`; period may advance without a paid cycle **only** via documented policy (V1: skip does **not** advance entitled paid cycles) |
+
+---
+
+## 12. Payments boundary
+
+| Concern | Payments | Subscriptions |
+| --- | --- | --- |
+| Authorize / capture / refund / saved methods / PSP | **Owns** | No |
+| Provider-side recurring object cancel | **Owns** (called when a provider subscription ref exists) | Stores opaque `providerSubscriptionRef`; **calls Payments** on cancel — does not talk to Stripe itself |
+| Payment / Refund tables | **Owns** (`DB-028`/`029`/`030`) | Opaque refs + `paymentStatusSummary` |
+| Renewal charge execution | Executes when Orders/Payments path runs | Requests Order; records snapshot |
+
+No Stripe-specific payment execution tables in Subscriptions. Product `stripeGateways` remain catalog presentation prefs.
+
+This **supersedes** [15](15-payment-flow.md) `PAY-023` / `PAY-070` “create renewal order on success only”: V1 creates the renewal Order when the attempt is opened so failure is visible on the Order, then Payments runs. Duplicate prevention is the period key, not “order only after money”.
+
+---
+
+## 13. Inventory boundary
+
+```text
+Renewal → Order → Inventory services (Reserve / Release / Commit / Restock)
+```
+
+Subscriptions **never** write inventory tables, balances, reservations, or movements.
+
+| Failure | Order / attempt | Subscription lifecycle |
+| --- | --- | --- |
+| Insufficient stock (`ERR-INV-001`) | Order stays non-fulfilled; attempt=`FAILED` or `SKIPPED` per policy | **Unchanged** unless payment also failed |
+| Digital / not tracked | Inventory no-op on the Order | Unchanged |
+| P13e not wired | Hooks no-op (known) | Blueprint still forbids SUB table writes |
+
+P14f depends on Orders P13e. Until then, document the contract; do not have Subscriptions call Inventory directly as a workaround.
+
+---
+
+## 14. Clinical boundary
+
+| Invariant | Statement |
+| --- | --- |
+| **SUB-CLIN-001** | Clinical decline or reassessment requirement **does not** automatically delete or silently cancel the Subscription. |
+| **SUB-CLIN-002** | Clinical state belongs to the clinical workflow and **order** gating. Subscription stores `clinicalRequirement` as a snapshot flag only. |
+| **SUB-CLIN-003** | A subscription may become paused/cancelled only through a **defined subscription lifecycle operation** (patient, CRM assist, Guardian, or system expire/complete) — not as a hidden side effect of doctor decline. |
+| **SUB-CLIN-004** | Renewal workflow **must not** bypass questionnaire / consult / pharmacy gates. Money success ≠ dispensing (`OR-03`, `FR-SUB-005`). |
+| **SUB-CLIN-005** | When the plan requires fresh review, the renewal **Order** is created with `requiresClinicalReview` / `isRxOrder` from the **subscription item snapshot** (which copied product Rx flags at bind). Consultations own approve/decline. |
+
+`DECLINED_HOLD` means: keep the commitment until staff/patient pause or cancel; do not auto-renew fulfillment; CRM sees the hold; Guardian may override only with `PERM-SUB-014` and never silently.
+
+---
+
+## 15. Product and User boundaries
+
+**Products** remain catalog SoT. Subscriptions snapshot product/variant/price at create/bind. Live catalog edits do not rewrite historical `SubscriptionItem` rows. `limitSubscription` is enforced by Subscriptions at bind; the field stays on Product.
+
+**Users** own identity. Subscription keeps `patientUserId` plus customer snapshot (same pattern as Orders). No parallel customer table.
+
+---
+
+## 16. Services and APIs
+
+### 16.1 Shared domain services (P14b — not this pass)
+
+| Service | Responsibility |
+| --- | --- |
+| `SubscriptionsService` | Facade: create, edit allowlists, notes, Class D primitives |
+| `SubscriptionsLifecycleService` | Legal transitions including pause/resume/cancel |
+| `SubscriptionsSnapshotService` | Product/variant + customer snapshots |
+| `SubscriptionsRenewalService` | Due detection, attempt idempotency, request Orders, record refs |
+| `SubscriptionEditPolicyService` | CRM vs Guardian field allowlists |
+
+Thin `CrmSubscriptionsController` and `AdminSubscriptionsController` call the shared facade. **No** RenewalsController.
+
+### 16.2 Existing catalog (keep IDs)
+
+| ID | Method | Path | Action | Notes |
+| --- | --- | --- | --- | --- |
+| API-077 | GET | `/subscription-plans` | Published plans | Store/Portal later |
+| API-078 | GET | `/subscription-plans/{id}` | Plan detail | |
+| API-079 | GET | `/subscriptions` | Own list | Portal later |
+| API-080 | GET | `/subscriptions/{id}` | Own detail | |
+| API-081 | POST | `/subscriptions/{id}/cancel` | Own cancel | Stops future renewals |
+| API-082 | PATCH | `/subscriptions/{id}/payment-method` | Update PM | Delegates to Payments |
+| API-083 | GET | `/crm/subscriptions` | Staff list | Assist; no create |
+| API-084 | GET | `/admin/subscription-plans` | Admin plan list | |
+| API-085 | POST | `/admin/subscription-plans` | Create plan | |
+| API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | |
+| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Clinical bindings for Rx plans |
+
+### 16.3 New CRM family (`API-213`–`224`)
+
+| ID | Method | Path | Action | Permission |
+| --- | --- | --- | --- | --- |
+| API-213 | GET | `/crm/subscriptions/{id}` | Detail | `PERM-SUB-004` |
+| API-214 | PATCH | `/crm/subscriptions/{id}` | Ops edit | `PERM-SUB-006` |
+| API-215 | POST | `/crm/subscriptions/{id}/pause` | Pause | `PERM-SUB-007` |
+| API-216 | POST | `/crm/subscriptions/{id}/resume` | Resume | `PERM-SUB-007` |
+| API-217 | POST | `/crm/subscriptions/{id}/cancel` | Policy cancel assist | `PERM-SUB-007` |
+| API-218 | GET | `/crm/subscriptions/{id}/renewals` | Attempt history | `PERM-SUB-004` |
+| API-219 | POST | `/crm/subscriptions/{id}/renewals` | Manual renewal | `PERM-SUB-008` |
+| API-220 | POST | `/crm/subscriptions/{id}/renewals/{attemptId}/retry` | Retry | `PERM-SUB-008` / `003` |
+| API-221 | GET | `/crm/subscriptions/{id}/notes` | List notes | `PERM-SUB-004` |
+| API-222 | POST | `/crm/subscriptions/{id}/notes` | Add note | `PERM-SUB-006` |
+| API-223 | GET | `/crm/subscriptions/{id}/history` | Status/change history | `PERM-SUB-004` |
+| API-224 | GET | `/crm/subscriptions/{id}/activity` | Activity | `PERM-SUB-004` |
+
+**No** CRM POST `/crm/subscriptions` create. **No** CRM Class D.
+
+### 16.4 New Guardian family (`API-225`–`240`)
+
+| ID | Method | Path | Action | Permission |
+| --- | --- | --- | --- | --- |
+| API-225 | GET | `/admin/subscriptions` | Admin list | `PERM-SUB-004` |
+| API-226 | GET | `/admin/subscriptions/{id}` | Admin detail | `PERM-SUB-004` |
+| API-227 | POST | `/admin/subscriptions` | Admin create | `PERM-SUB-005` |
+| API-228 | PATCH | `/admin/subscriptions/{id}` | Admin edit | `PERM-SUB-006` |
+| API-229 | POST | `/admin/subscriptions/{id}/pause` | Pause | `PERM-SUB-007` |
+| API-230 | POST | `/admin/subscriptions/{id}/resume` | Resume | `PERM-SUB-007` |
+| API-231 | POST | `/admin/subscriptions/{id}/cancel` | Cancel | `PERM-SUB-007` |
+| API-232 | POST | `/admin/subscriptions/{id}/delete` | Soft-delete | `PERM-SUB-010` |
+| API-233 | POST | `/admin/subscriptions/{id}/archive` | Archive | `PERM-SUB-011` |
+| API-234 | POST | `/admin/subscriptions/{id}/restore` | Restore | `PERM-SUB-012` |
+| API-235 | POST | `/admin/subscriptions/{id}/corrections` | Administrative correction | `PERM-SUB-009` |
+| API-236 | POST | `/admin/subscriptions/{id}/overrides` | Override | `PERM-SUB-014` |
+| API-237 | GET/POST | `/admin/subscriptions/{id}/notes` | Notes | `004` / `006` |
+| API-238 | GET | `/admin/subscriptions/{id}/history` | History | `PERM-SUB-004` |
+| API-239 | GET | `/admin/subscriptions/{id}/activity` | Activity | `PERM-SUB-004` |
+| API-240 | GET | `/admin/subscriptions/{id}/renewals` | Attempts | `PERM-SUB-004` |
+
+Renewal **worker** remains Internal (not a Stable client route); period-key idempotency already listed in [11 §13.7](11-api-design.md).
+
+### 16.5 Errors (extend existing)
+
+Keep `ERR-SUB-001`–`004`. Add:
+
+| Code | Meaning |
+| --- | --- |
+| ERR-SUB-005 | Illegal lifecycle transition |
+| ERR-SUB-006 | Duplicate renewal period (idempotency) |
+| ERR-SUB-007 | Pause/resume not allowed in current state |
+| ERR-SUB-008 | CRM create forbidden |
+
+---
+
+## 17. Destructive operations (Class D)
+
+| Operation | Permission | Confirmation | Audit |
+| --- | --- | --- | --- |
+| Soft-delete | `PERM-SUB-010` | Yes | Platform Audit (deferred marker until `GRD-053`) |
+| Archive | `PERM-SUB-011` | Yes | Platform Audit |
+| Restore | `PERM-SUB-012` | Yes | Platform Audit |
+| Administrative correction | `PERM-SUB-009` | Yes; Payments if money ever implied | Platform Audit |
+| Administrative override | `PERM-SUB-014` | Yes; never silent clinical/payment bypass | Platform Audit |
+
+Patient/CRM **cancel** is not Class D. Cancel stops future renewals and retains history.
+
+---
+
+## 18. Store and Patient Portal extension points
+
+Document only. **No UI in this repository.**
+
+**Store (later):** subscribe at checkout; bind plan + create `PENDING_SETUP` + `SUBSCRIPTION_INITIAL` order via platform APIs; later manage/cancel using patient-scoped routes `API-079`–`082`.
+
+**Patient Portal (later):** list/detail own subscriptions; status; allowed pause/cancel; renewal/order history; payment method via Payments (`API-082` / `PERM-PAY-002`). No Class D, no staff fields.
+
+---
+
+## 19. Dependencies
+
+| Dependency | Why |
+| --- | --- |
+| Products (P8) | Variants, pricing, Rx flags, `limitSubscription`, subscription product types |
+| Users (P9) | Patient identity FK + snapshot source |
+| Orders (P13) | Renewal/initial orders; `orderType` / `subscriptionId` |
+| Inventory (P12 + P13e) | Reserve/Release/Commit via Orders — P14f blocked on P13e |
+| Payments ([15](15-payment-flow.md) + P13f) | Money execution — P14e |
+| Clinical / QST | Later; refs and events — P14g |
+| RBAC / Class D patterns | Permission enforcement |
+| Notifications | Event hooks `NTF-040`–`044`; pause/resume NTF later |
+| Store / Portal | Separate repos; API consumers only |
+| P10 UI modernization | **Not a dependency** |
+
+---
+
+## 20. Testing strategy (specified, not implemented)
+
+| Area | Cases |
+| --- | --- |
+| Lifecycle | Legal transitions pass; illegal rejected (`ERR-SUB-005`) |
+| Pause / resume | PAUSED skips auto-renewal; resume does not create attempt/order; missed periods skipped; PAST_DUE restored if that was prior status |
+| Initial subscription | `PENDING_SETUP` → `ACTIVE`; `SUBSCRIPTION_INITIAL` order |
+| Renewal generation | Due ACTIVE creates one attempt + one order |
+| Duplicate prevention | Second worker tick same period key → same attempt/order (`ERR-SUB-006` or no-op success) |
+| Idempotent retry | Failed payment retry does not new-period or second order |
+| Payment failure | `PAST_DUE` + `NTF-042` hook; attempt=`FAILED` |
+| Clinical decline | Order gated; subscription **not** auto-cancelled; `DECLINED_HOLD` |
+| Inventory failure | Attempt/order updated; SUB does not write inventory; lifecycle unchanged if money ok |
+| Cancellation | Stops future renewals; open orders follow order rules; not Class D |
+| Manual renewal | Explicit path; same idempotency key |
+| Snapshots | Product/User live edits do not rewrite subscription history |
+| RBAC | CRM cannot create/Class D; Marketing/Content denied; Class D 403 without grant |
+| History / Activity / Audit | Separation preserved; Class D `platformAuditDeferred` until `GRD-053` |
+| Store/Portal | Own-scope APIs designed; no UI in this repo |
+
+---
+
+## 21. Definition of done (implementation — later)
+
+- Shared domain services enforce lifecycle, snapshots, renewal idempotency, allowlists
+- CRM and Guardian UIs use one domain with distinct actions
+- CRM has no create/Class D surfaces
+- No Renewals module, nav, or DB domain
+- Payments / Inventory / Clinical / Product / User boundaries held
+- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014`
+- Verification matrix §20 passes
+- Docs remain aligned with this blueprint
+
+---
+
+## 22. Implementation roadmap (P14)
+
+**There is no standalone Renewals implementation phase.** Renewal orchestration is part of P14b (primitives) and is exercised by later slices.
+
+| Slice | Scope | Notes |
+| --- | --- | --- |
+| **P14a** | Prisma foundation: Plan, Subscription, Item, RenewalAttempt, Status/Change History, Activity, Notes, enums | No Nest controllers |
+| **P14b** | Domain: lifecycle, snapshots, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order) | No cron |
+| **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | Current shell patterns |
+| **P14d** | Guardian APIs + UI + plans + Class D | Current shell; not P10 redesign |
+| **P14e** | Payments integration boundary | Opaque refs; call Payments on provider cancel |
+| **P14f** | Inventory through Orders | Depends on P13e |
+| **P14g** | Clinical integration | Refs/events; no clinical authoring |
+| **P14h** | RBAC seed, tests, documentation freeze | |
+
+Order: schema → shared logic (including renewal primitives) → CRM ops → Guardian/Class D → payments → inventory-via-orders → clinical → verification.
+
+---
+
+## 23. Risks and open decisions
+
+| ID | Topic | Status |
+| --- | --- | --- |
+| OD-SUB-01 | CRM Subscription Create | **Deferred** — V1 locked No |
+| OD-SUB-02 | Grace length | Plan-configurable days; default at implementation |
+| OD-SUB-03 | PSP-native recurring objects vs platform-owned billing | **Recommend platform-owned schedule + opaque provider refs** (not Stripe-specific schema) |
+| OD-SUB-04 | Inventory-only failure pauses the subscription | **Locked No** — attempt/order fail; lifecycle unchanged unless payment failed |
+| OD-SUB-05 | Resume catch-up charge | **Locked No** — skip missed paused periods (§10) |
+| OD-SUB-06 | Exact CRM-operational field names | §7.3 proposal; product may tweak at UI build |
+
+**Not open:** CRM Create; Class D Guardian-only; no Renewals module; four-way status split; Order owns the transaction; Payments owns execution; Inventory via Orders; clinical decline does not auto-cancel; P10 not a dependency; Store/Portal UI not in this repo.
+
+---
+
+## Revision History
+
+| Version | Date | Author | Notes |
+| --- | --- | --- | --- |
+| 1.0 | 2026-08-24 | Platform Engineering | Initial Subscriptions blueprint: four-dimension status, in-module renewal orchestration, Order boundary, pause/resume skip-missed, clinical safety, CRM no Create, P14 slices; docs-only on `feature/subscriptions-platform-blueprint` |
+
+*End of 36 — Subscriptions Module.*

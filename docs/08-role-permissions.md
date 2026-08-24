@@ -286,7 +286,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | Checkout | CHK | `PERM-CHK-001` Start checkout; `PERM-CHK-002` Finalize order (auth required) | Patient |
 | Payments | PAY | `PERM-PAY-001` Pay; `PERM-PAY-002` Manage saved methods (own); `PERM-PAY-003` Initiate refund | Patient; Support/Ops |
 | Orders | ORD | `PERM-ORD-001` View own/staff-scoped; `PERM-ORD-002` Cancel; `PERM-ORD-003` Fulfill/ship; `PERM-ORD-004` Admin Create (Guardian only); `PERM-ORD-005` Edit (context field allowlist) | Patient; Support; Ops; Admin |
-| Subscriptions | SUB | `PERM-SUB-001` View/manage own; `PERM-SUB-002` Configure plans; `PERM-SUB-003` Assist renewal (no gate bypass) | Patient; Admin; Support |
+| Subscriptions | SUB | `PERM-SUB-001` Manage own; `PERM-SUB-002` Configure plans; `PERM-SUB-003` Assist renewal (no gate bypass); `PERM-SUB-004` Staff view; `PERM-SUB-005` Admin Create (Guardian only); `PERM-SUB-006` Edit (context allowlist); `PERM-SUB-007` Pause/resume/cancel; `PERM-SUB-008` Manual renewal/retry | Patient; Support; Ops; Admin |
 | Questionnaires | QST | `PERM-QST-001` Submit responses; `PERM-QST-002` View own status; `PERM-QST-003` View full answers (clinical); `PERM-QST-004` Configure definitions | Patient; Doctor; Admin |
 | Doctor Reviews | CRM | `PERM-CRM-001` Open consult queue; `PERM-CRM-002` Approve; `PERM-CRM-003` Decline; `PERM-CRM-004` Request info; `PERM-CRM-005` Clinical notes | Doctor |
 | Pharmacy | CRM | `PERM-CRM-006` Pharmacy review; `PERM-CRM-007` Mark pharmacy ready / flag | Pharmacist |
@@ -309,7 +309,7 @@ Permissions use `PERM-<MOD>-###`. Categories below group capabilities for matric
 | System Configuration | SET | `PERM-SET-001` Manage platform settings; `PERM-SET-002` Oversell/publish policies | Admin |
 | Audit Logs | ADM, DOC | `PERM-ADM-010` View audit logs; `PERM-DOC-003` PHI access audit | Admin (primary) |
 | Reviews (product) | REV | `PERM-REV-001` Submit review; `PERM-REV-002` Moderate approve/reject | Patient; Content/Support/Admin as granted |
-| **Destructive operations (Class D)** | ADM, ORD, SUB, PRD, CAT, CMS, BLG, AST, CPN, RPT | `PERM-ADM-030`–`032` user delete/archive/restore; `PERM-ADM-033` bulk cleanup; `PERM-ADM-034` hard-delete execution; `PERM-ORD-010`–`012` order delete/archive/restore; `PERM-ORD-013` financial correction; `PERM-ORD-014` administrative override; `PERM-SUB-010`–`012` subscription delete/archive/restore; `PERM-PRD-010` delete product; `PERM-CAT-010` delete category; `PERM-CMS-010` delete page; `PERM-BLG-010` delete post; `PERM-AST-010` archive/restore/delete asset; `PERM-AST-011` bulk asset destructive; `PERM-CPN-010` delete coupon; `PERM-RPT-010` purge report artifacts | Super Admin (full); Admin (subset as granted) — **Guardian context only** |
+| **Destructive operations (Class D)** | ADM, ORD, SUB, PRD, CAT, CMS, BLG, AST, CPN, RPT | `PERM-ADM-030`–`032` user delete/archive/restore; `PERM-ADM-033` bulk cleanup; `PERM-ADM-034` hard-delete execution; `PERM-ORD-010`–`012` order delete/archive/restore; `PERM-ORD-013` financial correction; `PERM-ORD-014` administrative override; `PERM-SUB-010`–`012` subscription delete/archive/restore; `PERM-SUB-014` subscription override; `PERM-PRD-010` delete product; `PERM-CAT-010` delete category; `PERM-CMS-010` delete page; `PERM-BLG-010` delete post; `PERM-AST-010` archive/restore/delete asset; `PERM-AST-011` bulk asset destructive; `PERM-CPN-010` delete coupon; `PERM-RPT-010` purge report artifacts | Super Admin (full); Admin (subset as granted) — **Guardian context only** |
 
 ### 4.1 Application contexts (`RBAC-009`)
 
@@ -374,6 +374,12 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-SUB-001 | Manage own subscription | View, update, and cancel the patient’s own subscriptions. | SUB | Patient; Support (assist, scoped); Admin |
 | PERM-SUB-002 | Configure subscription plans | Create and publish subscription plan configuration. | SUB | Admin |
 | PERM-SUB-003 | Assist renewal | Assist with renewal failures without bypassing clinical gates. | SUB | Support |
+| PERM-SUB-004 | View subscriptions (staff) | View subscription records within role scope. | SUB | Doctor, Pharmacist, Support, Operations, Admin (scoped) |
+| PERM-SUB-005 | Create subscription (admin) | Create a subscription via Guardian administrative path. **Never granted to CRM principals in V1.** | SUB | Admin (Guardian) |
+| PERM-SUB-006 | Edit subscription | Edit subscription fields subject to CRM-operational vs Guardian-administrative allowlists ([36 §7](36-subscriptions-module.md)). Does **not** imply Class D, payment execution, or clinical decisions. | SUB | Support/Ops (ops fields); Admin (admin + ops fields) |
+| PERM-SUB-007 | Subscription lifecycle (staff) | Pause, resume, or policy-cancel a subscription. Patient own-cancel remains `PERM-SUB-001`. | SUB | Support, Operations, Admin (scoped) |
+| PERM-SUB-008 | Manual renewal / retry | Trigger manual renewal or retry an existing attempt. Same period-key idempotency as the worker. | SUB | Support (with `003`), Operations, Admin |
+| PERM-SUB-009 | Administrative correction (subscription) | Correct administrative subscription fields. **Not** a Payment refund (`PERM-PAY-003`). **Class D-adjacent Guardian-only**; never CRM. | SUB | Admin (as granted), Super Administrator |
 | PERM-QST-001 | Submit questionnaire responses | Complete and store intake questionnaire answers for the owning patient. | QST | Patient |
 | PERM-QST-002 | View own questionnaire status | View status of the patient’s own questionnaire submissions. | QST | Patient |
 | PERM-QST-003 | View full questionnaire answers | Read full clinical questionnaire answer sets for consult/pharmacy review. | QST | Doctor; Pharmacist (as permitted for review) |
@@ -437,6 +443,7 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-SUB-010 | Delete subscription | Soft-delete a subscription record in Guardian. **Class D.** | SUB | Admin (as granted), Super Administrator |
 | PERM-SUB-011 | Archive subscription | Archive a subscription record. **Class D.** | SUB | Admin (as granted), Super Administrator |
 | PERM-SUB-012 | Restore subscription | Restore an archived or soft-deleted subscription. **Class D.** | SUB | Admin (as granted), Super Administrator |
+| PERM-SUB-014 | Administrative override (subscription) | Force an administratively justified subscription state transition. Never bypasses clinical or payment gates silently; always audited. **Class D.** `PERM-SUB-013` is unused. | SUB | Super Administrator |
 | PERM-PRD-010 | Delete product | Delete a product record in Guardian; blocked where order history requires retention. **Class D.** | PRD | Admin (as granted), Super Administrator |
 | PERM-CAT-010 | Delete category | Delete a category in Guardian; blocked where dependent catalog structure requires retention. **Class D.** | CAT | Admin (as granted), Super Administrator |
 | PERM-CMS-010 | Delete CMS page | Delete a CMS page or block in Guardian. **Class D.** | CMS | Content (as granted), Admin, Super Administrator |
@@ -475,7 +482,7 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Auth — register / sign-in / reset | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PERM-AUTH-001–003 |
 | CRM context access (`/crm/*`) | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | PERM-CRM-020 |
 | Guardian context access (`/guardian/*`) | — | — | — | — | — | — | ✓ | ✓ | ✓ | PERM-GRD-001 |
-| Destructive operations (Class D) | — | — | — | — | — | — | ◐‖ | ◐‖ | ◐‖ | PERM-ADM-030–034, PERM-ORD-010–014, PERM-SUB-010–012, PERM-PRD/CAT/CMS/BLG/CPN/RPT-010 |
+| Destructive operations (Class D) | — | — | — | — | — | — | ◐‖ | ◐‖ | ◐‖ | PERM-ADM-030–034, PERM-ORD-010–014, PERM-SUB-010–012/`014`, PERM-PRD/CAT/CMS/BLG/CPN/RPT-010 |
 | Patient Portal | — | ✓ | — | — | — | — | — | — | — | PERM-PRT-010 |
 | Published catalog / CMS / blogs (Store) | V | V | — | — | — | — | V* | V* | V* | PERM-PRD/CAT/CMS/BLG-001 |
 | Products / categories manage | — | — | — | — | — | — | — | — | M | PERM-PRD-002, PERM-CAT-002 |
@@ -488,6 +495,9 @@ Role columns: **G** Guest · **P** Patient · **Dr** Doctor · **Ph** Pharmacist
 | Orders edit | — | — | — | — | ◐ | ◐ | — | — | ◐ | PERM-ORD-005 (context allowlist) |
 | Orders fulfill / ship | — | — | — | — | — | ✓† | — | — | — | PERM-ORD-003 |
 | Subscriptions own manage | — | ✓ | — | — | ◐ | — | — | — | M | PERM-SUB-001–002 |
+| Subscriptions staff view | — | — | ◐ | ◐ | ◐ | ◐ | — | — | ◐ | PERM-SUB-004 |
+| Subscriptions create (admin) | — | — | — | — | — | — | — | — | ✓ | PERM-SUB-005 (Guardian only; never CRM) |
+| Subscriptions edit / lifecycle | — | — | — | — | ◐ | ◐ | — | — | ◐ | PERM-SUB-006–008 |
 | QST submit / own status | — | ✓ | — | — | — | — | — | — | M | PERM-QST-001–002,004 |
 | QST full answers | — | — | ✓ | ◐ | — | — | — | — | ✓ | PERM-QST-003 |
 | Clinical notes | — | — | C/E | — | — | — | — | — | — | PERM-CRM-005 |
@@ -560,6 +570,7 @@ Actions: **V** View · **C** Create · **U** Update · **D** Delete · **A** App
 | Clinical notes | C/U | — | — | ✓ | — | — | — | — | — | — |
 | Clinical notes | V | — | — | ✓ | — | — | — | — | — | — |
 | Subscriptions | V/U/Cancel own | — | ✓ | — | — | ◐ | — | — | — | ✓ |
+| Subscriptions | V staff / pause / assist | — | — | ◐ | ◐ | ◐ | ◐ | — | — | ✓ |
 | Subscription plans | C/U/P | — | — | — | — | — | — | — | — | ✓ |
 | Appointments | C/V/U/Cancel own | — | ✓ | — | — | — | — | — | — | — |
 | Appointments | V/U staff | — | — | ◐ | ◐ | ◐ | ◐ | — | — | ✓ |
@@ -592,7 +603,7 @@ The matrix above answers *which role* may perform an action. This table answers 
 | Users | Guardian | Both | Guardian (administrative fields), CRM (operational, clinical, support fields as permitted) | Guardian only | `PERM-ADM-030`–`032` |
 | Orders | Guardian (administrative path), Store checkout (patient path) | Both | Guardian (administrative), CRM (operational workflow — **no Create**) | Guardian only | `PERM-ORD-010`–`012`; create `PERM-ORD-004` Guardian-only ([35](35-orders-module.md)) |
 | Orders — financial | Guardian: corrections and administrative overrides (`PERM-ORD-013`, `PERM-ORD-014`) | — | CRM: policy-scoped operational refund and cancel assist (`PERM-PAY-003`) | Guardian only | Corrections ≠ operational refunds |
-| Subscriptions | Both | Both | Guardian (administrative), CRM (operational: renew, pause, resume) | Guardian only | `PERM-SUB-010`–`012` |
+| Subscriptions | Both | Both | Guardian (administrative), CRM (operational: pause, resume, cancel/renewal assist — **no Create**) | Guardian only | `PERM-SUB-010`–`012`/`014`; create `PERM-SUB-005` Guardian-only ([36](36-subscriptions-module.md)) |
 | Products, Categories, CMS, Blogs, Coupons | Guardian | Both (published content readable from Store) | Guardian | Guardian only | `PERM-PRD/CAT/CMS/BLG/CPN-010` |
 | Prescriptions, Clinical notes | CRM | CRM | CRM | Neither — clinical records are retained, never deleted | `GRD-020` |
 | Questionnaires (definitions and case view) | CRM | CRM | CRM | Unbound definition delete only when implemented (CRM); answered versions retained | `PERM-QST-*` |
@@ -926,6 +937,7 @@ flowchart TB
 | 1.7 | 2026-08-03 | Platform Engineering | — | Asset Library `PERM-AST-001`/`002`/`010`/`011`; Documents labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 | 1.8 | 2026-08-03 | Platform Engineering | — | Split `PERM-INV-002` vs `004`/`005`/`010`; Guardian-only inventory admin; link [34](34-inventory-module.md) | Draft for review |
 | 1.9 | 2026-08-20 | Platform Engineering | — | `PERM-ORD-004` admin create (Guardian only); `PERM-ORD-005` context-scoped edit; CRM never Create/Class D; link [35](35-orders-module.md) | Draft for review |
+| 2.0 | 2026-08-24 | Platform Engineering | — | `PERM-SUB-004`–`009`/`014`; CRM never Subscription Create/Class D; link [36](36-subscriptions-module.md) | Draft for review |
 
 ---
 
@@ -952,7 +964,7 @@ UI/screen access derived from §5 Permission Matrix and §3 Role Catalog. This m
 | Checkout | ◐ Limited Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
 | Patient Portal Dashboard | — No Access | ✓ Full Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access | — No Access |
 | Orders | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
-| Subscriptions | — No Access | ✓ Full Access | — No Access | — No Access | ◐ Limited Access | — No Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
+| Subscriptions | — No Access | ✓ Full Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
 | Documents | — No Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ◐ Limited Access | ◐ Limited Access |
 | Appointments | — No Access | ✓ Full Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | ◐ Limited Access | — No Access | — No Access | ✓ Full Access | ✓ Full Access |
 | CRM Dashboard | — No Access | — No Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access | ✓ Full Access |

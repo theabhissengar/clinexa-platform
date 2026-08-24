@@ -8,7 +8,7 @@
 | Status | In delivery — P13a–P13d complete (CRM + Guardian); P13e+ not started |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md) |
+| Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [36](36-subscriptions-module.md) |
 
 This document is the durable **Module Blueprint** instance for Orders (`GRD-034`, `CRM-033`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
@@ -496,14 +496,26 @@ Guardian-only UI and API in V1. Prefer terminal statuses for paid/clinical histo
 
 ---
 
-## 15. Subscription forward compatibility
+## 15. Subscription relationship
 
-| Field | Rule |
+Subscriptions produce Orders. Orders do **not** own renewal, grace, pause, or plan logic. Canonical Subscriptions architecture: [36](36-subscriptions-module.md).
+
+| Concern | Owner |
 | --- | --- |
-| `subscriptionId` | Nullable opaque UUID; no FK assumptions beyond documented nullable reference |
-| `orderType` | `one_time` \| `subscription_initial` \| `subscription_renewal` |
+| Recurring commitment, lifecycle, schedule, attempt idempotency | Subscriptions |
+| Renewal/initial **transaction** (totals, lines, order lifecycle) | Orders |
+| Payments / Inventory / Clinical coordination for that transaction | Orders |
+| `subscriptionId` on Order | Set at order create; immutable; FK when Subscriptions tables exist (`onDelete: Restrict`) |
+| `orderType` | `ONE_TIME` \| `SUBSCRIPTION_INITIAL` \| `SUBSCRIPTION_RENEWAL` — set at create |
 
-Orders is the order record **produced by** a future Subscription workflow. Do **not** implement renewal, grace, or plan logic in Orders.
+```text
+Subscription  →  decides a renewal is due
+Subscription  →  requests a renewal Order through the Orders domain
+Orders        →  owns the transaction and coordinates Payments / Inventory / Clinical
+Subscription  →  records attempt + order + payment-status snapshot
+```
+
+Do **not** implement a Renewals module inside Orders. Do **not** duplicate OrderItems or totals onto Subscriptions.
 
 ---
 
@@ -522,7 +534,8 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | Inventory (P12) | Reserve/Release/Commit/Restock services (P12f closed by P13e) |
 | RBAC / Class D (P3/P6 patterns) | Permission enforcement |
 | Payments ([15](15-payment-flow.md)) | Money execution — hooks in P13f; full module later |
-| Clinical / QST / Subscriptions / Documents / Notifications / Store / Portal | Later consumers; refs and events only |
+| Clinical / QST / Documents / Notifications / Store / Portal | Later consumers; refs and events only |
+| Subscriptions (P14) | Consumes Orders for initial and renewal transactions ([36](36-subscriptions-module.md)) |
 
 ---
 
@@ -541,7 +554,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | Inventory | Reserve-at-auth; Release/Commit/Restock per §10; no direct table writes |
 | Payments | No PSP from Orders module |
 | Clinical | No approve/decline via Orders APIs |
-| Subscription | `orderType` / `subscriptionId` forward-compat only |
+| Subscription | `orderType` / `subscriptionId`; Orders owns the transaction produced by Subscriptions ([36](36-subscriptions-module.md)) |
 | Audit | Class D generates Platform Audit |
 | History/Activity/Notes | Separation preserved; no unnecessary duplication |
 
@@ -595,3 +608,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.0 | 2026-08-20 | Platform Engineering | Initial Orders blueprint: dual-surface CRM/Guardian, editability matrix, locked Reserve-at-auth, payment/inventory/clinical boundaries, P13 slices; docs-only on `feature/orders-platform-blueprint` |
 | 1.1 | 2026-08-20 | Platform Engineering | P13a: Prisma Orders foundation (cents money, `OrderAddress`, enums, migration `20260820120000_orders_platform_module_foundation`) |
 | 1.2 | 2026-08-20 | Platform Engineering | P13b: Nest `OrdersModule` domain services (lifecycle, totals, snapshots, edit policy, create/transition/notes/adjustments/Class D primitives); no HTTP controllers |
+| 1.3 | 2026-08-24 | Platform Engineering | §15 Subscription relationship (not forward-compat-only); pointer to [36](36-subscriptions-module.md) |

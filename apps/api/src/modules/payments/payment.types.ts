@@ -110,7 +110,8 @@ export type PaymentOutcomeSummary = {
   paymentId: string;
   status: PaymentStatus;
   lifecycleState: PaymentLifecycleState;
-  paymentStatusSummary: 'pending' | 'authorized_or_captured' | 'failed' | 'refunded';
+  paymentStatusSummary:
+    'pending' | 'authorized_or_captured' | 'failed' | 'refunded';
 };
 
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');

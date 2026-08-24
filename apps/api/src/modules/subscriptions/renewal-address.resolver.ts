@@ -21,7 +21,9 @@ function isValidAddress(addr: OrderAddressInput | null | undefined): boolean {
   return Boolean(addr?.line1?.trim() && addr?.city?.trim());
 }
 
-function fromJson(value: Prisma.JsonValue | null | undefined): OrderAddressInput | null {
+function fromJson(
+  value: Prisma.JsonValue | null | undefined,
+): OrderAddressInput | null {
   if (value == null || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
@@ -56,7 +58,10 @@ export class RenewalAddressResolver {
     private readonly orders: OrdersService,
   ) {}
 
-  async resolve(subscriptionId: string, patientUserId: string): Promise<{
+  async resolve(
+    subscriptionId: string,
+    patientUserId: string,
+  ): Promise<{
     shipping: OrderAddressInput;
     billing: OrderAddressInput;
   }> {

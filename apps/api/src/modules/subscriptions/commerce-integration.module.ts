@@ -109,13 +109,12 @@ export class CommerceIntegrationModule implements OnModuleInit {
         if (!input.subscriptionId) {
           return;
         }
-        const attempt =
-          await this.prisma.subscriptionRenewalAttempt.findFirst({
-            where: {
-              subscriptionId: input.subscriptionId,
-              orderId: input.orderId,
-            },
-          });
+        const attempt = await this.prisma.subscriptionRenewalAttempt.findFirst({
+          where: {
+            subscriptionId: input.subscriptionId,
+            orderId: input.orderId,
+          },
+        });
         if (!attempt) {
           return;
         }

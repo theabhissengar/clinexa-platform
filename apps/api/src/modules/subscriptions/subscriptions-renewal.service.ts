@@ -462,9 +462,7 @@ export class SubscriptionsRenewalService {
             input.lastErrorCode !== undefined
               ? input.lastErrorCode
               : attempt.lastErrorCode,
-          lastErrorAt: input.lastErrorCode
-            ? new Date()
-            : attempt.lastErrorAt,
+          lastErrorAt: input.lastErrorCode ? new Date() : attempt.lastErrorAt,
         },
       });
       await tx.subscriptionActivity.create({

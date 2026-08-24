@@ -15,7 +15,9 @@ describe('WorkerSecretGuard (AUTH-015)', () => {
       switchToHttp: () => ({
         getRequest: () => ({
           header: (name: string) =>
-            name.toLowerCase() === 'x-clinexa-worker-secret' ? header : undefined,
+            name.toLowerCase() === 'x-clinexa-worker-secret'
+              ? header
+              : undefined,
         }),
       }),
     } as unknown as ExecutionContext;

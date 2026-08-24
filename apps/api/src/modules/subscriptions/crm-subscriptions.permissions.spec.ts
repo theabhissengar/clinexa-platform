@@ -2,7 +2,10 @@ import 'reflect-metadata';
 
 import { Permissions } from '../rbac/constants/permissions';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
-import { REQUIRE_PERMISSIONS_KEY } from '../rbac/constants/rbac.constants';
+import {
+  REQUIRE_ANY_PERMISSIONS_KEY,
+  REQUIRE_PERMISSIONS_KEY,
+} from '../rbac/constants/rbac.constants';
 import { ROLE_PERMISSION_MATRIX } from '../rbac/constants/role-permission-matrix';
 import { Roles } from '../rbac/constants/roles';
 import { CrmSubscriptionsController } from './crm-subscriptions.controller';
@@ -81,12 +84,10 @@ describe('CRM Subscriptions permissions (P14c)', () => {
   });
 
   it('allows SUB_RENEW or SUB_ASSIST_RENEWAL on retry (OR semantics)', () => {
-    const handler = (CrmSubscriptionsController.prototype as Record<
-      string,
-      unknown
-    >).retryRenewal;
+    const handler = (
+      CrmSubscriptionsController.prototype as Record<string, unknown>
+    ).retryRenewal;
     expect(typeof handler).toBe('function');
-    const { REQUIRE_ANY_PERMISSIONS_KEY } = require('../rbac/constants/rbac.constants');
     const metadata: unknown = Reflect.getMetadata(
       REQUIRE_ANY_PERMISSIONS_KEY,
       handler,

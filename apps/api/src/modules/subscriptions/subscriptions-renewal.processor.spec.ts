@@ -60,16 +60,16 @@ describe('SubscriptionsRenewalProcessor', () => {
 
     const prisma = {
       order: {
-        findUnique: jest.fn(async () => order),
+        findUnique: jest.fn(() => Promise.resolve(order)),
       },
       subscription: {
-        findUnique: jest.fn(async () => ({ ...subscriptionBase })),
+        findUnique: jest.fn(() => Promise.resolve({ ...subscriptionBase })),
       },
       subscriptionRenewalAttempt: {
-        findUnique: jest.fn(async () => attempt),
-        findFirst: jest.fn(async () => attempt),
+        findUnique: jest.fn(() => Promise.resolve(attempt)),
+        findFirst: jest.fn(() => Promise.resolve(attempt)),
       },
-      $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           subscription: { update: jest.fn() },
           subscriptionStatusHistory: { create: jest.fn() },
@@ -78,30 +78,32 @@ describe('SubscriptionsRenewalProcessor', () => {
         };
         return fn(tx);
       }),
-      $queryRaw: jest.fn(async () => []),
+      $queryRaw: jest.fn(() => Promise.resolve([])),
     };
 
     const renewal = {
-      openRenewalAttempt: jest.fn(async () => ({
-        billingPeriodKey,
-        attempt,
-        subscription: subscriptionBase,
-        orderRequest: {
-          lines: [
-            {
-              productId: 'p1',
-              variantId: 'v1',
-              productName: 'Therapy',
-              sku: 'SKU',
-              productType: 'SIMPLE',
-              quantity: 1,
-              unitPriceCents: 5000,
-              salePriceCents: 5000,
-              isRxEligible: false,
-            },
-          ],
-        },
-      })),
+      openRenewalAttempt: jest.fn(() =>
+        Promise.resolve({
+          billingPeriodKey,
+          attempt,
+          subscription: subscriptionBase,
+          orderRequest: {
+            lines: [
+              {
+                productId: 'p1',
+                variantId: 'v1',
+                productName: 'Therapy',
+                sku: 'SKU',
+                productType: 'SIMPLE',
+                quantity: 1,
+                unitPriceCents: 5000,
+                salePriceCents: 5000,
+                isRxEligible: false,
+              },
+            ],
+          },
+        }),
+      ),
       attachRenewalOrder: jest.fn(),
       markAttemptOutcome: jest.fn(),
     };
@@ -116,40 +118,46 @@ describe('SubscriptionsRenewalProcessor', () => {
     };
 
     const orders = {
-      createOrderFromSnapshots: jest.fn(async () => ({ id: 'ord-1' })),
+      createOrderFromSnapshots: jest.fn(() => Promise.resolve({ id: 'ord-1' })),
       transitionOrder: jest.fn(),
     };
 
     const payments = {
-      authorizeForOrder: jest.fn(async () => ({
-        paymentId: 'pay-1',
-        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
-        lifecycleState: PaymentLifecycleState.AUTHORIZED,
-        paymentStatusSummary: 'authorized_or_captured',
-        ...(overrides?.auth ?? {}),
-      })),
-      capturePayment: jest.fn(async () => ({
-        paymentId: 'pay-1',
-        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
-        lifecycleState: PaymentLifecycleState.CAPTURED,
-        paymentStatusSummary: 'authorized_or_captured',
-        ...(overrides?.capture ?? {}),
-      })),
+      authorizeForOrder: jest.fn(() =>
+        Promise.resolve({
+          paymentId: 'pay-1',
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          lifecycleState: PaymentLifecycleState.AUTHORIZED,
+          paymentStatusSummary: 'authorized_or_captured',
+          ...(overrides?.auth ?? {}),
+        }),
+      ),
+      capturePayment: jest.fn(() =>
+        Promise.resolve({
+          paymentId: 'pay-1',
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          lifecycleState: PaymentLifecycleState.CAPTURED,
+          paymentStatusSummary: 'authorized_or_captured',
+          ...(overrides?.capture ?? {}),
+        }),
+      ),
       findLatestForOrder: jest.fn(),
     };
 
     const addresses = {
-      resolve: jest.fn(async () => {
+      resolve: jest.fn(() => {
         if (overrides?.addressError) {
-          throw new BadRequestException({
-            code: ErrorCodes.VAL_MISSING_FIELD,
-            message: 'Address required',
-          });
+          return Promise.reject(
+            new BadRequestException({
+              code: ErrorCodes.VAL_MISSING_FIELD,
+              message: 'Address required',
+            }),
+          );
         }
-        return {
+        return Promise.resolve({
           shipping: { line1: '1 Main', city: 'Austin', country: 'US' },
           billing: { line1: '1 Main', city: 'Austin', country: 'US' },
-        };
+        });
       }),
     };
 

@@ -507,7 +507,8 @@ export class PaymentsService {
   }
 
   async handleOrderPaymentHook(
-    event: 'authorization_recorded' | 'capture_required' | 'void_or_refund_required',
+    event:
+      'authorization_recorded' | 'capture_required' | 'void_or_refund_required',
     orderId: string,
   ): Promise<void> {
     if (event === 'authorization_recorded') {

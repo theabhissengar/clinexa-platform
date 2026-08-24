@@ -13,10 +13,7 @@ describe('RenewalAddressResolver', () => {
     },
   };
 
-  const resolver = new RenewalAddressResolver(
-    prisma as never,
-    orders as never,
-  );
+  const resolver = new RenewalAddressResolver(prisma as never, orders as never);
 
   beforeEach(() => {
     jest.clearAllMocks();

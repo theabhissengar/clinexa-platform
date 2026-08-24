@@ -11,51 +11,90 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { PaymentsService } from './payments.service';
 import { SimulatedPaymentAdapter } from './simulated-payment.adapter';
 
-type TxMock = Record<string, unknown>;
+type StoreRow = {
+  id?: string;
+  deletedAt?: Date | null;
+  idempotencyKey?: string;
+  orderId?: string;
+  provider?: string;
+  providerEventId?: string;
+  lifecycleState?: PaymentLifecycleState;
+};
 
-function createPrismaMock() {
+type PrismaMock = {
+  savedPaymentMethod: {
+    findFirst: jest.Mock;
+    create: jest.Mock;
+  };
+  payment: {
+    findUnique: jest.Mock;
+    findFirst: jest.Mock;
+    create: jest.Mock;
+    update: jest.Mock;
+  };
+  refund: {
+    findUnique: jest.Mock;
+    create: jest.Mock;
+  };
+  paymentWebhookEvent: {
+    create: jest.Mock;
+    update: jest.Mock;
+  };
+  order: {
+    findUnique: jest.Mock;
+  };
+  $transaction: jest.Mock;
+  _store: {
+    payments: StoreRow[];
+    methods: StoreRow[];
+    refunds: StoreRow[];
+    webhooks: StoreRow[];
+  };
+};
+
+function createPrismaMock(): PrismaMock {
   const store = {
-    payments: [] as Array<Record<string, unknown>>,
-    methods: [] as Array<Record<string, unknown>>,
-    refunds: [] as Array<Record<string, unknown>>,
-    webhooks: [] as Array<Record<string, unknown>>,
+    payments: [] as StoreRow[],
+    methods: [] as StoreRow[],
+    refunds: [] as StoreRow[],
+    webhooks: [] as StoreRow[],
   };
 
-  const prisma = {
+  const prisma: PrismaMock = {
     savedPaymentMethod: {
-      findFirst: jest.fn(async ({ where }: { where: { id: string } }) =>
-        store.methods.find(
-          (m) => m.id === where.id && m.deletedAt == null,
-        ) ?? null,
+      findFirst: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve(
+          store.methods.find((m) => m.id === where.id && m.deletedAt == null) ??
+            null,
+        ),
       ),
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const row = { id: 'spm-1', deletedAt: null, ...data };
+      create: jest.fn(({ data }: { data: StoreRow }) => {
+        const row: StoreRow = { id: 'spm-1', deletedAt: null, ...data };
         store.methods.push(row);
-        return row;
+        return Promise.resolve(row);
       }),
     },
     payment: {
       findUnique: jest.fn(
-        async ({
-          where,
-        }: {
-          where: { idempotencyKey?: string; id?: string };
-        }) => {
+        ({ where }: { where: { idempotencyKey?: string; id?: string } }) => {
           if (where.idempotencyKey) {
-            return (
+            return Promise.resolve(
               store.payments.find(
                 (p) => p.idempotencyKey === where.idempotencyKey,
-              ) ?? null
+              ) ?? null,
             );
           }
-          return store.payments.find((p) => p.id === where.id) ?? null;
+          return Promise.resolve(
+            store.payments.find((p) => p.id === where.id) ?? null,
+          );
         },
       ),
-      findFirst: jest.fn(
-        async ({ where }: { where: { orderId?: string } }) =>
+      findFirst: jest.fn(({ where }: { where: { orderId?: string } }) =>
+        Promise.resolve(
           store.payments.find((p) => p.orderId === where.orderId) ?? null,
+        ),
       ),
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      create: jest.fn(({ data }: { data: StoreRow }) => {
         const dup = store.payments.find(
           (p) => p.idempotencyKey === data.idempotencyKey,
         );
@@ -65,64 +104,56 @@ function createPrismaMock() {
             clientVersion: 'test',
           });
         }
-        const row = {
+        const row: StoreRow = {
           id: `pay-${store.payments.length + 1}`,
-          status: PaymentStatus.PENDING,
           lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
-          providerPaymentRef: null,
-          providerAuthorizationRef: null,
-          providerCaptureRef: null,
           ...data,
         };
         store.payments.push(row);
-        return row;
+        return Promise.resolve(row);
       }),
       update: jest.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Record<string, unknown>;
-        }) => {
+        ({ where, data }: { where: { id: string }; data: StoreRow }) => {
           const idx = store.payments.findIndex((p) => p.id === where.id);
           store.payments[idx] = { ...store.payments[idx], ...data };
-          return store.payments[idx];
+          return Promise.resolve(store.payments[idx]);
         },
       ),
     },
     refund: {
-      findUnique: jest.fn(async () => null),
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      findUnique: jest.fn(() => Promise.resolve(null)),
+      create: jest.fn(({ data }: { data: StoreRow }) => {
         store.refunds.push(data);
-        return data;
+        return Promise.resolve(data);
       }),
     },
     paymentWebhookEvent: {
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+      create: jest.fn(({ data }: { data: StoreRow }) => {
         const dup = store.webhooks.find(
           (w) =>
             w.provider === data.provider &&
             w.providerEventId === data.providerEventId,
         );
         if (dup) {
-          throw Object.assign(new Error('Unique'), {
+          throw new Prisma.PrismaClientKnownRequestError('Unique', {
             code: 'P2002',
-            name: 'PrismaClientKnownRequestError',
             clientVersion: 'test',
           });
         }
-        const row = { id: `wh-${store.webhooks.length + 1}`, ...data };
+        const row: StoreRow = {
+          id: `wh-${store.webhooks.length + 1}`,
+          ...data,
+        };
         store.webhooks.push(row);
-        return row;
+        return Promise.resolve(row);
       }),
-      update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => data),
+      update: jest.fn(({ data }: { data: StoreRow }) => Promise.resolve(data)),
     },
     order: {
-      findUnique: jest.fn(async () => null),
+      findUnique: jest.fn(() => Promise.resolve(null)),
     },
-    $transaction: jest.fn(async (fn: (tx: TxMock) => Promise<unknown>) =>
-      fn(prisma as unknown as TxMock),
+    $transaction: jest.fn((fn: (tx: PrismaMock) => Promise<unknown>) =>
+      fn(prisma),
     ),
     _store: store,
   };
@@ -131,7 +162,7 @@ function createPrismaMock() {
 }
 
 describe('PaymentsService (simulated gateway)', () => {
-  let prisma: ReturnType<typeof createPrismaMock>;
+  let prisma: PrismaMock;
   let service: PaymentsService;
   let adapter: SimulatedPaymentAdapter;
 
@@ -152,11 +183,7 @@ describe('PaymentsService (simulated gateway)', () => {
     } as unknown as ConfigService;
 
     adapter = new SimulatedPaymentAdapter(config);
-    service = new PaymentsService(
-      prisma as never,
-      config,
-      adapter,
-    );
+    service = new PaymentsService(prisma as never, config, adapter);
 
     await prisma.savedPaymentMethod.create({
       data: {
@@ -165,7 +192,6 @@ describe('PaymentsService (simulated gateway)', () => {
         providerMethodRef: 'tok_test_1',
       },
     });
-    // fix id
     prisma._store.methods[0].id = 'spm-1';
   });
 
@@ -256,7 +282,6 @@ describe('PaymentsService (simulated gateway)', () => {
     });
     expect(first.duplicate).toBe(false);
 
-    // Second create throws P2002 — need PrismaClientKnownRequestError
     prisma.paymentWebhookEvent.create.mockRejectedValueOnce(
       new Prisma.PrismaClientKnownRequestError('Unique', {
         code: 'P2002',

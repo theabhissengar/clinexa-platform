@@ -46,70 +46,70 @@ export class SimulatedPaymentAdapter implements PaymentGateway {
     return `sim_${prefix}_${hash}`;
   }
 
-  async authorize(
-    input: GatewayAuthorizeInput,
-  ): Promise<GatewayAuthorizeResult> {
+  authorize(input: GatewayAuthorizeInput): Promise<GatewayAuthorizeResult> {
     const force = this.force(input.forceOutcome);
     if (force === 'timeout') {
-      return {
+      return Promise.resolve({
         success: false,
         errorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
         errorMessage: 'Simulated provider timeout',
-      };
+      });
     }
     if (force === 'decline') {
-      return {
+      return Promise.resolve({
         success: false,
         errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
         errorMessage: 'Simulated authorization declined',
-      };
+      });
     }
     const providerPaymentRef = this.stableRef('pay', input.idempotencyKey);
-    return {
+    return Promise.resolve({
       success: true,
       providerPaymentRef,
       providerAuthorizationRef: this.stableRef('auth', input.idempotencyKey),
-    };
+    });
   }
 
-  async capture(input: GatewayCaptureInput): Promise<GatewayCaptureResult> {
+  capture(input: GatewayCaptureInput): Promise<GatewayCaptureResult> {
     const force = this.force(input.forceOutcome);
     if (force === 'timeout') {
-      return {
+      return Promise.resolve({
         success: false,
         errorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
         errorMessage: 'Simulated capture timeout',
-      };
+      });
     }
     if (force === 'decline') {
-      return {
+      return Promise.resolve({
         success: false,
         errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
         errorMessage: 'Simulated capture declined',
-      };
+      });
     }
-    return {
+    return Promise.resolve({
       success: true,
       providerCaptureRef: this.stableRef('cap', input.idempotencyKey),
-    };
+    });
   }
 
-  async void(_input: GatewayVoidInput): Promise<GatewayVoidResult> {
-    return { success: true };
+  void(input: GatewayVoidInput): Promise<GatewayVoidResult> {
+    void input;
+    return Promise.resolve({ success: true });
   }
 
-  async refund(input: GatewayRefundInput): Promise<GatewayRefundResult> {
-    return {
+  refund(input: GatewayRefundInput): Promise<GatewayRefundResult> {
+    return Promise.resolve({
       success: true,
       providerRefundRef: this.stableRef(
         'ref',
         input.idempotencyKey || randomUUID(),
       ),
-    };
+    });
   }
 
-  async cancelRecurring(_input: GatewayCancelRecurringInput): Promise<void> {
-    // Simulated no-op success — provider recurring object cancelled.
+  cancelRecurring(input: GatewayCancelRecurringInput): Promise<void> {
+    void input;
+    return Promise.resolve();
   }
 
   verifyWebhook(input: GatewayWebhookVerifyInput): boolean {

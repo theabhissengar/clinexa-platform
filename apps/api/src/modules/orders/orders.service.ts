@@ -617,8 +617,7 @@ export class OrdersService {
                 sku: line.sku,
                 productType: line.productType,
                 isRxEligible: line.isRxEligible,
-                catalogMetadata: (line.catalogMetadata ??
-                  {}) as Prisma.InputJsonValue,
+                catalogMetadata: line.catalogMetadata ?? {},
                 quantity: lineTotals.quantity,
                 unitPriceCents: lineTotals.unitPriceCents,
                 salePriceCents: lineTotals.salePriceCents,

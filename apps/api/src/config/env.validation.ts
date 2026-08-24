@@ -70,10 +70,7 @@ const envSchema = z.object({
   PAYMENTS_SIMULATED_FORCE: z.enum(['decline', 'timeout']).optional(),
 
   /** AUTH-015 worker shared secret for Internal job routes. */
-  WORKER_SHARED_SECRET: z
-    .string()
-    .min(16)
-    .default('dev-worker-shared-secret'),
+  WORKER_SHARED_SECRET: z.string().min(16).default('dev-worker-shared-secret'),
   RENEWAL_CRON_ENABLED: z
     .union([z.boolean(), z.string()])
     .optional()

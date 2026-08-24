@@ -12,7 +12,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { SubscriptionStatus } from '../../../generated/prisma';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -392,10 +397,7 @@ export class AdminSubscriptionsController {
   }
 
   @Post(':id/renewals/:attemptId/retry')
-  @RequireAnyPermissions(
-    Permissions.SUB_RENEW,
-    Permissions.SUB_ASSIST_RENEWAL,
-  )
+  @RequireAnyPermissions(Permissions.SUB_RENEW, Permissions.SUB_ASSIST_RENEWAL)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

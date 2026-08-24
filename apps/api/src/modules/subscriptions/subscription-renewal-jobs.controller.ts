@@ -37,12 +37,13 @@ export class SubscriptionRenewalJobsController {
   @UseGuards(WorkerSecretGuard)
   @Post('subscription-renewals')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Internal renewal due/grace worker tick (AUTH-015)' })
+  @ApiOperation({
+    summary: 'Internal renewal due/grace worker tick (AUTH-015)',
+  })
   run(@Body() dto: RenewalJobDto) {
     const allowNow =
       process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
-    const now =
-      allowNow && dto.now ? new Date(dto.now) : undefined;
+    const now = allowNow && dto.now ? new Date(dto.now) : undefined;
     return this.processor.processDueBatch({
       limit: dto.limit,
       now,

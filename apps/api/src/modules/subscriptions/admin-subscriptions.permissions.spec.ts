@@ -1,7 +1,10 @@
 import 'reflect-metadata';
 
 import { Permissions } from '../rbac/constants/permissions';
-import { REQUIRE_PERMISSIONS_KEY } from '../rbac/constants/rbac.constants';
+import {
+  REQUIRE_ANY_PERMISSIONS_KEY,
+  REQUIRE_PERMISSIONS_KEY,
+} from '../rbac/constants/rbac.constants';
 import { ROLE_PERMISSION_MATRIX } from '../rbac/constants/role-permission-matrix';
 import { Roles } from '../rbac/constants/roles';
 import { AdminSubscriptionsController } from './admin-subscriptions.controller';
@@ -79,11 +82,9 @@ describe('Guardian Admin Subscriptions permissions (P14d)', () => {
   });
 
   it('allows SUB_RENEW or SUB_ASSIST_RENEWAL on admin retry (OR semantics)', () => {
-    const handler = (AdminSubscriptionsController.prototype as Record<
-      string,
-      unknown
-    >).retryRenewal;
-    const { REQUIRE_ANY_PERMISSIONS_KEY } = require('../rbac/constants/rbac.constants');
+    const handler = (
+      AdminSubscriptionsController.prototype as Record<string, unknown>
+    ).retryRenewal;
     const metadata: unknown = Reflect.getMetadata(
       REQUIRE_ANY_PERMISSIONS_KEY,
       handler,

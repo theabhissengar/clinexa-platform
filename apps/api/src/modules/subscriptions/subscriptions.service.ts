@@ -1286,13 +1286,20 @@ export class SubscriptionsService {
     return counts;
   }
 
+  async notify(
+    event: SubscriptionNotificationEvent,
+    subscriptionId: string,
+  ): Promise<void> {
+    if (this.sideEffects.onNotify) {
+      await this.sideEffects.onNotify(event, subscriptionId);
+    }
+  }
+
   private async emitNotify(
     event: SubscriptionNotificationEvent,
     subscriptionId: string,
   ) {
-    if (this.sideEffects.onNotify) {
-      await this.sideEffects.onNotify(event, subscriptionId);
-    }
+    await this.notify(event, subscriptionId);
   }
 
   private async allocateSubscriptionNumber(tx: Tx): Promise<string> {

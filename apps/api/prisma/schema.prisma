@@ -78,6 +78,7 @@ model User {
   activities           UserActivity[]
   orders               Order[]
   subscriptions        Subscription[]
+  savedPaymentMethods  SavedPaymentMethod[]
 
   @@index([status])
   @@index([deletedAt])
@@ -804,6 +805,9 @@ model Order {
   latestPaymentId      String? @map("latest_payment_id") @db.Uuid
   paymentStatusSummary String? @map("payment_status_summary")
 
+  /// Client/system idempotency key (renewal:{subscriptionId}:{billingPeriodKey}; checkout later).
+  idempotencyKey String? @unique @map("idempotency_key")
+
   /// Opaque Inventory reservation ref (Inventory owns StockReservation; no FK).
   reservationId String? @map("reservation_id") @db.Uuid
 
@@ -841,6 +845,8 @@ model Order {
   initialForSubscriptions Subscription[]               @relation("SubscriptionInitialOrder")
   latestForSubscriptions  Subscription[]               @relation("SubscriptionLatestOrder")
   renewalAttempts         SubscriptionRenewalAttempt[]
+  payments                Payment[]
+  refunds                 Refund[]
 
   @@index([patientUserId, createdAt])
   @@index([status, createdAt])
@@ -1136,6 +1142,8 @@ model Subscription {
   changeHistory   SubscriptionChangeHistory[]
   activities      SubscriptionActivity[]
   notes           SubscriptionNote[]
+  /// Payments-owned relation only — Subscriptions services keep opaque refs.
+  payments        Payment[]
 
   @@index([patientUserId, createdAt])
   @@index([status, nextRenewalAt])
@@ -1277,4 +1285,138 @@ model SubscriptionNote {
   @@index([subscriptionId, createdAt])
   @@index([authorUserId])
   @@map("subscription_notes")
+}
+
+// ---------------------------------------------------------------------------
+// Payments domain (DB-028–031) — ARCH-046; owned by Payments module only.
+// ---------------------------------------------------------------------------
+
+/// Collapsed durable payment outcome (DB-028).
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED_OR_CAPTURED
+  FAILED
+  REFUNDED
+}
+
+/// Fine-grained payment lifecycle (PAY-045–060 subset for P14e).
+enum PaymentLifecycleState {
+  INITIATED
+  PENDING_AUTHORIZATION
+  AUTHORIZED
+  AUTHORIZATION_FAILED
+  CAPTURE_PENDING
+  CAPTURED
+  CAPTURE_FAILED
+  VOIDED
+  REFUND_PENDING
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentPurpose {
+  RENEWAL
+  CHECKOUT
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+/// Tokenized saved payment method — no PAN (DB-030).
+model SavedPaymentMethod {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  provider          String
+  providerMethodRef String    @map("provider_method_ref")
+  brand             String?
+  last4             String?
+  expMonth          Int?      @map("exp_month")
+  expYear           Int?      @map("exp_year")
+  isDefault         Boolean   @default(false) @map("is_default")
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@unique([provider, providerMethodRef])
+  @@index([userId])
+  @@index([userId, deletedAt])
+  @@map("saved_payment_methods")
+}
+
+/// Payment attempt/outcome for orders and subscription renewals (DB-028).
+model Payment {
+  id                       String                @id @default(uuid()) @db.Uuid
+  orderId                  String?               @map("order_id") @db.Uuid
+  subscriptionId           String?               @map("subscription_id") @db.Uuid
+  savedPaymentMethodId     String?               @map("saved_payment_method_id") @db.Uuid
+  amountCents              Int                   @map("amount_cents")
+  currency                 String                @default("USD")
+  status                   PaymentStatus         @default(PENDING)
+  lifecycleState           PaymentLifecycleState @default(INITIATED) @map("lifecycle_state")
+  purpose                  PaymentPurpose
+  provider                 String
+  providerPaymentRef       String?               @map("provider_payment_ref")
+  providerAuthorizationRef String?               @map("provider_authorization_ref")
+  providerCaptureRef       String?               @map("provider_capture_ref")
+  idempotencyKey           String                @unique @map("idempotency_key")
+  lastErrorCode            String?               @map("last_error_code")
+  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order              Order?               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  subscription       Subscription?        @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  savedPaymentMethod SavedPaymentMethod?  @relation(fields: [savedPaymentMethodId], references: [id], onDelete: Restrict)
+  refunds            Refund[]
+  webhookEvents      PaymentWebhookEvent[]
+
+  @@index([orderId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payments")
+}
+
+/// Full/partial refunds linked to a payment (DB-029).
+model Refund {
+  id                String       @id @default(uuid()) @db.Uuid
+  paymentId         String       @map("payment_id") @db.Uuid
+  orderId           String?      @map("order_id") @db.Uuid
+  amountCents       Int          @map("amount_cents")
+  status            RefundStatus @default(PENDING)
+  providerRefundRef String?      @map("provider_refund_ref")
+  reason            String?
+  actorUserId       String?      @map("actor_user_id") @db.Uuid
+  idempotencyKey    String       @unique @map("idempotency_key")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId])
+  @@index([orderId])
+  @@map("refunds")
+}
+
+/// PSP webhook idempotency (DB-031) — insert before apply.
+model PaymentWebhookEvent {
+  id              String    @id @default(uuid()) @db.Uuid
+  provider        String
+  providerEventId String    @map("provider_event_id")
+  eventType       String    @map("event_type")
+  payloadHash     String?   @map("payload_hash")
+  paymentId       String?   @map("payment_id") @db.Uuid
+  appliedAt       DateTime? @map("applied_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([paymentId])
+  @@map("payment_webhook_events")
 }

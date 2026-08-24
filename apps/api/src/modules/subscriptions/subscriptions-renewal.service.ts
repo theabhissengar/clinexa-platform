@@ -426,6 +426,64 @@ export class SubscriptionsRenewalService {
     });
   }
 
+  async markAttemptOutcome(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    status: SubscriptionRenewalAttemptStatus;
+    paymentId?: string | null;
+    paymentStatusSummary?: string | null;
+    lastErrorCode?: string | null;
+    actorUserId?: string | null;
+    source?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const attempt = await tx.subscriptionRenewalAttempt.findUnique({
+        where: {
+          subscriptionId_billingPeriodKey: {
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey: input.billingPeriodKey,
+          },
+        },
+      });
+      if (!attempt) {
+        throw new NotFoundException({
+          code: ErrorCodes.RES_NOT_FOUND,
+          message: 'Renewal attempt not found',
+        });
+      }
+      const updated = await tx.subscriptionRenewalAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: input.status,
+          paymentId: input.paymentId ?? attempt.paymentId,
+          paymentStatusSummary:
+            input.paymentStatusSummary ?? attempt.paymentStatusSummary,
+          lastErrorCode:
+            input.lastErrorCode !== undefined
+              ? input.lastErrorCode
+              : attempt.lastErrorCode,
+          lastErrorAt: input.lastErrorCode ? new Date() : attempt.lastErrorAt,
+        },
+      });
+      await tx.subscriptionActivity.create({
+        data: {
+          subscriptionId: input.subscriptionId,
+          actorUserId: input.actorUserId ?? null,
+          kind: 'renewal_attempt_outcome',
+          summary: `Attempt ${input.status}`,
+          metadata: {
+            billingPeriodKey: input.billingPeriodKey,
+            status: input.status,
+            paymentId: input.paymentId ?? null,
+            lastErrorCode: input.lastErrorCode ?? null,
+            source: input.source ?? 'system',
+          },
+        },
+      });
+      return updated;
+    });
+  }
+
   planConfig(plan: SubscriptionPlan): PeriodPlanConfig {
     return {
       billingInterval: plan.billingInterval,

@@ -440,14 +440,14 @@ Server-side only: subtotal, discounts, shipping, tax, total, adjustments, refund
 
 | Service | Responsibility |
 | --- | --- |
-| `OrdersService` | Facade: create, transition, field updates, notes, adjustments, Class D primitives |
-| `OrderLifecycleService` | Legal OR-08 transitions; inventory/payment **hook intents** (no side-effect execution yet) |
+| `OrdersService` | Facade: create, `createOrderFromSnapshots`, transition, field updates, notes, adjustments, Class D primitives; honors `idempotencyKey` replay |
+| `OrderLifecycleService` | Legal OR-08 transitions; inventory/payment **hook intents** |
 | `OrderTotalsService` | Deterministic integer-cents line/order totals |
 | `OrderSnapshotService` | Product/variant + customer + address snapshots |
 | `OrderEditPolicyService` | CRM vs Guardian field allowlists by status |
-| `OrderSideEffectHooks` | Injectable no-op hooks for P13e Inventory / P13f Payments |
+| `OrderSideEffectHooks` | Injectable hooks: **P13f partial** — `onPayment` wired to Nest `PaymentsModule` (capture/void); **P13e** `onInventory` remains NOOP |
 
-Still deferred: `OrdersInventoryOrchestrator` execution (P13e), `OrdersPaymentReactionService` PSP wiring (P13f). Platform Audit writer (`GRD-053`) still deferred — Class D currently records Order History/Activity with `platformAuditDeferred: true`.
+**P13e still deferred:** Inventory Reserve/Release/Commit/Restock execution. **P13f partial (via P14e):** snapshot renewal Order create + payment capture/void reactions; no Store checkout intents (`API-062`). Platform Audit writer (`GRD-053`) still deferred — Class D currently records Order History/Activity with `platformAuditDeferred: true`.
 
 **P13c delivered:** `CrmOrdersController` at `/v1/crm/orders` (`API-072`–`076d`) — list/detail/items/notes/history/activity, operational PATCH, cancel, fulfill. Thin controllers call `OrdersService`. CRM UI: `/crm/orders`, `/crm/orders/:id`, `/crm/orders/:id/edit`. **No** CRM create, **no** Class D endpoints.
 
@@ -533,7 +533,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | Users (P9) | Patient identity FK + snapshot source |
 | Inventory (P12) | Reserve/Release/Commit/Restock services (P12f closed by P13e) |
 | RBAC / Class D (P3/P6 patterns) | Permission enforcement |
-| Payments ([15](15-payment-flow.md)) | Money execution — hooks in P13f; full module later |
+| Payments ([15](15-payment-flow.md)) | Money execution — **P13f partial** via P14e Nest `PaymentsModule` (simulated); Store/Portal intents deferred |
 | Clinical / QST / Documents / Notifications / Store / Portal | Later consumers; refs and events only |
 | Subscriptions (P14) | Consumes Orders for initial and renewal transactions ([36](36-subscriptions-module.md)) |
 
@@ -581,7 +581,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | **P13c** | CRM operational APIs + UI (`/crm/orders…`; no create; no Class D) | **Complete** |
 | **P13d** | Guardian admin APIs + UI + Class D (`/admin/orders…`, `/guardian/orders…`) | **Complete** |
 | **P13e** | Inventory orchestration (closes P12f) | Not started |
-| **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | Not started |
+| **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | **Partial** (via P14e): `createOrderFromSnapshots` + `Order.idempotencyKey`; `onPayment` capture/void; inventory still NOOP |
 | **P13g** | RBAC seed, verification, documentation freeze | Not started |
 
 Order rationale: schema → shared logic → CRM ops value → Guardian/Class D → inventory wiring → payment hooks → verification. Do not put CRM create anywhere. Do not put Class D before shared domain.
@@ -609,3 +609,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.1 | 2026-08-20 | Platform Engineering | P13a: Prisma Orders foundation (cents money, `OrderAddress`, enums, migration `20260820120000_orders_platform_module_foundation`) |
 | 1.2 | 2026-08-20 | Platform Engineering | P13b: Nest `OrdersModule` domain services (lifecycle, totals, snapshots, edit policy, create/transition/notes/adjustments/Class D primitives); no HTTP controllers |
 | 1.3 | 2026-08-24 | Platform Engineering | §15 Subscription relationship (not forward-compat-only); pointer to [36](36-subscriptions-module.md) |
+| 1.4 | 2026-08-24 | Platform Engineering | P14e / P13f partial: `createOrderFromSnapshots` + `idempotencyKey`; payment capture/void hooks; inventory still NOOP |

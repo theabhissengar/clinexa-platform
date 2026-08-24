@@ -145,7 +145,7 @@ Define the Guardian context so that:
 | Marketing | Coupons, campaigns, notification templates | Coupon validation and template usage (`FR-CPN-*`, `FR-NTF-002`) |
 | Users | Full administrative lifecycle: create, edit administrative fields, role assignment, delete, archive, restore | Users/RBAC persistence, last-admin safeguard, audit (`FR-ADM-001`, `FR-ADM-002`) |
 | Orders (administrative) | Administrative detail, exports, reconciliation, refunds as corrections, overrides, delete/archive/restore | Lifecycle, payment integrity, idempotency, audit (`FR-ORD-*`, `FR-PAY-003`) |
-| Subscriptions (administrative) | Plan configuration, administrative lifecycle, delete/archive/restore | Renewal, dunning, and clinical reassessment rules (`FR-SUB-*`) |
+| Subscriptions (administrative) | Plan configuration, administrative lifecycle, admin create, delete/archive/restore, override | Renewal orchestration **inside** Subscriptions; dunning; clinical reassessment on **orders** (`FR-SUB-*`; [36](36-subscriptions-module.md)) |
 | Platform | Settings, feature flags, taxes, shipping, payment providers and keys, webhooks, integrations, API keys | Server-applied settings; secrets never returned to clients (`FR-SET-*`, `SEC-*`) |
 | Governance | Audit trail, activity, system logs, administrative reports and exports | Append-only audit; export AuthZ and PHI minimization (`FR-ADM-004`, `FR-RPT-*`) |
 | Destructive operations | The only UI that renders them | Guardian-owned permission enforcement on every call (§7) |
@@ -275,7 +275,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | GRD-032 | Categories | Commerce | No | `FR-CAT-002` | Delete, archive, restore |
 | GRD-033 | Inventory | Commerce | Consume-only in CRM (no CRM admin) | `FR-INV-*`; blueprint [34](34-inventory-module.md) | Bulk cleanup; warehouse archive (Class D) |
 | GRD-034 | Orders (administration) | Commerce | Shared | `FR-ORD-*`, `FR-PAY-003`; [35](35-orders-module.md) | Delete, archive, restore, financial correction, override; admin Create |
-| GRD-035 | Subscriptions (administration) | Commerce | Shared | `FR-SUB-*` | Delete, archive, restore |
+| GRD-035 | Subscriptions (administration) | Commerce | Shared | `FR-SUB-*`; [36](36-subscriptions-module.md) | Delete, archive, restore, override; admin Create |
 | GRD-036 | Pricing, taxes, shipping | Commerce | No | `FR-SET-*` | Delete configuration entries |
 | GRD-037 | Pages | Content | No | `FR-CMS-*` | Delete, archive, restore |
 | GRD-038 | Blogs | Content | No | `FR-BLG-*` | Delete, archive, restore |
@@ -426,12 +426,21 @@ Authoritative module blueprint: [32 — Users Module](32-users-module.md). Guard
 
 | Action | Guardian | CRM |
 | --- | --- | --- |
-| Create | Yes | Yes (operational create/assist where product allows) |
+| Create | **Yes** (admin path) | **No — V1 locked** |
 | View | Yes | Yes |
-| Edit | Yes (administrative) | Yes (operational) |
-| Renew / pause / resume | Administrative path if needed | Yes |
-| Delete | Yes | **No — delete remains Guardian-only** |
-| Archive / restore | Yes | No |
+| Edit | Yes (administrative) | Yes (operational allowlist) |
+| Pause / resume | Yes | Yes |
+| Cancel assist | Yes | Yes (policy; not delete) |
+| Renewal / retry assist | Yes | Yes (no gate bypass) |
+| Plans / configuration | Yes | View context only |
+| Notes / history / activity | Yes | Yes |
+| Delete / archive / restore | **Yes Class D** | **Never** |
+| Administrative correction / override | **Yes Class D** | **Never** |
+| Execute payments | No | No |
+| Clinical approve / decline | No | No |
+| Direct inventory writes | No | No |
+
+Full blueprint: [36](36-subscriptions-module.md). Escalation from CRM: `/guardian/subscriptions/:id` (`NAV-105`).
 
 ### 6.4 Reports (CRM-only) and Guardian-only modules
 
@@ -474,6 +483,7 @@ Destructive permissions form a segregated **Class D** in [08 — Role permission
 | `PERM-ORD-013` | Financial correction |
 | `PERM-ORD-014` | Administrative override |
 | `PERM-SUB-010` / `011` / `012` | Delete / archive / restore subscription |
+| `PERM-SUB-014` | Administrative override (subscription) |
 | `PERM-PRD-010`, `PERM-CAT-010` | Delete product, delete category |
 | `PERM-CMS-010`, `PERM-BLG-010` | Delete page, delete blog post |
 | `PERM-AST-010`, `PERM-AST-011` | Archive / restore / delete asset; bulk destructive (Asset Library) |
@@ -543,7 +553,7 @@ Guardian consumes documented APIs only ([11](11-api-design.md)); it never invent
 | Users / roles / audit | `API-009`–`015`, `API-168`–`171` | Administrative user lifecycle, role assignment, audit query |
 | Products / categories / Asset Library | `API-021`–`037`, `API-177`–`186` | Catalog authoring and reusable assets |
 | Plans / workflows | `API-095`–`096`, `API-172`–`174` | Plan and consultation workflow configuration (questionnaire staff UI is CRM-only) |
-| Orders / refunds / subscriptions | `API-072`–`076`, `API-067`, `API-083`–`087` | Administrative orders, corrections, subscription administration |
+| Orders / refunds / subscriptions | `API-204`–`212`, `API-067`, `API-084`–`087`, `API-225`–`240` | Administrative orders, corrections, subscription administration ([36](36-subscriptions-module.md)) |
 | Inventory | `API-187`–`203` | Guardian admin + domain reservation/availability ([34](34-inventory-module.md)); supersedes prior `/crm/inventory` adjust catalog |
 | Coupons | `API-143`–`147` | Marketing configuration |
 | CMS / blogs / reviews | `API-150`–`160`, `API-139`–`141` | Content authoring, publish, moderation |
@@ -679,6 +689,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | 1.3 | 2026-08-03 | Platform Engineering | Pending | `GRD-039` Asset library; `PERM-AST-*`; blueprint [33](33-asset-library-module.md); drop `FR-DOC-*` as Asset Library primary | Draft for review |
 | 1.4 | 2026-08-03 | Platform Engineering | Pending | `GRD-033` full Inventory admin (not policy-only); CRM consume-only; blueprint [34](34-inventory-module.md); APIs `API-187`–`203` | Draft for review |
 | 1.5 | 2026-08-20 | Platform Engineering | Pending | `GRD-034` Orders admin Create/Class D clarified; link [35](35-orders-module.md) | Draft for review |
+| 1.6 | 2026-08-24 | Platform Engineering | Pending | `GRD-035` Subscriptions: CRM no Create; Class D + override; link [36](36-subscriptions-module.md) | Draft for review |
 
 ---
 
@@ -695,6 +706,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | [27 — Module registry](27-module-registry.md) | Module catalog, consumers, blueprint standard |
 | [28 — Ownership matrix](28-ownership-matrix.md) | Per-entity action ownership across applications |
 | [29 — Navigation blueprint](29-navigation-blueprint.md) | Navigation and shell behavior |
+| [36 — Subscriptions module](36-subscriptions-module.md) | Subscriptions dual-surface blueprint (`GRD-035` / `CRM-042`) |
 
 ---
 

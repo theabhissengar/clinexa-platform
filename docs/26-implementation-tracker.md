@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Engineering leadership, architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [35 — Orders module](35-orders-module.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [35 — Orders module](35-orders-module.md), [36 — Subscriptions module](36-subscriptions-module.md) |
 
 This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
 
@@ -96,10 +96,11 @@ Every phase record in §5 carries these fields.
 | **P7** | Verification, traceability closure, and tracker sign-off | Not started | P2, P4, P5, P6 |
 | **P8** | Products platform module (catalog + Categories + Guardian UI + public reads) | In progress | P5 (shell); P6 patterns for Class D |
 | **P9** | Users platform module (identity + Roles admin + Guardian/CRM surfaces + Auth gaps) | In progress | P5 (shell); Auth foundation; P8 patterns recommended; P6 for Class D |
-| **P9+** | Subsequent business modules (CMS depth, …) — Orders extracted to P13 | Not started | P9 (or parallel after P8 where independent) |
+| **P9+** | Subsequent business modules (CMS depth, …) — Orders extracted to P13; Subscriptions extracted to P14 | Not started | P9 (or parallel after P8 where independent) |
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
-| **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (blueprint) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
+| **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13d complete; P13e+ not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
+| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (blueprint) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -317,6 +318,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | CRM Create still locked. Corrections do not execute Payments. Inventory Commit still deferred to P13e. |
 | **Verification** | API typecheck/lint/Orders tests; admin typecheck/lint/build |
 
+### P14 — Subscriptions Platform Module
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Deliver Subscriptions as the shared platform aggregate for recurring commitments: canonical lifecycle (separate from payment/renewal/clinical dimensions), in-module renewal orchestration, CRM operational surface, Guardian admin/plans/Class D — without a standalone Renewals module |
+| **Status** | In progress (blueprint) |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/subscriptions-platform-blueprint` |
+| **PR** | — |
+| **Dependencies** | P5 shell; P8 Products; P9 Users; P13 Orders (`orderType` / `subscriptionId`); Inventory via Orders (P14f after P13e); Payments boundary (P14e); Class D patterns; blueprint [36](36-subscriptions-module.md) |
+| **Scope** | **This pass (complete when merged):** [36](36-subscriptions-module.md) + sibling doc sync. **Not this pass:** Prisma, Nest, CRM/Guardian UI, cron, Payments/Inventory execution. **Later slices:** P14a schema → P14b domain + renewal primitives → P14c CRM → P14d Guardian/plans/Class D → P14e Payments → P14f Inventory-through-Orders → P14g clinical → P14h freeze. **No Renewals phase.** P10 UX modernization is not a dependency. Store/Portal UI stay in their repositories. |
+| **Architecture changes** | Shared domain; CRM no Create/Class D; four-way status split; `SubscriptionsRenewalService` inside SUB; Order owns the renewal transaction; pause skips missed cycles |
+| **Documentation updates** | [36](36-subscriptions-module.md), this record, [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [35](35-orders-module.md), [03](03-functional-requirements.md) §6.2/§14 |
+| **Notes** | CRM Create locked No. Clinical decline does not auto-cancel. Worker/cron not implemented in P14a–d. |
+| **Verification** | Docs consistent; no Renewals module/nav/DB domain; API IDs `077`–`087` preserved and `213`–`240` unused elsewhere; no runtime code in the blueprint PR |
+
 ### P10 — Internal Platform UX/UI Modernization
 
 | Field | Value |
@@ -368,6 +385,7 @@ flowchart TD
   P11[P11_Asset_Library_platform_module]
   P12[P12_Inventory_platform_module]
   P13[P13_Orders_platform_module]
+  P14[P14_Subscriptions_platform_module]
   P10[P10_UX_UI_modernization]
   PF[PF_Future_work]
   P0 --> P1
@@ -386,16 +404,21 @@ flowchart TD
   P5 --> P11
   P5 --> P12
   P5 --> P13
+  P5 --> P14
   P8 --> P11
   P8 --> P12
   P8 --> P13
+  P8 --> P14
   P9 --> P13
+  P9 --> P14
   P12 --> P13
+  P13 --> P14
   P8 --> P10
   P9 --> P10
   P11 --> P10
   P12 --> P10
   P13 --> P10
+  P14 --> P10
   P7 --> PF
 ```
 
@@ -482,6 +505,7 @@ A phase is complete when all of the following hold.
 | 2.3 | 2026-08-20 | Platform Engineering | P13b Orders domain services on `OrdersModule` (lifecycle/totals/snapshots/edit policy); no controllers |
 | 2.4 | 2026-08-20 | Platform Engineering | P13c CRM Orders: `/v1/crm/orders` APIs + CRM list/detail/edit UI; ORD_EDIT/Class D codes seeded; no CRM create |
 | 2.5 | 2026-08-20 | Platform Engineering | P13d Guardian Orders on `feature/orders-guardian`: `/v1/admin/orders` + `/guardian/orders` UI; Class D, Correct, Override |
+| 2.6 | 2026-08-24 | Platform Engineering | P14 Subscriptions blueprint on `feature/subscriptions-platform-blueprint`; [36](36-subscriptions-module.md); Subscriptions removed from P9+ catch-all; CRM no Create; no Renewals module |
 
 ---
 

@@ -469,11 +469,11 @@ For each module: purpose, consumers, authorization posture, primary resources (`
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Plans, patient subscriptions, cancel, renewal side effects |
-| Consumers | Portal, CRM context (operational assist), Guardian context (plan and record administration), workers |
-| Authorization | `PERM-SUB-001`–`003`; destructive actions `PERM-SUB-010`–`012` |
+| Purpose | Plans, patient subscriptions, lifecycle, in-module renewal orchestration (not a Renewals module) |
+| Consumers | Portal (later), CRM context (operational assist), Guardian context (plan and record administration), workers |
+| Authorization | `PERM-SUB-001`–`009`; destructive `PERM-SUB-010`–`012`/`014` |
 | Primary Resources | `DB-032`–`DB-034` |
-| Referenced FRs | `FR-SUB-001`–`005` |
+| Referenced FRs | `FR-SUB-001`–`005`; [36](36-subscriptions-module.md) |
 
 ### 5.14 Consultations
 
@@ -859,11 +859,39 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-080 | GET | `/subscriptions/{id}` | Own subscription detail | Yes | P | FR-SUB-004 | |
 | API-081 | POST | `/subscriptions/{id}/cancel` | Cancel subscription | Yes | P | FR-SUB-004 | Stops future renewals; open orders preserved |
 | API-082 | PATCH | `/subscriptions/{id}/payment-method` | Update renewal PM | Yes | P | FR-PRT-004, FR-PAY-004 | |
-| API-083 | GET | `/crm/subscriptions` | Staff subscription list | Yes | Su◐, Ad | FR-SUB-004, FR-CRM-005 | Assist only; no gate bypass |
+| API-083 | GET | `/crm/subscriptions` | Staff subscription list | Yes | Su◐, Op, Ad | FR-SUB-004, FR-CRM-005 | Assist only; no create; no gate bypass |
 | API-084 | GET | `/admin/subscription-plans` | Admin plan list | Yes | Ad | FR-SUB-001, FR-ADM-002 | |
 | API-085 | POST | `/admin/subscription-plans` | Create plan | Yes | Ad | FR-SUB-001 | |
 | API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | Yes | Ad | FR-SUB-001 | |
-| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-ADM-003 | Validate clinical bindings for Rx plans |
+| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-SUB-001, FR-ADM-003 | Validate clinical bindings for Rx plans |
+| API-213 | GET | `/crm/subscriptions/{id}` | Staff subscription detail | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-004`; no create |
+| API-214 | PATCH | `/crm/subscriptions/{id}` | Operational edit | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-006` CRM allowlist |
+| API-215 | POST | `/crm/subscriptions/{id}/pause` | Pause | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-007` |
+| API-216 | POST | `/crm/subscriptions/{id}/resume` | Resume | Yes | Su◐, Op, Ad | FR-SUB-004 | Skip missed paused periods ([36](36-subscriptions-module.md)) |
+| API-217 | POST | `/crm/subscriptions/{id}/cancel` | Policy cancel assist | Yes | Su◐, Op, Ad | FR-SUB-004 | Not Class D |
+| API-218 | GET | `/crm/subscriptions/{id}/renewals` | Attempt history | Yes | Su◐, Op, Ad | FR-SUB-003 | Child of subscription |
+| API-219 | POST | `/crm/subscriptions/{id}/renewals` | Manual renewal | Yes | Su◐, Op, Ad | FR-SUB-002 | Period-key idempotent |
+| API-220 | POST | `/crm/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | Su◐, Op, Ad | FR-SUB-003 | Same attempt/order |
+| API-221 | GET | `/crm/subscriptions/{id}/notes` | Notes | Yes | Su◐, Op, Ad | — | `PERM-SUB-004` |
+| API-222 | POST | `/crm/subscriptions/{id}/notes` | Add note | Yes | Su◐, Op, Ad | — | `PERM-SUB-006` |
+| API-223 | GET | `/crm/subscriptions/{id}/history` | History | Yes | Su◐, Op, Ad | — | |
+| API-224 | GET | `/crm/subscriptions/{id}/activity` | Activity | Yes | Su◐, Op, Ad | — | |
+| API-225 | GET | `/admin/subscriptions` | Admin list | Yes | Ad | FR-SUB-001 | `PERM-SUB-004` |
+| API-226 | GET | `/admin/subscriptions/{id}` | Admin detail | Yes | Ad | FR-SUB-001 | |
+| API-227 | POST | `/admin/subscriptions` | Admin create | Yes | Ad | FR-SUB-001 | `PERM-SUB-005`; **CRM must never expose equivalent** |
+| API-228 | PATCH | `/admin/subscriptions/{id}` | Admin edit | Yes | Ad | FR-SUB-001 | `PERM-SUB-006` Guardian allowlist |
+| API-229 | POST | `/admin/subscriptions/{id}/pause` | Pause | Yes | Ad | FR-SUB-004 | |
+| API-230 | POST | `/admin/subscriptions/{id}/resume` | Resume | Yes | Ad | FR-SUB-004 | |
+| API-231 | POST | `/admin/subscriptions/{id}/cancel` | Cancel | Yes | Ad | FR-SUB-004 | |
+| API-232 | POST | `/admin/subscriptions/{id}/delete` | Soft-delete | Yes | Ad◐ | — | Class D `PERM-SUB-010` |
+| API-233 | POST | `/admin/subscriptions/{id}/archive` | Archive | Yes | Ad◐ | — | Class D `PERM-SUB-011` |
+| API-234 | POST | `/admin/subscriptions/{id}/restore` | Restore | Yes | Ad◐ | — | Class D `PERM-SUB-012` |
+| API-235 | POST | `/admin/subscriptions/{id}/corrections` | Administrative correction | Yes | Ad◐ | — | `PERM-SUB-009`; not a Payment refund |
+| API-236 | POST | `/admin/subscriptions/{id}/overrides` | Administrative override | Yes | SA | — | Class D `PERM-SUB-014` |
+| API-237 | GET/POST | `/admin/subscriptions/{id}/notes` | Notes | Yes | Ad | — | |
+| API-238 | GET | `/admin/subscriptions/{id}/history` | History | Yes | Ad | — | |
+| API-239 | GET | `/admin/subscriptions/{id}/activity` | Activity | Yes | Ad | — | |
+| API-240 | GET | `/admin/subscriptions/{id}/renewals` | Attempts | Yes | Ad | FR-SUB-003 | |
 
 Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain services—not a public patient endpoint.
 
@@ -1080,7 +1108,8 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 | API-062–068 | Payments (+ webhook) | 7 |
 | API-069–076 (+076a–d) | Orders CRM/Portal | 12 |
 | API-204–212 | Orders Guardian/admin Class D | 9 |
-| API-077–087 | Subscriptions | 11 |
+| API-077–087 | Subscriptions (plans + patient + CRM list) | 11 |
+| API-213–240 | Subscriptions CRM lifecycle + Guardian admin/Class D | 28 |
 | API-088–096 | Consultations | 9 |
 | API-097–101 | Prescriptions | 5 |
 | API-102–104 | Pharmacy | 3 |
@@ -1344,6 +1373,10 @@ Stable machine codes for clients and observability. Messages are illustrative in
 | ERR-SUB-002 | Renewal charge failed (past-due/grace path) |
 | ERR-SUB-003 | Clinical reassessment required before renewal fulfill |
 | ERR-SUB-004 | Plan not published / not bindable |
+| ERR-SUB-005 | Illegal subscription lifecycle transition |
+| ERR-SUB-006 | Duplicate renewal period (idempotency) |
+| ERR-SUB-007 | Pause/resume not allowed in current state |
+| ERR-SUB-008 | CRM subscription create forbidden |
 
 ### 9.8 Appointments
 
@@ -1591,7 +1624,7 @@ Payment and webhook paths must be replay-safe (`FR-PAY-002`, NFR-118).
 | PAY | API-062–068 |
 | QST | API-040–052 |
 | ORD | API-069–076 (+076a–d), API-204–212 |
-| SUB | API-077–087 |
+| SUB | API-077–087, API-213–240 |
 | APT | API-115–124 |
 | PRT | Profile + patient-scoped resources |
 | CRM | Consultations, Prescriptions, Pharmacy, CRM orders/search |
@@ -1795,6 +1828,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.4 | 2026-08-03 | Platform Engineering | TBD | Asset Library `API-177`–`186`; ID-only consumer rule; Documents section labeled Document Management vs Asset Library; link [33](33-asset-library-module.md) | Draft for review |
 | 1.5 | 2026-08-03 | Platform Engineering | TBD | Inventory `API-187`–`203`; deprecate `API-105`–`109` CRM adjust paths; ledger-first; link [34](34-inventory-module.md) | Draft for review |
 | 1.6 | 2026-08-20 | Platform Engineering | TBD | Orders CRM notes/history/edit (`API-076a`–`d`); Guardian/admin Class D `API-204`–`212`; shared domain; no CRM create; link [35](35-orders-module.md) | Draft for review |
+| 1.7 | 2026-08-24 | Platform Engineering | TBD | Subscriptions CRM/Guardian expansion `API-213`–`240`; keep `API-077`–`087`; no CRM create; link [36](36-subscriptions-module.md) | Draft for review |
 
 ---
 
@@ -1810,6 +1844,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 - [15 — Payment flow](15-payment-flow.md) (forward)
 - [18 — CRM architecture](18-crm.md) (operational context consumer)
 - [25 — Guardian architecture](25-guardian.md) (administrative context consumer)
+- [36 — Subscriptions module](36-subscriptions-module.md)
 
 ---
 

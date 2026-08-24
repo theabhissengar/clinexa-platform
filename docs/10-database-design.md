@@ -580,34 +580,34 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Configurable plans: interval, pricing, product/treatment plan linkage |
+| Purpose | Configurable plans: interval, pricing, product/variant bindings, grace, reassessment rules |
 | Primary key | `id` |
 | Relationships | Links via TreatmentPlanLinks; 1:N Subscriptions |
-| Business rules | CRM configurable (`FR-SUB-001`); publish validation |
+| Business rules | Guardian configurable (`FR-SUB-001`, `PERM-SUB-002`); publish validation; not a Product table |
 | Retention | Archive; active subscriptions keep plan FK |
-| Trace | FR-SUB-001, ARCH-048, ROAD-019 |
+| Trace | FR-SUB-001, ARCH-048, ROAD-019; [36](36-subscriptions-module.md) |
 
 #### DB-033 Subscriptions
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Patient subscription instances |
+| Purpose | Patient subscription instances (recurring commitment SoT) |
 | Primary key | `id` |
-| Relationships | N:1 User; N:1 SubscriptionPlan; optional SavedPaymentMethod; 1:N RenewalAttempts / renewal Orders |
-| Business rules | Statuses: `active`, `renewing`, `past_due`, `reassessment_required`, `cancelled` (FR §14, OR-10); cancel stops future renewals; existing orders follow order rules; Rx reassessment hooks (`FR-SUB-003/005`) |
+| Relationships | N:1 User; N:1 SubscriptionPlan; 1:N SubscriptionItems; 1:N RenewalAttempts; order refs opaque until Orders FK |
+| Business rules | Lifecycle statuses in [36 §9](36-subscriptions-module.md) — **not** mixed with payment, renewal-attempt, or clinical flags. Cancel stops future renewals; existing orders follow order rules; Rx reassessment is a flag + order gate (`FR-SUB-003/005`) |
 | Retention | Retain history on cancel |
-| Trace | FR-SUB-001–005, ROAD-019 |
+| Trace | FR-SUB-001–005, ROAD-019; [36](36-subscriptions-module.md) |
 
 #### DB-034 SubscriptionRenewalAttempts
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Scheduled renewal charge attempts and outcomes |
+| Purpose | Child workflow of Subscription: scheduled/manual renewal attempts and outcomes. **Not** a Renewals module or domain |
 | Primary key | `id` |
-| Relationships | N:1 Subscription; optional N:1 Payment; optional N:1 Order (renewal order) |
-| Business rules | Failure → past_due/grace + notify (`FR-SUB-003`); success may create renewal order and reassessment requirement |
+| Relationships | N:1 Subscription; optional N:1 Order (renewal order); opaque payment refs |
+| Business rules | Unique `(subscriptionId, billingPeriodKey)`; at most one order per attempt; retry must not duplicate orders; failure → subscription `PAST_DUE` + notify (`FR-SUB-003`) |
 | Retention | Retain for subscription health KPIs |
-| Trace | FR-SUB-002/003/005, KPI-04/05 |
+| Trace | FR-SUB-002/003/005, KPI-04/05; [36](36-subscriptions-module.md) |
 
 ### 3.5 Clinical
 
@@ -1448,13 +1448,17 @@ Non-Rx: after payment success → `awaiting_fulfillment` (OR-09). Terminal: `ful
 
 ### 7.4 Subscription
 
-States: `active` → `renewing` → (`active` | `past_due` | `reassessment_required`) → `cancelled`.
+Canonical lifecycle, payment snapshot, renewal-attempt status, and clinical requirement are **four dimensions** — do not collapse them. Authoritative machine: [36 §9](36-subscriptions-module.md).
+
+Lifecycle: `PENDING_SETUP` → `ACTIVE` ⇄ `PAUSED` / `PAST_DUE` → `CANCELLED` | `EXPIRED` | `COMPLETED`.
 
 | Event | Effect |
 | --- | --- |
-| Create | After paid plan purchase |
-| Renewal success | Renewal order; optional reassessment (`FR-SUB-005`) |
-| Renewal failure | `past_due` + notify (`FR-SUB-003`) |
+| Create | `PENDING_SETUP` (Guardian admin or future checkout) |
+| Initial pay success | `ACTIVE`; `SUBSCRIPTION_INITIAL` order |
+| Renewal due | Attempt + `SUBSCRIPTION_RENEWAL` order via Orders; **not** a `renewing` lifecycle status |
+| Renewal payment failure | `PAST_DUE` + notify (`FR-SUB-003`) |
+| Pause | No automatic attempts; missed cycles skipped on resume ([36 §10](36-subscriptions-module.md)) |
 | Cancel | Stop future renewals; retain history; existing orders follow order rules (OR-10) |
 
 ### 7.5 Support Ticket
@@ -1520,6 +1524,7 @@ See §4.5. Summary: cascade only contained children (cart items, answers, ticket
 | Categories / Products / Blogs / CMS | slug (within publish scope as designed) |
 | Coupons | code |
 | PaymentWebhookIdempotencyKeys | idempotency_key |
+| SubscriptionRenewalAttempts | `(subscription_id, billing_period_key)` |
 | InventoryBalances | (warehouse_id, product_variant_id) |
 | PlatformSettings | key |
 | ProductCategoryLinks | (product_id, category_id) |
@@ -1781,6 +1786,7 @@ flowchart LR
 | 1.3 | 2026-08-03 | Platform Engineering | TBD | Inventory ledger-first (`DB-043` SoT); `DB-063`–`066` warehouses/reservations/policies; warehouse FK on balances/movements; link [34](34-inventory-module.md) | Draft for review |
 | 1.4 | 2026-08-20 | Platform Engineering | TBD | Orders `DB-026`/`027` snapshot/address precision; supporting history/activity/notes/adjustments; Reserve-at-auth; Payments-owned refs; link [35](35-orders-module.md) | Draft for review |
 | 1.5 | 2026-08-20 | Platform Engineering | TBD | P13a Prisma: money in cents; `OrderAddress` SHIPPING/BILLING; migration `20260820120000_orders_platform_module_foundation` | Draft for review |
+| 1.6 | 2026-08-24 | Platform Engineering | TBD | Subscriptions `DB-032`–`034` aligned to [36](36-subscriptions-module.md): four-dimension status, period-key unique, no Renewals domain | Draft for review |
 
 ---
 
@@ -2036,36 +2042,35 @@ Complements PharmacistReviews (DB-041). Prescription create still requires prior
 
 ### 15.5 Subscription State Machine (DB-033)
 
-Aligned to OR-10 / `FR-SUB-*` / §7.4.
+**Canonical detail:** [36 §9](36-subscriptions-module.md). Lifecycle is **not** payment status, renewal-attempt status, or clinical requirement.
 
-#### Allowed transitions
+#### Allowed transitions (lifecycle)
 
 | Current State | Allowed Next State | Trigger | Actor | Business Rule |
 | --- | --- | --- | --- | --- |
-| `active` | `renewing` | Interval due; charge started | System | Charge saved PSP method (`FR-SUB-002`, `FR-PAY-004`) |
-| `renewing` | `active` | Renewal charge success | System | May create renewal order; Rx still clinically gated when required |
-| `renewing` | `past_due` | Renewal charge failure | System | Grace/past-due + notify (`FR-SUB-003`, AC-BR-11) |
-| `renewing` | `reassessment_required` | Success but reassessment configured | System | Clinical reassessment hook (`FR-SUB-005`) |
-| `past_due` | `renewing` | Retry charge | Patient / System | After payment method update (`FR-PRT-004`) |
-| `past_due` | `active` | Successful recovery charge | System | Clears grace |
-| `past_due` | `cancelled` | Cancel during past-due | Patient / Support assist | Stops future renewals; retain history |
-| `reassessment_required` | `active` | Reassessment satisfied + gates clear | System / Patient | Fulfillment still respects clinical rules |
-| `reassessment_required` | `cancelled` | Cancel while reassessment pending | Patient / System | Existing orders follow order rules |
-| `active` | `cancelled` | Patient cancel | Patient | Cancel stops future renewals (`FR-SUB-004`) |
-| `renewing` | `cancelled` | Cancel during renew attempt (policy) | Patient / System | In-flight payment handled per PAY rules |
-| (create) | `active` | Paid plan purchase | System | Initial state on create ([03 §14](03-functional-requirements.md#14-state-machine-summary)) |
+| (create) | `PENDING_SETUP` | Admin create or future checkout bind | Guardian / System | Initial state ([36](36-subscriptions-module.md)) |
+| `PENDING_SETUP` | `ACTIVE` | Initial payment success | System | `SUBSCRIPTION_INITIAL` order path |
+| `PENDING_SETUP` | `CANCELLED` | Abort before activation | Patient / CRM assist / Guardian | |
+| `ACTIVE` | `PAUSED` | Pause | Patient later / CRM / Guardian | No automatic renewal attempts |
+| `PAST_DUE` | `PAUSED` | Pause during grace | CRM / Guardian | Preserve `statusBeforePause` |
+| `PAUSED` | `ACTIVE` or `PAST_DUE` | Resume | CRM / Guardian | Restore prior standing; **do not** catch-up bill |
+| `ACTIVE` | `PAST_DUE` | Renewal payment failure | System | Grace + notify (`FR-SUB-003`) |
+| `PAST_DUE` | `ACTIVE` | Successful recovery | System | Same period attempt/order |
+| `ACTIVE` / `PAST_DUE` / `PAUSED` / `PENDING_SETUP` | `CANCELLED` | Cancel | Patient / CRM assist / Guardian | Stops future renewals |
+| `ACTIVE` | `EXPIRED` | `endsAt` reached | System | Finite term |
+| `ACTIVE` | `COMPLETED` | Last entitled cycle | System | Finite-cycle plans |
 
 #### Forbidden transitions
 
 | From | To | Why forbidden |
 | --- | --- | --- |
-| `cancelled` | `active` | Terminal; start a new subscription |
-| `cancelled` | `renewing` | No renewals after cancel |
-| `past_due` | `fulfilled` N/A | Subscription has no `fulfilled` state—orders own fulfillment |
-| `active` | `past_due` | Must pass through failed renewal (`renewing`) |
-| Any | silent Rx fulfill bypass | Reassessment/clinical gates cannot be skipped (`FR-SUB-005`, `OR-03`) |
+| Terminal (`CANCELLED` / `EXPIRED` / `COMPLETED`) | `ACTIVE` | Start a new subscription (`PAY-086`) |
+| `ACTIVE` | `PAST_DUE` without failed attempt | Must pass through payment failure on `DB-034` |
+| Any | `renewing` as lifecycle | Processing lives on the attempt, not `DB-033.status` |
+| Any | silent Rx fulfill bypass | Clinical gates cannot be skipped (`FR-SUB-005`, `OR-03`) |
+| Clinical decline | Auto-cancel subscription | Decline does not delete/cancel the commitment ([36 §14](36-subscriptions-module.md)) |
 
-**Business reasoning:** Subscriptions retain patients on therapy while keeping clinical gates intact on renewal orders.
+**Business reasoning:** Subscriptions retain patients on therapy while keeping clinical gates intact on renewal **orders**.
 
 ---
 
@@ -2098,13 +2103,19 @@ Central logical enumerations used by the database design. Values are **strings**
 
 ### 16.3 Subscription Status
 
+Lifecycle values for `DB-033`. Payment snapshot, renewal-attempt status, and clinical requirement are **separate** ([36 §9](36-subscriptions-module.md)).
+
 | Value | Meaning | Where Used | Referenced FR / Rule |
 | --- | --- | --- | --- |
-| `active` | In good standing | DB-033 Subscriptions | FR-SUB-001/004, OR-10 |
-| `renewing` | Renewal charge in progress | DB-033, DB-034 | FR-SUB-002 |
-| `past_due` | Grace after failed renewal | DB-033 | FR-SUB-003, AC-BR-11 |
-| `reassessment_required` | Clinical reassessment needed | DB-033 | FR-SUB-005 |
-| `cancelled` | Future renewals stopped | DB-033 | FR-SUB-004, OR-10 |
+| `PENDING_SETUP` | Created; setup incomplete | DB-033 | [36](36-subscriptions-module.md) |
+| `ACTIVE` | In good standing | DB-033 | FR-SUB-001/004, OR-10 |
+| `PAUSED` | No automatic renewals | DB-033 | [36 §10](36-subscriptions-module.md) |
+| `PAST_DUE` | Grace after failed renewal payment | DB-033 | FR-SUB-003, AC-BR-11 |
+| `CANCELLED` | Future renewals stopped | DB-033 | FR-SUB-004, OR-10 |
+| `EXPIRED` | Term ended | DB-033 | [36](36-subscriptions-module.md) |
+| `COMPLETED` | Finite cycles finished | DB-033 | [36](36-subscriptions-module.md) |
+
+Prior vocab `renewing` → attempt `PROCESSING`. Prior `reassessment_required` → `clinicalRequirement` flag.
 
 ### 16.4 Consultation Status
 

@@ -121,6 +121,38 @@ describe('AdminOrdersController', () => {
     );
   });
 
+  it('P14g: transitions use guardian source (clinical statuses rejected in domain)', async () => {
+    orders.transitionOrder.mockResolvedValue({
+      status: OrderStatus.AWAITING_FULFILLMENT,
+    });
+    await controller.transition(
+      'ord-1',
+      { toStatus: OrderStatus.AWAITING_FULFILLMENT, reason: 'ops' },
+      actor,
+    );
+    expect(orders.transitionOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: 'guardian',
+        toStatus: OrderStatus.AWAITING_FULFILLMENT,
+      }),
+    );
+
+    orders.transitionOrder.mockRejectedValue(
+      new BadRequestException({
+        code: ErrorCodes.ORD_INVALID_TRANSITION,
+        message:
+          'Clinical approve/decline requires the Clinical decision path (source=clinical)',
+      }),
+    );
+    await expect(
+      controller.transition(
+        'ord-1',
+        { toStatus: OrderStatus.CLINICAL_APPROVED, reason: 'bypass' },
+        actor,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('rejects invalid list status', () => {
     expect(() => {
       void controller.list(undefined, 'NOPE');

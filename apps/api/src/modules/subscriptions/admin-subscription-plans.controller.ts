@@ -130,7 +130,7 @@ export class AdminSubscriptionPlansController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'Publish plan (API-087). Validates catalog bindings; clinical questionnaire authoring remains P14g.',
+      'Publish plan (API-087). Validates catalog bindings; questionnaire authoring is not P14g (refs/events only).',
   })
   publish(@Param('id', ParseUUIDPipe) id: string) {
     return this.plans.publish(id);

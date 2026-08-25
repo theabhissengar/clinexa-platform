@@ -864,7 +864,7 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-084 | GET | `/admin/subscription-plans` | Admin plan list | Yes | Ad | FR-SUB-001, FR-ADM-002 | `PERM-SUB-002` |
 | API-085 | POST | `/admin/subscription-plans` | Create plan | Yes | Ad | FR-SUB-001 | `PERM-SUB-002`; starts `DRAFT` |
 | API-086 | PATCH | `/admin/subscription-plans/{id}` | Update plan | Yes | Ad | FR-SUB-001 | `PERM-SUB-002` |
-| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-SUB-001, FR-ADM-003 | Validate catalog bindings; clinical questionnaire authoring remains P14g |
+| API-087 | POST | `/admin/subscription-plans/{id}/publish` | Publish plan | Yes | Ad | FR-SUB-001, FR-ADM-003 | Validate catalog bindings; questionnaire **authoring** is not P14g (P14g = clinical refs/events only) |
 | API-213 | GET | `/crm/subscriptions/{id}` | Staff subscription detail | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-004`; no create |
 | API-214 | PATCH | `/crm/subscriptions/{id}` | Operational edit | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-006` CRM allowlist |
 | API-215 | POST | `/crm/subscriptions/{id}/pause` | Pause | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-007` |
@@ -917,8 +917,8 @@ Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain se
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | API-088 | GET | `/crm/consultations` | Doctor consult queue | Yes | Dr | FR-CRM-002 | Filter status; paginate; oldest-first default |
 | API-089 | GET | `/crm/consultations/{id}` | Case detail | Yes | Dr | FR-CRM-002, FR-QST-005 | Includes order context + QST answers |
-| API-090 | POST | `/crm/consultations/{id}/approve` | Clinical approve | Yes | Dr | FR-CRM-002/003, FR-ORD-002 | Order → `clinical_approved`; audit; enables Rx |
-| API-091 | POST | `/crm/consultations/{id}/decline` | Clinical decline | Yes | Dr | FR-CRM-002, FR-ORD-006 | Order → `clinical_declined`; refund path; notify |
+| API-090 | POST | `/crm/consultations/{id}/approve` | Clinical approve | Yes | Dr | FR-CRM-002/003, FR-ORD-002 | **P14g:** opaque `consultationId` on Order; → `clinical_approved` then capture path; not full Consultation SoT |
+| API-091 | POST | `/crm/consultations/{id}/decline` | Clinical decline | Yes | Dr | FR-CRM-002, FR-ORD-006 | **P14g:** opaque id; → `clinical_declined`; void/Release + `DECLINED_HOLD`; not PAST_DUE |
 | API-092 | POST | `/crm/consultations/{id}/request-info` | Request additional info | Yes | Dr | FR-CRM-002, FR-QST-003 | Patient supplemental intake; re-queue |
 | API-093 | POST | `/crm/consultations/{id}/notes` | Add clinical note | Yes | Dr | FR-CRM-002 | Doctor only; Mk/Ct denied |
 | API-094 | GET | `/crm/consultations/{id}/notes` | List clinical notes | Yes | Dr | FR-CRM-002/006 | |

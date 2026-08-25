@@ -112,6 +112,19 @@ export type TransitionOrderInput = {
   expectedStatus?: OrderStatus;
 };
 
+/**
+ * Opaque clinical correlation refs only (P14g). Not a Consultation SoT write.
+ */
+export type AttachClinicalRefsInput = {
+  orderId: string;
+  consultationId?: string | null;
+  prescriptionId?: string | null;
+  questionnaireResponseId?: string | null;
+  questionnaireVersionId?: string | null;
+  actorUserId?: string | null;
+  source?: string;
+};
+
 export type UpdateOrderFieldsInput = {
   orderId: string;
   context: OrderEditContext;

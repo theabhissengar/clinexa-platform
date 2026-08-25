@@ -29,6 +29,7 @@ import { OrderTotalsService } from './order-totals.service';
 import type {
   AddOrderAdjustmentInput,
   AddOrderNoteInput,
+  AttachClinicalRefsInput,
   ClassDOrderInput,
   CreateOrderFromSnapshotsInput,
   CreateOrderInput,
@@ -763,6 +764,65 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Persist opaque clinical correlation refs only (P14g).
+   * Does not create Consultation / QST / Prescription records.
+   */
+  async attachClinicalRefs(input: AttachClinicalRefsInput) {
+    return this.prisma.$transaction(async (tx) => {
+      const order = await this.requireActiveOrder(tx, input.orderId);
+      const data: Prisma.OrderUpdateInput = {};
+      if (input.consultationId !== undefined) {
+        data.consultationId = input.consultationId;
+      }
+      if (input.prescriptionId !== undefined) {
+        data.prescriptionId = input.prescriptionId;
+      }
+      if (input.questionnaireResponseId !== undefined) {
+        data.questionnaireResponseId = input.questionnaireResponseId;
+      }
+      if (input.questionnaireVersionId !== undefined) {
+        data.questionnaireVersionId = input.questionnaireVersionId;
+      }
+      if (Object.keys(data).length === 0) {
+        return order;
+      }
+      const updated = await tx.order.update({
+        where: { id: order.id },
+        data,
+      });
+      await tx.orderActivity.create({
+        data: {
+          orderId: order.id,
+          actorUserId: input.actorUserId ?? null,
+          kind: 'clinical_refs_attached',
+          summary: 'Opaque clinical refs updated',
+          metadata: {
+            source: input.source ?? 'clinical',
+            consultationId: input.consultationId ?? null,
+            prescriptionId: input.prescriptionId ?? null,
+            questionnaireResponseId: input.questionnaireResponseId ?? null,
+            questionnaireVersionId: input.questionnaireVersionId ?? null,
+          },
+        },
+      });
+      return updated;
+    });
+  }
+
+  async findByConsultationId(consultationId: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { consultationId, deletedAt: null },
+    });
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.ORD_NOT_FOUND,
+        message: 'Order not found for consultation reference',
+      });
+    }
+    return order;
+  }
+
   async transitionOrder(input: TransitionOrderInput) {
     const { result, fromStatus, toStatus } = await this.prisma.$transaction(
       async (tx) => {
@@ -782,6 +842,20 @@ export class OrdersService {
           throw new ConflictException({
             code: ErrorCodes.ORD_CONFLICT,
             message: `Order status conflict: expected ${expected}, actual ${current}`,
+          });
+        }
+
+        // P14g: clinical approve/decline only via Clinical decision path (source=clinical).
+        // Class D overrideOrder bypasses this method.
+        if (
+          (input.toStatus === OrderStatus.CLINICAL_APPROVED ||
+            input.toStatus === OrderStatus.CLINICAL_DECLINED) &&
+          input.source !== 'clinical'
+        ) {
+          throw new BadRequestException({
+            code: ErrorCodes.ORD_INVALID_TRANSITION,
+            message:
+              'Clinical approve/decline requires the Clinical decision path (source=clinical)',
           });
         }
 
@@ -892,6 +966,13 @@ export class OrdersService {
       }
       if (pay && this.sideEffects.onPayment) {
         await this.sideEffects.onPayment(pay, result.id);
+      }
+      // P14g: mint/attach opaque consultationId via Clinical adapter (not Orders SoT).
+      if (
+        toStatus === OrderStatus.AWAITING_CLINICAL_REVIEW &&
+        this.sideEffects.onEnteredClinicalReview
+      ) {
+        await this.sideEffects.onEnteredClinicalReview(result.id);
       }
     }
 

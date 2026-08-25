@@ -290,14 +290,12 @@ describe('OrdersService', () => {
     expect(tx.orderStatusHistory.create).toHaveBeenCalled();
     expect(tx.orderActivity.create).toHaveBeenCalled();
     expect(
-      (service as unknown as { _inventory: { applyTransitionIntent: jest.Mock } })
-        ._inventory.applyTransitionIntent,
-    ).toHaveBeenCalledWith(
-      'reserve_on_auth_success',
-      'ord-1',
-      undefined,
-      tx,
-    );
+      (
+        service as unknown as {
+          _inventory: { applyTransitionIntent: jest.Mock };
+        }
+      )._inventory.applyTransitionIntent,
+    ).toHaveBeenCalledWith('reserve_on_auth_success', 'ord-1', undefined, tx);
     expect(hooks.onInventory).toHaveBeenCalledWith(
       'reserve_on_auth_success',
       'ord-1',
@@ -321,6 +319,51 @@ describe('OrdersService', () => {
         expectedStatus: OrderStatus.AWAITING_FULFILLMENT,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rolls back transition when Reserve throws ERR-INV-001 (P13e in-txn)', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.PAYMENT_PENDING;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+
+    const service = buildService(prisma);
+    const inventory = (
+      service as unknown as {
+        _inventory: { applyTransitionIntent: jest.Mock };
+      }
+    )._inventory;
+    inventory.applyTransitionIntent.mockRejectedValue(
+      new BadRequestException({
+        code: ErrorCodes.INV_INSUFFICIENT,
+        message: 'Insufficient stock for this operation',
+      }),
+    );
+
+    // Propagate inventory failure out of the transaction (same as Prisma $transaction).
+    prisma.$transaction = jest.fn(
+      async (fn: (client: TxMock) => Promise<unknown>) => {
+        return fn(tx);
+      },
+    );
+
+    await expect(
+      service.transitionOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.AWAITING_FULFILLMENT,
+        source: 'system',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.INV_INSUFFICIENT },
+    });
+
+    // Status update ran inside the txn before inventory; when the txn rejects,
+    // callers see the prior status (PAYMENT_PENDING) — assert inventory was attempted.
+    expect(inventory.applyTransitionIntent).toHaveBeenCalledWith(
+      'reserve_on_auth_success',
+      'ord-1',
+      undefined,
+      tx,
+    );
   });
 
   it('adds notes and records activity without storing note body on activity', async () => {
@@ -524,8 +567,11 @@ describe('OrdersService', () => {
     });
 
     expect(
-      (service as unknown as { _inventory: { applyOverrideInventory: jest.Mock } })
-        ._inventory.applyOverrideInventory,
+      (
+        service as unknown as {
+          _inventory: { applyOverrideInventory: jest.Mock };
+        }
+      )._inventory.applyOverrideInventory,
     ).toHaveBeenCalledWith(
       OrderStatus.DRAFT,
       OrderStatus.FULFILLED,

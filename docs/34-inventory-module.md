@@ -562,5 +562,6 @@ No balances, reservations, or movements for those SKUs. Checkout/Orders skip Inv
 | 1.0 | 2026-08-03 | Platform Engineering | Initial Inventory Module Blueprint (`GRD-033` / `CRM-037` consume-only): Guardian-only admin; ledger-first SoT; warehouse FKs from day one; platform policies; Orders service-only; History/Activity/Audit split; low-stock events; digital no-track; P12a–g roadmap |
 | 1.1 | 2026-08-03 | Platform Engineering | P12 implementation in progress: Prisma `DB-042`/`043`/`063`–`066`, Nest inventory module, Guardian `/guardian/inventory` UI, domain reservation APIs |
 | 1.2 | 2026-08-25 | Platform Engineering | P12f closed by P13e: Orders in-txn Reserve/Release/Commit/Restock; unique `order_id` on reservations; `FOR UPDATE` balance locks; P12g still open |
+| 1.3 | 2026-08-25 | Platform Engineering | Pointer: subscription renewal `ERR-INV-001` attempt policy is P14f ([36](36-subscriptions-module.md)); Inventory APIs unchanged; P12g expiry worker still open |
 
 *End of 34 — Inventory Module.*

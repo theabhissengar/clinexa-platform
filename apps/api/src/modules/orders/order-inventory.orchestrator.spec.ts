@@ -1,5 +1,7 @@
+import { BadRequestException } from '@nestjs/common';
 import { OrderStatus, ReservationStatus } from '../../../generated/prisma';
 
+import { ErrorCodes } from '../../common/constants/error-codes';
 import { OrderInventoryOrchestrator } from './order-inventory.orchestrator';
 
 describe('OrderInventoryOrchestrator', () => {
@@ -55,6 +57,33 @@ describe('OrderInventoryOrchestrator', () => {
       where: { id: 'ord-1' },
       data: { reservationId: 'res-1' },
     });
+  });
+
+  it('reserve_on_auth_success surfaces ERR-INV-001 from reservation service', async () => {
+    const { orch, reservations, tx } = build();
+    tx.order.findUnique.mockResolvedValue({
+      id: 'ord-1',
+      reservationId: null,
+      items: [{ variantId: 'var-1', quantity: 2 }],
+    });
+    reservations.reserveForOrder.mockRejectedValue(
+      new BadRequestException({
+        code: ErrorCodes.INV_INSUFFICIENT,
+        message: 'Insufficient stock for this operation',
+      }),
+    );
+
+    await expect(
+      orch.applyTransitionIntent(
+        'reserve_on_auth_success',
+        'ord-1',
+        'actor',
+        tx as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.INV_INSUFFICIENT },
+    });
+    expect(tx.order.update).not.toHaveBeenCalled();
   });
 
   it('release_on_cancel_or_decline no-ops without PENDING reservation', async () => {

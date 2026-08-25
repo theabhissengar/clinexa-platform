@@ -388,6 +388,8 @@ Orders **never** update balances, insert movements, or mutate reservation rows �
 | Reservation expiry | Cancel/fail path per policy | Expire → Released; Orders reacts | Money reversal as needed |
 | Fulfill success | → `fulfilled` | **`Commit`** | Already captured |
 | Fulfill fails (stock/ops) | Stay `awaiting_fulfillment`; no Commit | Reservation stays Pending; block if insufficient | No auto-refund unless cancel |
+
+**Renewal Reserve failure (`ERR-INV-001`):** When Subscriptions renewals leave `payment_pending` and P13e Reserve fails, the Order transition rolls back (status stays `payment_pending`). Subscriptions attempt policy for that stock-out is owned by **P14f** ([36 §13](36-subscriptions-module.md)) — attempt `FAILED`, hold already-captured money, retry Reserve on the same Order. Later fulfill Commit failure remains Orders/ops policy above (no auto-refund unless cancel); it is **not** a P14f renewal-period event.
 | Refund pre-fulfill | → `refunded` | **`Release`** if Pending | Payments refund/void |
 | Refund post-fulfill | → `refunded` (or keep terminal + payment summary; see OD-ORD-03) | **`Restock`** when return rules apply (`FR-INV-005`) | Payments refund |
 | Class D Correct with money | Adjustment on Order | Restock via Inventory only if Correct implies it | **Must call Payments** |
@@ -611,3 +613,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.3 | 2026-08-24 | Platform Engineering | §15 Subscription relationship (not forward-compat-only); pointer to [36](36-subscriptions-module.md) |
 | 1.4 | 2026-08-24 | Platform Engineering | P14e / P13f partial: `createOrderFromSnapshots` + `idempotencyKey`; payment capture/void hooks; inventory still NOOP |
 | 1.5 | 2026-08-25 | Platform Engineering | P13e: in-txn `OrderInventoryOrchestrator` Reserve/Release/Commit/Restock; unique `StockReservation.orderId`; Rx renewal retry guard; seed real reservations |
+| 1.6 | 2026-08-25 | Platform Engineering | Pointer: renewal Reserve `ERR-INV-001` attempt policy is P14f; later fulfill Commit failure still no auto-refund |

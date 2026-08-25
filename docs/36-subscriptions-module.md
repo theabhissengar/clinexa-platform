@@ -5,14 +5,14 @@
 | Document | Subscriptions Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | P14a–P14e complete — P14f–h pending |
+| Status | P14a–P14f complete — P14g–h pending |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [35](35-orders-module.md) |
 
 This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a–e complete.** **P13e** wires Inventory through Orders. **Not this pass:** P14f attempt/SKIPPED stock-out policy, clinical authoring (P14g), Store/Portal, Stripe/real PSP.
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a–f complete.** **P13e** wires Inventory through Orders; **P14f** owns renewal stock-out attempt policy. **Not this pass:** clinical authoring (P14g), Store/Portal, Stripe/real PSP.
 
 > **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
 
@@ -503,11 +503,11 @@ A subscription is due when **all** hold:
 3. If attempt already has `orderId`, **reuse that Order** — never create a second order for the period.
 4. If no `orderId`, Orders `createOrderFromSnapshots` with `orderType = SUBSCRIPTION_RENEWAL`, `idempotencyKey = renewal:{subId}:{billingPeriodKey}`, copying **subscription item snapshots** (not live catalog). Addresses: latest order → user shipping JSON → fail `ERR-VAL-002` (no placeholders).
 5. Record `orderId` on the attempt; set `latestOrderId` on the subscription.
-6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize. **P13e** Reserves on Order transition leaving `payment_pending`. **P14f** still owns attempt FAILED/SKIPPED mapping when Reserve fails after non-Rx capture (period may already have advanced — pre-existing P14e ordering).
+6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize (ordering unchanged). **P13e** Reserves on Order transition leaving `payment_pending`. **P14f:** on `ERR-INV-001`, attempt=`FAILED` (`lastErrorCode=ERR-INV-001`); lifecycle unchanged (not `PAST_DUE`); no refund/void. Non-Rx may be CAPTURED + `PAYMENT_PENDING` until Reserve succeeds — period does **not** advance until capture **and** Reserve-committed status (`AWAITING_FULFILLMENT` / `FULFILLED`).
 7. Subscriptions records payment status snapshot and attempt status from those outcomes.
-8. On **capture** success: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle). Authorize alone does **not** consume the period.
+8. On **capture success and Reserve-committed Order**: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle). Authorize alone does **not** consume the period. Capture alone (Order still `PAYMENT_PENDING`) does **not** consume the period.
 9. On authorize failure: attempt=`FAILED`; lifecycle `PAST_DUE`; notify `NTF-042`. Clinical decline: void/refund; `DECLINED_HOLD`; **not** PAST_DUE; **not** auto-cancel.
-10. Inventory/clinical failures do **not** invent a second period; they update the same attempt/order.
+10. Inventory/clinical failures do **not** invent a second period; they update the same attempt/order. Inventory retries resume the failed Reserve transition only (no second authorize/capture/Order).
 
 ### 11.4 Idempotency invariants (locked)
 
@@ -527,9 +527,9 @@ A subscription is due when **all** hold:
 | Action | When | Effect |
 | --- | --- | --- |
 | Automatic due processing | `ACTIVE` and due | Same idempotent path |
-| Retry | Existing attempt `FAILED` / `PROCESSING` stuck | Same period key; same order |
+| Retry | Existing attempt `FAILED` / `PROCESSING` stuck | Same period key; same order; payment-aware resume (CAPTURED+`PAYMENT_PENDING` → Reserve only; Rx AUTHORIZED+`PAYMENT_PENDING` → clinical transition only; auth failure → existing authorize retry) |
 | Manual renewal | Staff/patient (later) explicit | Same path; if no open period key, uses current due key; **not** a way to duplicate periods |
-| Skip | Policy / inventory skip | attempt=`SKIPPED`; period may advance without a paid cycle **only** via documented policy (V1: skip does **not** advance entitled paid cycles) |
+| Skip | Explicit policy skip (not auto on stock-out) | attempt=`SKIPPED`; period may advance without a paid cycle **only** via documented policy (V1: skip does **not** advance entitled paid cycles). **P14f does not auto-SKIPPED** on `ERR-INV-001` — stock-out uses retryable `FAILED` |
 
 ---
 
@@ -558,11 +558,13 @@ Subscriptions **never** write inventory tables, balances, reservations, or movem
 
 | Failure | Order / attempt | Subscription lifecycle |
 | --- | --- | --- |
-| Insufficient stock (`ERR-INV-001`) | Order stays non-fulfilled; attempt=`FAILED` or `SKIPPED` per policy | **Unchanged** unless payment also failed |
+| Insufficient stock (`ERR-INV-001`) at Reserve-at-auth | Order stays `PAYMENT_PENDING` (P13e txn rollback); attempt=`FAILED`, `lastErrorCode=ERR-INV-001` | **Unchanged** (`ACTIVE`); **not** `PAST_DUE` (OD-SUB-04) |
+| Non-Rx captured + unreserved | Payment stays `CAPTURED` (hold; **no** refund/void); retry Reserve on same Order/payment | Unchanged; period advances only after Reserve succeeds |
+| Rx AUTHORIZED + Reserve fail | Payment stays `AUTHORIZED` (no capture); retry clinical transition | Unchanged |
 | Digital / not tracked | Inventory no-op on the Order | Unchanged |
-| P13e wired; P14f pending | Orders Reserve/Release/Commit/Restock run; attempt SKIPPED/FAILED on `ERR-INV-001` and captured+unreserved reconciliation still P14f | Blueprint still forbids SUB table writes |
+| Later fulfill Commit fail | Orders rolls back; **no** auto-refund (docs/35); **not** a P14f renewal-policy event | Unchanged if attempt already `SUCCEEDED` |
 
-P14f depends on Orders P13e (**P13e complete**). Do not have Subscriptions call Inventory directly as a workaround.
+**P14f complete** on `feature/subscriptions-inventory-policy`. Subscriptions never call Inventory services or write inventory tables — only `OrdersService.transitionOrder`. Worker rediscovers `ACTIVE` + unadvanced `nextRenewalAt` without marking `PAST_DUE`.
 
 ---
 
@@ -726,7 +728,7 @@ Document only. **No UI in this repository.**
 | Products (P8) | Variants, pricing, Rx flags, `limitSubscription`, subscription product types |
 | Users (P9) | Patient identity FK + snapshot source |
 | Orders (P13) | Renewal/initial orders; `orderType` / `subscriptionId` |
-| Inventory (P12 + P13e) | Reserve/Release/Commit via Orders — **P13e complete**; P14f owns attempt/stock-out policy |
+| Inventory (P12 + P13e) | Reserve/Release/Commit via Orders — **P13e complete**; **P14f complete** (attempt/`ERR-INV-001` policy) |
 | Payments ([15](15-payment-flow.md) + P13f) | Money execution — P14e |
 | Clinical / QST | Later; refs and events — P14g |
 | RBAC / Class D patterns | Permission enforcement |
@@ -738,7 +740,7 @@ Document only. **No UI in this repository.**
 
 ## 20. Testing strategy
 
-P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. **P13e** wires Inventory through Orders; **P14f** remains for attempt FAILED/SKIPPED / captured+unreserved policy.
+P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. **P13e** wires Inventory through Orders; **P14f** adds `ERR-INV-001` attempt FAILED policy + captured+unreserved recovery.
 
 | Area | Cases |
 | --- | --- |
@@ -750,7 +752,7 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | Idempotent retry | Failed payment retry does not new-period — **P14e** continues same attempt/order |
 | Payment failure | Authorize fail → `PAST_DUE` + notify hook — **P14e** |
 | Clinical decline | Void/refund; subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14e** |
-| Inventory failure | Not in P14b (no Inventory writes) |
+| Inventory failure | `ERR-INV-001` → attempt `FAILED`; hold capture; retry Reserve; no second Order/payment; period once — **P14f** |
 | Cancellation | Stops future renewals; not Class D — **P14b**; open orders follow order rules later |
 | Manual renewal | Explicit path; same idempotency key — **P14b primitive** |
 | Snapshots | Product/User live edits do not rewrite subscription history — **P14b** |
@@ -767,9 +769,9 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 - CRM has no create/Class D surfaces — **P14c complete**
 - Guardian create, plans, Class D, correction, override — **P14d complete**
 - No Renewals module, nav, or DB domain — held
-- Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; **P13e Inventory via Orders**; P14f attempt policy pending
+- Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; **P13e Inventory via Orders**; **P14f attempt policy complete**
 - Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d; retry allows 003|008
-- Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory later
+- Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory policy P14f
 - Docs remain aligned with this blueprint
 
 ---
@@ -785,7 +787,7 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | **Complete** on `feature/subscriptions-foundation`. Current shell patterns |
 | **P14d** | Guardian APIs + UI + plans + Class D | **Complete** on `feature/subscriptions-foundation`. Current shell; not P10 redesign |
 | **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance on capture only; Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. |
-| **P14f** | Inventory through Orders (attempt / SKIPPED policy) | Pending. **P13e complete** (Order→Inventory wiring). P14f owns `ERR-INV-001` attempt FAILED/SKIPPED and non-Rx captured+unreserved reconciliation. P13e Rx retry guard: PROCESSING+PAYMENT_PENDING+AUTHORIZED re-attempts clinical transition (does not capture). |
+| **P14f** | Inventory-through-Orders attempt policy | **Complete** on `feature/subscriptions-inventory-policy`. `ERR-INV-001` → attempt `FAILED` (not auto-`SKIPPED`); hold captured money; resume Reserve only; period advances only after CAPTURED + Reserve-committed Order; lifecycle unchanged (OD-SUB-04). Does **not** own clinical authoring, Store/Portal, Stripe, P12g expiry, or notifications dispatcher. |
 | **P14g** | Clinical integration | Pending. Refs/events; no clinical authoring |
 | **P14h** | RBAC seed, tests, documentation freeze | Pending |
 
@@ -819,5 +821,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.4 | 2026-08-24 | Platform Engineering | P14d Guardian: `/v1/admin/subscriptions` (API-225–240) + `/v1/admin/subscription-plans` (API-084–087) + `/guardian/subscriptions` UI; additive activate/renewal POST and plan unpublish/archive/restore; CRM still has no create/Class D |
 | 1.5 | 2026-08-24 | Platform Engineering | P14e: Payments Nest module (simulated gateway, DB-028–031, Order.idempotencyKey); renewal processor (attempt→Order→authorize→capture→advance); Internal worker + webhook; CRM/Guardian renew runs payment path; P13f recorded partial |
 | 1.6 | 2026-08-25 | Platform Engineering | P13e Inventory via Orders complete; P14f reframed to attempt/SKIPPED + captured+unreserved policy; Rx renewal retry guard noted |
+| 1.7 | 2026-08-25 | Platform Engineering | P14f complete: `ERR-INV-001` → retryable attempt `FAILED`; hold capture; payment-aware resume; period only after CAPTURED + Reserve; no auto-SKIPPED / no PAST_DUE / no refund |
 
 *End of 36 — Subscriptions Module.*

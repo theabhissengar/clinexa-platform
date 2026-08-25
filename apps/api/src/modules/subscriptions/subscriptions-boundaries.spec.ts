@@ -19,14 +19,35 @@ describe('Subscriptions domain boundaries', () => {
       'prisma.payment.',
       'tx.inventory',
       'prisma.inventory',
+      'tx.inventoryBalance',
+      'prisma.inventoryBalance',
       'tx.stockMovement',
       'prisma.stockMovement',
+      'tx.stockReservation',
+      'prisma.stockReservation',
       'tx.prescription',
       'prisma.prescription',
       'tx.questionnaire',
       'prisma.questionnaire',
       'tx.consultation',
       'prisma.consultation',
+    ];
+    for (const file of sources) {
+      for (const token of forbidden) {
+        expect(file.text.includes(token)).toBe(false);
+      }
+    }
+  });
+
+  it('does not import Inventory services or Inventory HTTP clients', () => {
+    const forbidden = [
+      'InventoryReservationService',
+      'InventoryLedgerService',
+      'InventoryRestockService',
+      'InventoryModule',
+      '../inventory/',
+      "from '../inventory",
+      "from '../../modules/inventory",
     ];
     for (const file of sources) {
       for (const token of forbidden) {

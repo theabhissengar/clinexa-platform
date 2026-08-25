@@ -538,8 +538,8 @@ Subscription payment behavior derives from `OR-10`, `FR-SUB-001`–`005`, `FR-PA
 2. Orders creates or reuses a `SUBSCRIPTION_RENEWAL` Order from **subscription snapshots** (`idempotencyKey = renewal:{subId}:{billingPeriodKey}`).
 3. Payments **authorizes** against the saved method (opaque refs only on Order/Subscription).
 4. **Rx:** order enters clinical review; capture waits for clinical approval. **Non-Rx:** capture proceeds after authorize.
-5. On **capture success**, Subscriptions advances the period (`cycleNumber` / period fields). Authorize alone does **not** consume the period.
-6. Authorize failure → attempt `FAILED` + subscription `PAST_DUE` (grace/retry). Clinical decline → void/refund + `DECLINED_HOLD` (not PAST_DUE, not auto-cancel).
+5. On **capture success and Reserve-committed Order** (P14f), Subscriptions advances the period (`cycleNumber` / period fields). Authorize alone does **not** consume the period. Capture while Order remains `PAYMENT_PENDING` (Reserve failed) does **not** advance the period — payment stays captured; retry Reserve on the same Order/payment (no second charge, no auto refund/void).
+6. Authorize failure → attempt `FAILED` + subscription `PAST_DUE` (grace/retry). Clinical decline → void/refund + `DECLINED_HOLD` (not PAST_DUE, not auto-cancel). Inventory-only `ERR-INV-001` → attempt `FAILED` + lifecycle unchanged (not PAST_DUE).
 
 ```mermaid
 flowchart TD
@@ -968,6 +968,7 @@ Component-level ownership for implementation and operations handoff. Complements
 | 1.0 | 2026-07-24 | Principal Payments / Enterprise Solution / Healthcare SaaS / Backend Architect (planning) | Pending | Architectural appendices: §9.6 Payment Responsibility Matrix, §9.7 Payment Event Matrix, §9.8 Authorization vs Capture Matrix, §9.9 Payment Reconciliation Flow, §9.10 Payment Ownership Matrix; status set to Approved — Implementation Ready | Approved — Implementation Ready |
 | 1.1 | 2026-08-24 | Platform Engineering | Pending | `PAY-023`/`PAY-070` aligned to [36](36-subscriptions-module.md): order opened with attempt; Subscriptions does not execute payments; no `renewing` lifecycle status | Draft for review |
 | 1.2 | 2026-08-24 | Platform Engineering | Pending | P14e: redraw §5.10 — attempt → Order → authorize → clinical → capture → period advance on capture only; Nest PaymentsModule simulated gateway | Draft for review |
+| 1.3 | 2026-08-25 | Platform Engineering | Pending | P14f: period advance requires CAPTURED + Reserve-committed Order; hold capture on `ERR-INV-001`; no auto refund | Draft for review |
 
 ---
 

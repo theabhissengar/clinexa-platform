@@ -77,7 +77,7 @@ export class OrderLifecycleService {
   }
 
   /**
-   * Inventory hook intent for a completed transition (P13e will execute).
+   * Inventory hook intent for a completed transition (executed in-txn by OrderInventoryOrchestrator — P13e).
    * Reserve-at-auth policy (docs/35 §10).
    */
   inventoryHookForTransition(

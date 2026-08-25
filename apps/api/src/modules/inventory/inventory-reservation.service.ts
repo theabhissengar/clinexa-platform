@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  Prisma,
   ProductType,
   ReservationStatus,
   StockMovementType,
@@ -16,6 +17,15 @@ import { InventoryLedgerService } from './inventory-ledger.service';
 import { InventoryPolicyService } from './warehouse.service';
 import { WarehouseService } from './warehouse.service';
 
+type Tx = Prisma.TransactionClient;
+type DbClient = Tx | PrismaService;
+
+export type ReserveForOrderLine = {
+  productVariantId: string;
+  quantity: number;
+  warehouseId?: string | null;
+};
+
 @Injectable()
 export class InventoryReservationService {
   constructor(
@@ -25,12 +35,15 @@ export class InventoryReservationService {
     private readonly policies: InventoryPolicyService,
   ) {}
 
-  async reserve(dto: ReserveStockDto, actorUserId?: string) {
-    const policy = await this.policies.getOrCreateDefault();
-    const expiresAt = dto.expiresAt
-      ? new Date(dto.expiresAt)
-      : new Date(Date.now() + policy.reservationTimeoutMinutes * 60 * 1000);
-
+  /**
+   * HTTP / explicit Reserve (API-198). Rejects untracked lines.
+   * When `tx` is provided, joins the caller's transaction (no nested $transaction).
+   */
+  async reserve(
+    dto: ReserveStockDto,
+    actorUserId?: string,
+    tx?: Tx,
+  ) {
     for (const line of dto.lines) {
       const variant = await this.prisma.productVariant.findFirst({
         where: { id: line.productVariantId, deletedAt: null },
@@ -53,55 +66,94 @@ export class InventoryReservationService {
       }
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.stockReservation.create({
-        data: {
+    const run = async (client: DbClient) =>
+      this.reserveTrackedLines(
+        {
           orderId: dto.orderId ?? null,
-          status: ReservationStatus.PENDING,
-          expiresAt,
+          lines: dto.lines,
+          expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+          actorUserId,
         },
-      });
+        client,
+      );
 
-      for (const line of dto.lines) {
-        const warehouseId = await this.warehouses.resolveWarehouseId(
-          line.warehouseId,
-        );
-        await tx.stockReservationLine.create({
-          data: {
-            reservationId: reservation.id,
-            warehouseId,
-            productVariantId: line.productVariantId,
-            quantity: line.quantity,
-          },
+    if (tx) {
+      return run(tx);
+    }
+    return this.prisma.$transaction((inner) => run(inner));
+  }
+
+  /**
+   * Orders orchestrator path: skip digital / non-fulfillable lines (no-op if none remain).
+   * Idempotent on existing reservation for `orderId`.
+   */
+  async reserveForOrder(
+    orderId: string,
+    lines: ReserveForOrderLine[],
+    actorUserId: string | undefined,
+    tx: Tx,
+  ) {
+    const tracked: ReserveForOrderLine[] = [];
+    for (const line of lines) {
+      const variant = await this.prisma.productVariant.findFirst({
+        where: { id: line.productVariantId, deletedAt: null },
+        include: { product: true },
+      });
+      if (!variant) {
+        throw new BadRequestException({
+          code: ErrorCodes.RES_NOT_FOUND,
+          message: `Variant not found: ${line.productVariantId}`,
         });
-        await this.ledger.appendAndProject(
-          {
-            warehouseId,
-            productVariantId: line.productVariantId,
-            movementType: StockMovementType.RESERVE,
-            quantity: line.quantity,
-            orderId: dto.orderId,
-            reservationId: reservation.id,
-            actorUserId,
-            reason: 'Reserve',
-          },
-          tx,
-        );
       }
+      if (
+        !variant.isFulfillable ||
+        variant.product.productType === ProductType.DIGITAL
+      ) {
+        continue;
+      }
+      tracked.push(line);
+    }
 
-      return tx.stockReservation.findUniqueOrThrow({
-        where: { id: reservation.id },
-        include: { lines: true },
-      });
+    if (tracked.length === 0) {
+      return null;
+    }
+
+    const existing = await tx.stockReservation.findUnique({
+      where: { orderId },
+      include: { lines: true },
     });
+    if (existing) {
+      if (existing.status === ReservationStatus.PENDING) {
+        return existing;
+      }
+      // Already terminal — do not create another (unique orderId).
+      return existing;
+    }
+
+    return this.reserveTrackedLines(
+      {
+        orderId,
+        lines: tracked,
+        actorUserId,
+      },
+      tx,
+    );
   }
 
-  async release(id: string, actorUserId?: string) {
-    return this.transition(id, ReservationStatus.RELEASED, actorUserId);
+  async release(id: string, actorUserId?: string, tx?: Tx) {
+    return this.transition(id, ReservationStatus.RELEASED, actorUserId, tx);
   }
 
-  async commit(id: string, actorUserId?: string) {
-    return this.transition(id, ReservationStatus.COMMITTED, actorUserId);
+  async commit(id: string, actorUserId?: string, tx?: Tx) {
+    return this.transition(id, ReservationStatus.COMMITTED, actorUserId, tx);
+  }
+
+  async findByOrderId(orderId: string, tx?: Tx) {
+    const client: DbClient = tx ?? this.prisma;
+    return client.stockReservation.findUnique({
+      where: { orderId },
+      include: { lines: true },
+    });
   }
 
   async expirePending(now = new Date()) {
@@ -126,13 +178,76 @@ export class InventoryReservationService {
     return { expired: results.length, reservations: results };
   }
 
+  private async reserveTrackedLines(
+    input: {
+      orderId: string | null;
+      lines: ReserveForOrderLine[];
+      expiresAt?: Date;
+      actorUserId?: string;
+    },
+    client: DbClient,
+  ) {
+    const policy = await this.policies.getOrCreateDefault();
+    const expiresAt =
+      input.expiresAt ??
+      new Date(Date.now() + policy.reservationTimeoutMinutes * 60 * 1000);
+
+    const reservation = await client.stockReservation.create({
+      data: {
+        orderId: input.orderId,
+        status: ReservationStatus.PENDING,
+        expiresAt,
+      },
+    });
+
+    for (const line of input.lines) {
+      const warehouseId = await this.warehouses.resolveWarehouseId(
+        line.warehouseId,
+      );
+      await client.stockReservationLine.create({
+        data: {
+          reservationId: reservation.id,
+          warehouseId,
+          productVariantId: line.productVariantId,
+          quantity: line.quantity,
+        },
+      });
+      await this.ledger.appendAndProject(
+        {
+          warehouseId,
+          productVariantId: line.productVariantId,
+          movementType: StockMovementType.RESERVE,
+          quantity: line.quantity,
+          orderId: input.orderId,
+          reservationId: reservation.id,
+          actorUserId: input.actorUserId,
+          reason: 'Reserve',
+        },
+        client,
+      );
+    }
+
+    return client.stockReservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      include: { lines: true },
+    });
+  }
+
   private async transition(
     id: string,
     to: ReservationStatus,
     actorUserId?: string,
+    tx?: Tx,
   ) {
-    return this.prisma.$transaction(async (tx) => {
-      const reservation = await tx.stockReservation.findUnique({
+    const run = async (client: DbClient) => {
+      // Lock reservation header before status math.
+      await client.$queryRaw`
+        SELECT id FROM stock_reservations
+        WHERE id = ${id}::uuid
+        FOR UPDATE
+      `;
+
+      const reservation = await client.stockReservation.findUnique({
         where: { id },
         include: { lines: true },
       });
@@ -142,6 +257,20 @@ export class InventoryReservationService {
           message: 'Reservation not found',
         });
       }
+
+      // Idempotent: already at target terminal.
+      if (reservation.status === to) {
+        return reservation;
+      }
+
+      // Release treats EXPIRED as already released.
+      if (
+        to === ReservationStatus.RELEASED &&
+        reservation.status === ReservationStatus.EXPIRED
+      ) {
+        return reservation;
+      }
+
       if (reservation.status !== ReservationStatus.PENDING) {
         throw new BadRequestException({
           code: ErrorCodes.INV_RESERVATION_INVALID,
@@ -166,15 +295,20 @@ export class InventoryReservationService {
             actorUserId,
             reason: to,
           },
-          tx,
+          client,
         );
       }
 
-      return tx.stockReservation.update({
+      return client.stockReservation.update({
         where: { id },
         data: { status: to },
         include: { lines: true },
       });
-    });
+    };
+
+    if (tx) {
+      return run(tx);
+    }
+    return this.prisma.$transaction((inner) => run(inner));
   }
 }

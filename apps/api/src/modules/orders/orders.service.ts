@@ -18,6 +18,7 @@ import {
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { OrderEditPolicyService } from './order-edit-policy.service';
+import { OrderInventoryOrchestrator } from './order-inventory.orchestrator';
 import { OrderLifecycleService } from './order-lifecycle.service';
 import {
   NOOP_ORDER_SIDE_EFFECTS,
@@ -49,11 +50,15 @@ export class OrdersService {
     private readonly totals: OrderTotalsService,
     private readonly snapshots: OrderSnapshotService,
     private readonly editPolicy: OrderEditPolicyService,
+    private readonly inventory: OrderInventoryOrchestrator,
   ) {}
 
-  /** Wire P13e/P13f integrations without coupling this module to them. */
+  /**
+   * Wire P13f payment hooks (and optional observability onInventory).
+   * Inventory mutations run in-txn via OrderInventoryOrchestrator (P13e).
+   */
   setSideEffectHooks(hooks: OrderSideEffectHooks): void {
-    this.sideEffects = hooks;
+    this.sideEffects = { ...this.sideEffects, ...hooks };
   }
 
   async listOrders(params: {
@@ -849,6 +854,19 @@ export class OrdersService {
           },
         });
 
+        const invIntent = this.lifecycle.inventoryHookForTransition(
+          current,
+          input.toStatus,
+        );
+        if (invIntent) {
+          await this.inventory.applyTransitionIntent(
+            invIntent,
+            order.id,
+            input.actorUserId ?? undefined,
+            tx,
+          );
+        }
+
         const next = await tx.order.findUniqueOrThrow({
           where: { id: order.id },
           include: { statusHistory: { orderBy: { createdAt: 'asc' } } },
@@ -868,6 +886,7 @@ export class OrdersService {
         toStatus,
       );
       const pay = this.lifecycle.paymentHookForTransition(fromStatus, toStatus);
+      // Optional observability hook — mutations already ran in-txn (P13e).
       if (inv && this.sideEffects.onInventory) {
         await this.sideEffects.onInventory(inv, result.id);
       }
@@ -1157,6 +1176,14 @@ export class OrdersService {
           },
         },
       });
+
+      await this.inventory.applyOverrideInventory(
+        fromStatus,
+        input.toStatus,
+        order.id,
+        input.actorUserId ?? undefined,
+        tx,
+      );
 
       return updated;
     });

@@ -5,7 +5,7 @@
 | Document | Orders Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | In delivery — P13a–P13d complete (CRM + Guardian); P13e+ not started |
+| Status | In delivery — P13a–P13e complete (CRM + Guardian + Inventory orchestration); P13f partial via P14e; P13g not started |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [36](36-subscriptions-module.md) |
@@ -445,9 +445,9 @@ Server-side only: subtotal, discounts, shipping, tax, total, adjustments, refund
 | `OrderTotalsService` | Deterministic integer-cents line/order totals |
 | `OrderSnapshotService` | Product/variant + customer + address snapshots |
 | `OrderEditPolicyService` | CRM vs Guardian field allowlists by status |
-| `OrderSideEffectHooks` | Injectable hooks: **P13f partial** — `onPayment` wired to Nest `PaymentsModule` (capture/void); **P13e** `onInventory` remains NOOP |
+| `OrderSideEffectHooks` | Injectable hooks: **P13f partial** — `onPayment` wired to Nest `PaymentsModule` (capture/void); **P13e** inventory mutations run **in-txn** via `OrderInventoryOrchestrator` (Reserve/Release/Commit/Restock). Optional `onInventory` is observability-only. |
 
-**P13e still deferred:** Inventory Reserve/Release/Commit/Restock execution. **P13f partial (via P14e):** snapshot renewal Order create + payment capture/void reactions; no Store checkout intents (`API-062`). Platform Audit writer (`GRD-053`) still deferred — Class D currently records Order History/Activity with `platformAuditDeferred: true`.
+**P13e delivered:** Inventory Reserve/Release/Commit/Restock execution inside `OrdersService.transitionOrder` / reservation-state-gated `overrideOrder` via `OrderInventoryOrchestrator` → Inventory Nest services (same Prisma transaction; `FOR UPDATE` on balances). Digital/non-tracked lines skipped. Unique `StockReservation.orderId`. **P13f partial (via P14e):** snapshot renewal Order create + payment capture/void reactions; Store checkout intents (`API-062`) deferred. Platform Audit writer (`GRD-053`) still deferred — Class D currently records Order History/Activity with `platformAuditDeferred: true`.
 
 **P13c delivered:** `CrmOrdersController` at `/v1/crm/orders` (`API-072`–`076d`) — list/detail/items/notes/history/activity, operational PATCH, cancel, fulfill. Thin controllers call `OrdersService`. CRM UI: `/crm/orders`, `/crm/orders/:id`, `/crm/orders/:id/edit`. **No** CRM create, **no** Class D endpoints.
 
@@ -580,8 +580,8 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | **P13b** | Shared domain: snapshots, totals, lifecycle, edit allowlists, notes/activity/adjustments/Class D primitives | **Complete** |
 | **P13c** | CRM operational APIs + UI (`/crm/orders…`; no create; no Class D) | **Complete** |
 | **P13d** | Guardian admin APIs + UI + Class D (`/admin/orders…`, `/guardian/orders…`) | **Complete** |
-| **P13e** | Inventory orchestration (closes P12f) | Not started |
-| **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | **Partial** (via P14e): `createOrderFromSnapshots` + `Order.idempotencyKey`; `onPayment` capture/void; inventory still NOOP |
+| **P13e** | Inventory orchestration (closes P12f) | **Complete** on `feature/inventory-orchestration` |
+| **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | **Partial** (via P14e): `createOrderFromSnapshots` + `Order.idempotencyKey`; `onPayment` capture/void; Store intents deferred |
 | **P13g** | RBAC seed, verification, documentation freeze | Not started |
 
 Order rationale: schema → shared logic → CRM ops value → Guardian/Class D → inventory wiring → payment hooks → verification. Do not put CRM create anywhere. Do not put Class D before shared domain.
@@ -610,3 +610,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.2 | 2026-08-20 | Platform Engineering | P13b: Nest `OrdersModule` domain services (lifecycle, totals, snapshots, edit policy, create/transition/notes/adjustments/Class D primitives); no HTTP controllers |
 | 1.3 | 2026-08-24 | Platform Engineering | §15 Subscription relationship (not forward-compat-only); pointer to [36](36-subscriptions-module.md) |
 | 1.4 | 2026-08-24 | Platform Engineering | P14e / P13f partial: `createOrderFromSnapshots` + `idempotencyKey`; payment capture/void hooks; inventory still NOOP |
+| 1.5 | 2026-08-25 | Platform Engineering | P13e: in-txn `OrderInventoryOrchestrator` Reserve/Release/Commit/Restock; unique `StockReservation.orderId`; Rx renewal retry guard; seed real reservations |

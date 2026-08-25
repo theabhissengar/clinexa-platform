@@ -47,7 +47,8 @@ export type ProcessRenewalResult = {
     | 'order_create_failed'
     | 'skipped'
     | 'method_missing'
-    | 'in_flight';
+    | 'in_flight'
+    | 'inventory_insufficient';
   attemptStatus: SubscriptionRenewalAttemptStatus;
 };
 
@@ -58,6 +59,22 @@ export type DueBatchResult = {
   failed: number;
   skipped: number;
 };
+
+function extractErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof BadRequestException)) {
+    return undefined;
+  }
+  const response = error.getResponse();
+  if (typeof response === 'object' && response !== null && 'code' in response) {
+    const code = (response as { code?: unknown }).code;
+    return typeof code === 'string' ? code : undefined;
+  }
+  return undefined;
+}
+
+function isInventoryInsufficient(error: unknown): boolean {
+  return extractErrorCode(error) === ErrorCodes.INV_INSUFFICIENT;
+}
 
 @Injectable()
 export class SubscriptionsRenewalProcessor {
@@ -101,93 +118,25 @@ export class SubscriptionsRenewalProcessor {
       };
     }
 
-    // Already authorized awaiting clinical — do not re-authorize or advance.
+    // Resume in-flight / FAILED attempts by Order + Payment state (P14f).
+    // Do not blindly re-authorize; classify before falling through to money path.
     if (
       opened.attempt.orderId &&
-      opened.attempt.status === SubscriptionRenewalAttemptStatus.PROCESSING
+      (opened.attempt.status === SubscriptionRenewalAttemptStatus.PROCESSING ||
+        opened.attempt.status === SubscriptionRenewalAttemptStatus.FAILED)
     ) {
-      const order = await this.prisma.order.findUnique({
-        where: { id: opened.attempt.orderId },
+      const resumed = await this.resumeExistingAttempt({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey,
+        attemptId,
+        orderId: opened.attempt.orderId,
+        paymentId: opened.attempt.paymentId,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        forceOutcome: input.forceOutcome,
       });
-      if (order?.status === OrderStatus.AWAITING_CLINICAL_REVIEW) {
-        return {
-          subscriptionId: input.subscriptionId,
-          billingPeriodKey,
-          attemptId,
-          orderId: order.id,
-          paymentId: opened.attempt.paymentId,
-          outcome: 'authorized_awaiting_clinical',
-          attemptStatus: opened.attempt.status,
-        };
-      }
-      // Capture retry path for non-Rx stuck after auth.
-      // Rx stock-out retry must re-attempt clinical transition — never capture without clinical (P13e).
-      if (
-        order?.status === OrderStatus.PAYMENT_PENDING ||
-        order?.status === OrderStatus.AWAITING_FULFILLMENT
-      ) {
-        const payment = await this.payments.findLatestForOrder(order.id);
-        if (
-          order.isRxOrder &&
-          order.status === OrderStatus.PAYMENT_PENDING &&
-          payment &&
-          payment.lifecycleState === PaymentLifecycleState.AUTHORIZED
-        ) {
-          await this.orders.transitionOrder({
-            orderId: order.id,
-            toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
-            actorUserId: input.actorUserId,
-            source: input.source,
-            reason: 'renewal_authorized_retry',
-            expectedStatus: OrderStatus.PAYMENT_PENDING,
-          });
-          return {
-            subscriptionId: input.subscriptionId,
-            billingPeriodKey,
-            attemptId,
-            orderId: order.id,
-            paymentId: payment.id,
-            outcome: 'authorized_awaiting_clinical',
-            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
-          };
-        }
-        if (
-          payment &&
-          payment.lifecycleState === PaymentLifecycleState.AUTHORIZED
-        ) {
-          return this.continueCapture({
-            subscriptionId: input.subscriptionId,
-            billingPeriodKey,
-            attemptId,
-            orderId: order.id,
-            paymentId: payment.id,
-            isRx: order.isRxOrder,
-            actorUserId: input.actorUserId,
-            source: input.source,
-            forceOutcome: input.forceOutcome,
-          });
-        }
-        if (
-          payment &&
-          payment.lifecycleState === PaymentLifecycleState.CAPTURED
-        ) {
-          await this.completeRenewalOnCapture({
-            subscriptionId: input.subscriptionId,
-            billingPeriodKey,
-            paymentId: payment.id,
-            actorUserId: input.actorUserId,
-            source: input.source,
-          });
-          return {
-            subscriptionId: input.subscriptionId,
-            billingPeriodKey,
-            attemptId,
-            orderId: order.id,
-            paymentId: payment.id,
-            outcome: 'succeeded',
-            attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
-          };
-        }
+      if (resumed) {
+        return resumed;
       }
     }
 
@@ -225,11 +174,7 @@ export class SubscriptionsRenewalProcessor {
           source: input.source,
         });
       } catch (error) {
-        const code =
-          error instanceof BadRequestException
-            ? ((error.getResponse() as { code?: string })?.code ??
-              ErrorCodes.VAL_MISSING_FIELD)
-            : ErrorCodes.SYS_UNEXPECTED;
+        const code = extractErrorCode(error) ?? ErrorCodes.SYS_UNEXPECTED;
         const isAddress = code === ErrorCodes.VAL_MISSING_FIELD;
         await this.renewal.markAttemptOutcome({
           subscriptionId: input.subscriptionId,
@@ -341,26 +286,19 @@ export class SubscriptionsRenewalProcessor {
     });
 
     if (order.isRxOrder) {
-      await this.orders.transitionOrder({
-        orderId,
-        toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
-        actorUserId: input.actorUserId,
-        source: input.source,
-        reason: 'renewal_authorized',
-        expectedStatus: OrderStatus.PAYMENT_PENDING,
-      });
-      return {
+      return this.transitionRxToClinical({
         subscriptionId: input.subscriptionId,
         billingPeriodKey,
         attemptId,
         orderId,
         paymentId: auth.paymentId,
-        outcome: 'authorized_awaiting_clinical',
-        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
-      };
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: 'renewal_authorized',
+      });
     }
 
-    // Non-Rx: capture then transition to AWAITING_FULFILLMENT.
+    // Non-Rx: capture then transition to AWAITING_FULFILLMENT (ordering unchanged).
     return this.continueCapture({
       subscriptionId: input.subscriptionId,
       billingPeriodKey,
@@ -375,10 +313,16 @@ export class SubscriptionsRenewalProcessor {
     });
   }
 
+  /**
+   * Period advance only when payment is CAPTURED and Order has completed the
+   * P13e Reserve-at-auth transition (AWAITING_FULFILLMENT or FULFILLED).
+   * CAPTURED + PAYMENT_PENDING must not advance (P14f).
+   */
   async completeRenewalOnCapture(input: {
     subscriptionId: string;
     billingPeriodKey: string;
     paymentId: string;
+    orderId?: string | null;
     actorUserId?: string | null;
     source: string;
   }): Promise<void> {
@@ -399,6 +343,28 @@ export class SubscriptionsRenewalProcessor {
       },
     });
     if (attempt?.status === SubscriptionRenewalAttemptStatus.SUCCEEDED) {
+      return;
+    }
+
+    const orderId = attempt?.orderId ?? input.orderId ?? null;
+    if (!orderId) {
+      return;
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+    if (
+      !order ||
+      (order.status !== OrderStatus.AWAITING_FULFILLMENT &&
+        order.status !== OrderStatus.FULFILLED)
+    ) {
+      // Reserve transition has not committed (e.g. still PAYMENT_PENDING).
+      return;
+    }
+
+    const payment = await this.payments.findLatestForOrder(order.id);
+    if (!payment || payment.lifecycleState !== PaymentLifecycleState.CAPTURED) {
       return;
     }
 
@@ -560,6 +526,250 @@ export class SubscriptionsRenewalProcessor {
     return result;
   }
 
+  /**
+   * Payment-aware resume for PROCESSING/FAILED attempts with an existing Order.
+   * Returns null when the caller should fall through to authorize (e.g. auth failure retry).
+   */
+  private async resumeExistingAttempt(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    paymentId: string | null;
+    actorUserId?: string | null;
+    source: string;
+    forceOutcome?: 'decline' | 'timeout' | null;
+  }): Promise<ProcessRenewalResult | null> {
+    const order = await this.prisma.order.findUnique({
+      where: { id: input.orderId },
+    });
+    if (!order) {
+      return null;
+    }
+
+    if (order.status === OrderStatus.AWAITING_CLINICAL_REVIEW) {
+      return {
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: order.id,
+        paymentId: input.paymentId,
+        outcome: 'authorized_awaiting_clinical',
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      };
+    }
+
+    if (
+      order.status !== OrderStatus.PAYMENT_PENDING &&
+      order.status !== OrderStatus.AWAITING_FULFILLMENT
+    ) {
+      return null;
+    }
+
+    const payment = await this.payments.findLatestForOrder(order.id);
+
+    // Auth/payment FAILED → fall through to existing P14e authorize retry.
+    if (
+      payment &&
+      (payment.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED ||
+        payment.status === PaymentStatus.FAILED)
+    ) {
+      return null;
+    }
+
+    // A. Rx + AUTHORIZED + PAYMENT_PENDING → retry clinical Reserve transition only.
+    if (
+      order.isRxOrder &&
+      order.status === OrderStatus.PAYMENT_PENDING &&
+      payment &&
+      payment.lifecycleState === PaymentLifecycleState.AUTHORIZED
+    ) {
+      return this.transitionRxToClinical({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: order.id,
+        paymentId: payment.id,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: 'renewal_authorized_retry',
+      });
+    }
+
+    // B. Non-Rx + CAPTURED + PAYMENT_PENDING → retry fulfillment Reserve only (no capture).
+    if (
+      !order.isRxOrder &&
+      order.status === OrderStatus.PAYMENT_PENDING &&
+      payment &&
+      payment.lifecycleState === PaymentLifecycleState.CAPTURED
+    ) {
+      return this.retryCapturedUnreserved({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: order.id,
+        paymentId: payment.id,
+        actorUserId: input.actorUserId,
+        source: input.source,
+      });
+    }
+
+    // CAPTURED + AWAITING_FULFILLMENT → Reserve already done; complete once.
+    if (
+      payment &&
+      payment.lifecycleState === PaymentLifecycleState.CAPTURED &&
+      order.status === OrderStatus.AWAITING_FULFILLMENT
+    ) {
+      await this.completeRenewalOnCapture({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        paymentId: payment.id,
+        orderId: order.id,
+        actorUserId: input.actorUserId,
+        source: input.source,
+      });
+      return {
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: order.id,
+        paymentId: payment.id,
+        outcome: 'succeeded',
+        attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+      };
+    }
+
+    // Non-Rx AUTHORIZED + PAYMENT_PENDING → existing P14e continueCapture (stuck after auth).
+    if (
+      !order.isRxOrder &&
+      order.status === OrderStatus.PAYMENT_PENDING &&
+      payment &&
+      payment.lifecycleState === PaymentLifecycleState.AUTHORIZED
+    ) {
+      return this.continueCapture({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: order.id,
+        paymentId: payment.id,
+        isRx: false,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        forceOutcome: input.forceOutcome,
+        transitionFromPaymentPending: true,
+      });
+    }
+
+    return null;
+  }
+
+  private async transitionRxToClinical(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    paymentId: string;
+    actorUserId?: string | null;
+    source: string;
+    reason: string;
+  }): Promise<ProcessRenewalResult> {
+    try {
+      await this.orders.transitionOrder({
+        orderId: input.orderId,
+        toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: input.reason,
+        expectedStatus: OrderStatus.PAYMENT_PENDING,
+      });
+    } catch (error) {
+      if (isInventoryInsufficient(error)) {
+        return this.failInventoryInsufficient({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+      }
+      throw error;
+    }
+
+    await this.renewal.markAttemptOutcome({
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      status: SubscriptionRenewalAttemptStatus.PROCESSING,
+      paymentId: input.paymentId,
+      actorUserId: input.actorUserId,
+      source: input.source,
+    });
+
+    return {
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      outcome: 'authorized_awaiting_clinical',
+      attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+    };
+  }
+
+  private async retryCapturedUnreserved(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    paymentId: string;
+    actorUserId?: string | null;
+    source: string;
+  }): Promise<ProcessRenewalResult> {
+    try {
+      await this.orders.transitionOrder({
+        orderId: input.orderId,
+        toStatus: OrderStatus.AWAITING_FULFILLMENT,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: 'renewal_captured_inventory_retry',
+        expectedStatus: OrderStatus.PAYMENT_PENDING,
+      });
+    } catch (error) {
+      if (isInventoryInsufficient(error)) {
+        return this.failInventoryInsufficient({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+      }
+      throw error;
+    }
+
+    await this.completeRenewalOnCapture({
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      paymentId: input.paymentId,
+      orderId: input.orderId,
+      actorUserId: input.actorUserId,
+      source: input.source,
+    });
+
+    return {
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      outcome: 'succeeded',
+      attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+    };
+  }
+
   private async continueCapture(input: {
     subscriptionId: string;
     billingPeriodKey: string;
@@ -601,20 +811,36 @@ export class SubscriptionsRenewalProcessor {
     }
 
     if (input.transitionFromPaymentPending) {
-      await this.orders.transitionOrder({
-        orderId: input.orderId,
-        toStatus: OrderStatus.AWAITING_FULFILLMENT,
-        actorUserId: input.actorUserId,
-        source: input.source,
-        reason: 'renewal_captured',
-        expectedStatus: OrderStatus.PAYMENT_PENDING,
-      });
+      try {
+        await this.orders.transitionOrder({
+          orderId: input.orderId,
+          toStatus: OrderStatus.AWAITING_FULFILLMENT,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          reason: 'renewal_captured',
+          expectedStatus: OrderStatus.PAYMENT_PENDING,
+        });
+      } catch (error) {
+        if (isInventoryInsufficient(error)) {
+          return this.failInventoryInsufficient({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey: input.billingPeriodKey,
+            attemptId: input.attemptId,
+            orderId: input.orderId,
+            paymentId: input.paymentId,
+            actorUserId: input.actorUserId,
+            source: input.source,
+          });
+        }
+        throw error;
+      }
     }
 
     await this.completeRenewalOnCapture({
       subscriptionId: input.subscriptionId,
       billingPeriodKey: input.billingPeriodKey,
       paymentId: input.paymentId,
+      orderId: input.orderId,
       actorUserId: input.actorUserId,
       source: input.source,
     });
@@ -627,6 +853,36 @@ export class SubscriptionsRenewalProcessor {
       paymentId: input.paymentId,
       outcome: 'succeeded',
       attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+    };
+  }
+
+  private async failInventoryInsufficient(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    paymentId: string;
+    actorUserId?: string | null;
+    source: string;
+  }): Promise<ProcessRenewalResult> {
+    await this.renewal.markAttemptOutcome({
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+      paymentId: input.paymentId,
+      lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
+      actorUserId: input.actorUserId,
+      source: input.source,
+    });
+    // Inventory-only: do NOT PAST_DUE, do NOT void/refund (OD-SUB-04 / P14f).
+    return {
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      outcome: 'inventory_insufficient',
+      attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
     };
   }
 

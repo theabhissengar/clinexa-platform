@@ -100,7 +100,7 @@ Every phase record in §5 carries these fields.
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
 | **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13e complete; **P13f partial via P14e**; P13g not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
-| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (P14 blueprint + **P14a–e complete**; P14f–h pending) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
+| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (P14 blueprint + **P14a–f complete**; P14g–h pending) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -315,7 +315,7 @@ Every phase record in §5 carries these fields.
 | **Scope** | **P13a–c (complete on `dev`).** **P13d (complete):** Guardian `/v1/admin/orders` (API-204–212) + `/guardian/orders` UI. **P13e (complete):** in-txn Inventory Reserve/Release/Commit/Restock via `OrderInventoryOrchestrator`; unique `StockReservation.orderId`; Rx renewal retry guard; seed real reservations. **P13f (partial via P14e):** `createOrderFromSnapshots` + `Order.idempotencyKey`; payment hooks wire capture/void to Nest `PaymentsModule` (simulated); opaque payment refs only. **Not started:** full P13f Store/checkout intents; P13g verification |
 | **Architecture changes** | Shared domain; CRM thin + Guardian thin; override bypasses normal graph with required reason; Platform Audit (`GRD-053`) deferred (activity metadata marks `platformAuditDeferred`) |
 | **Documentation updates** | [35](35-orders-module.md), [34](34-inventory-module.md), [10](10-database-design.md), [36](36-subscriptions-module.md), this record |
-| **Notes** | CRM Create still locked. Corrections do not execute Payments refund HTTP. P13e closes P12f. Non-Rx capture-before-Reserve inconsistency with period advance remains P14e ordering — P14f owns attempt/SKIPPED policy for `ERR-INV-001`. P14e advances P13f only for renewal Order create + authorize/capture/void reactions. |
+| **Notes** | CRM Create still locked. Corrections do not execute Payments refund HTTP. P13e closes P12f. **P14f** reconciles non-Rx capture-before-Reserve: period advances only after CAPTURED + successful Reserve; `ERR-INV-001` → attempt `FAILED` (hold capture). P14e advances P13f only for renewal Order create + authorize/capture/void reactions. |
 | **Verification** | API typecheck/lint/Orders + Inventory orchestration tests; admin typecheck/lint/build |
 
 ### P14 — Subscriptions Platform Module
@@ -323,16 +323,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Subscriptions as the shared platform aggregate for recurring commitments: canonical lifecycle (separate from payment/renewal/clinical dimensions), in-module renewal orchestration, CRM operational surface, Guardian admin/plans/Class D — without a standalone Renewals module |
-| **Status** | In progress (P14 blueprint complete; **P14a–e complete**; P14f–h pending) |
+| **Status** | In progress (P14 blueprint complete; **P14a–f complete**; P14g–h pending) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/subscriptions-renewal-payments` (P14e); prior P14a–d on `feature/subscriptions-foundation` / `dev` |
+| **Branch** | `feature/subscriptions-inventory-policy` (P14f); prior P14e on `feature/subscriptions-renewal-payments`; P14a–d on `feature/subscriptions-foundation` / `dev` |
 | **PR** | — |
-| **Dependencies** | P5 shell; P8 Products; P9 Users; P13 Orders (`orderType` / `subscriptionId`); Inventory via Orders (P14f after P13e); Payments boundary (P14e); Class D patterns; blueprint [36](36-subscriptions-module.md) |
-| **Scope** | **P14a–d (complete):** schema, domain, CRM, Guardian. **P14e (complete):** Nest `PaymentsModule` (simulated gateway, DB-028–031, `Order.idempotencyKey`); `SubscriptionsRenewalProcessor` (attempt → Order → authorize → capture → period advance on capture only); Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; CRM/Guardian renew/retry run the payment path; cancel → `cancelRecurring`. **Not this pass:** Inventory-through-Orders (P14f), clinical authoring (P14g), Store/Portal, Stripe. **Later:** P14f → P14g → P14h freeze. **No Renewals phase.** |
+| **Dependencies** | P5 shell; P8 Products; P9 Users; P13 Orders (`orderType` / `subscriptionId`); Inventory via Orders (P13e + P14f); Payments boundary (P14e); Class D patterns; blueprint [36](36-subscriptions-module.md) |
+| **Scope** | **P14a–d (complete):** schema, domain, CRM, Guardian. **P14e (complete):** Nest `PaymentsModule`; renewal processor; Internal worker; webhook. **P14f (complete):** `ERR-INV-001` attempt `FAILED` policy; hold captured money; payment-aware resume of Reserve transition; period only after CAPTURED + Reserve-committed Order. **Not this pass:** clinical authoring (P14g), Store/Portal, Stripe. **Later:** P14g → P14h freeze. **No Renewals phase.** |
 | **Architecture changes** | Shared domain; CRM no Create/Class D; four-way status split; `SubscriptionsRenewalService` + processor inside SUB; Order owns the renewal transaction; Payments owns money tables; pause skips missed cycles |
 | **Documentation updates** | [36](36-subscriptions-module.md), [15](15-payment-flow.md), [10](10-database-design.md), [11](11-api-design.md), [35](35-orders-module.md), [27](27-module-registry.md), this record |
-| **Notes** | CRM Create locked No. Clinical decline → `DECLINED_HOLD` (not PAST_DUE / not auto-cancel). Period advances only after capture. **P13e** wires Inventory through Orders; **P14f** still owns attempt FAILED/SKIPPED on `ERR-INV-001` and non-Rx captured+unreserved reconciliation. Optional `RENEWAL_CRON_ENABLED` local cron (default false); production uses Internal HTTP job. |
-| **Verification** | API typecheck/lint/tests including Payments + renewal processor + CRM/Guardian Subscription specs; Orders snapshot/idempotency tests |
+| **Notes** | CRM Create locked No. Clinical decline → `DECLINED_HOLD` (not PAST_DUE / not auto-cancel). Period advances after capture **and** Reserve (P14f). Inventory-only failure does not mark `PAST_DUE` (OD-SUB-04). Optional `RENEWAL_CRON_ENABLED` local cron (default false); production uses Internal HTTP job. |
+| **Verification** | API typecheck/lint/tests including Payments + renewal processor + P14f inventory-failure matrix + CRM/Guardian Subscription specs; Orders snapshot/idempotency + Inventory orchestration tests |
 
 ### P10 — Internal Platform UX/UI Modernization
 
@@ -512,6 +512,7 @@ A phase is complete when all of the following hold.
 | 2.10 | 2026-08-24 | Platform Engineering | P14d Guardian Subscriptions: `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` + `/guardian/subscriptions` UI (create/Class D/plans); CRM still no create/Class D |
 | 2.11 | 2026-08-24 | Platform Engineering | P14e on `feature/subscriptions-renewal-payments`: Payments Nest module (simulated), renewal Order+authorize/capture, Internal worker + webhook; P13f recorded partial |
 | 2.12 | 2026-08-25 | Platform Engineering | P13e on `feature/inventory-orchestration`: Order→Inventory in-txn orchestration closes P12f; Rx renewal retry guard; P14f still pending for stock-out attempt policy |
+| 2.13 | 2026-08-25 | Platform Engineering | P14f on `feature/subscriptions-inventory-policy`: `ERR-INV-001` → attempt FAILED; hold capture; payment-aware Reserve retry; period only after CAPTURED + Reserve |
 
 ---
 

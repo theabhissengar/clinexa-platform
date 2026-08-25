@@ -44,19 +44,28 @@ describe('SubscriptionsRenewalProcessor', () => {
     auth?: Record<string, unknown>;
     capture?: Record<string, unknown>;
     addressError?: boolean;
+    transitionError?: Error;
+    dueIds?: string[];
   }) {
     const attempt = { ...attemptBase, ...overrides?.attempt };
     const order =
       overrides?.order === null
         ? null
-        : {
+        : ({
             id: 'ord-1',
             totalCents: 5000,
             currency: 'USD',
             isRxOrder: false,
             status: OrderStatus.PAYMENT_PENDING,
             ...(overrides?.order ?? {}),
-          };
+          } as {
+            id: string;
+            totalCents: number;
+            currency: string;
+            isRxOrder: boolean;
+            status: OrderStatus;
+            [key: string]: unknown;
+          });
 
     const prisma = {
       order: {
@@ -78,7 +87,9 @@ describe('SubscriptionsRenewalProcessor', () => {
         };
         return fn(tx);
       }),
-      $queryRaw: jest.fn(() => Promise.resolve([])),
+      $queryRaw: jest.fn(() =>
+        Promise.resolve((overrides?.dueIds ?? []).map((id) => ({ id }))),
+      ),
     };
 
     const renewal = {
@@ -119,29 +130,60 @@ describe('SubscriptionsRenewalProcessor', () => {
 
     const orders = {
       createOrderFromSnapshots: jest.fn(() => Promise.resolve({ id: 'ord-1' })),
-      transitionOrder: jest.fn(),
+      transitionOrder: jest.fn((args: { toStatus: OrderStatus }) => {
+        if (overrides?.transitionError) {
+          return Promise.reject(overrides.transitionError);
+        }
+        // Simulate P13e committed Reserve transition for completeRenewalOnCapture guard.
+        if (order) {
+          order.status = args.toStatus;
+        }
+        return Promise.resolve({ id: 'ord-1', status: args.toStatus });
+      }),
     };
 
+    let latestPayment: {
+      id: string;
+      status: PaymentStatus;
+      lifecycleState: PaymentLifecycleState;
+      paymentStatusSummary?: string;
+    } | null = null;
+
     const payments = {
-      authorizeForOrder: jest.fn(() =>
-        Promise.resolve({
+      authorizeForOrder: jest.fn(() => {
+        const result = {
           paymentId: 'pay-1',
           status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
           lifecycleState: PaymentLifecycleState.AUTHORIZED,
           paymentStatusSummary: 'authorized_or_captured',
           ...(overrides?.auth ?? {}),
-        }),
-      ),
-      capturePayment: jest.fn(() =>
-        Promise.resolve({
+        };
+        latestPayment = {
+          id: result.paymentId,
+          status: result.status as PaymentStatus,
+          lifecycleState: result.lifecycleState as PaymentLifecycleState,
+          paymentStatusSummary: result.paymentStatusSummary,
+        };
+        return Promise.resolve(result);
+      }),
+      capturePayment: jest.fn(() => {
+        const result = {
           paymentId: 'pay-1',
           status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
           lifecycleState: PaymentLifecycleState.CAPTURED,
           paymentStatusSummary: 'authorized_or_captured',
           ...(overrides?.capture ?? {}),
-        }),
-      ),
-      findLatestForOrder: jest.fn(),
+        };
+        latestPayment = {
+          id: result.paymentId,
+          status: result.status as PaymentStatus,
+          lifecycleState: result.lifecycleState as PaymentLifecycleState,
+          paymentStatusSummary: result.paymentStatusSummary,
+        };
+        return Promise.resolve(result);
+      }),
+      findLatestForOrder: jest.fn(() => Promise.resolve(latestPayment)),
+      voidOrRefundForOrder: jest.fn(),
     };
 
     const addresses = {
@@ -187,6 +229,8 @@ describe('SubscriptionsRenewalProcessor', () => {
       payments,
       addresses,
       subscriptions,
+      order,
+      attempt,
     };
   }
 
@@ -217,7 +261,7 @@ describe('SubscriptionsRenewalProcessor', () => {
   });
 
   it('non-Rx capture success advances the period once', async () => {
-    const { processor, schedule, subscriptions, orders } = build();
+    const { processor, schedule, subscriptions, orders, payments } = build();
 
     const result = await processor.processSubscription({
       subscriptionId: 'sub-1',
@@ -227,6 +271,8 @@ describe('SubscriptionsRenewalProcessor', () => {
     });
 
     expect(result.outcome).toBe('succeeded');
+    expect(payments.authorizeForOrder).toHaveBeenCalledTimes(1);
+    expect(payments.capturePayment).toHaveBeenCalledTimes(1);
     expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
     expect(subscriptions.notify).toHaveBeenCalledWith(
       'subscription.renewed',
@@ -322,7 +368,7 @@ describe('SubscriptionsRenewalProcessor', () => {
   });
 
   it('idempotent short-circuit when attempt already succeeded', async () => {
-    const { processor, payments, schedule } = build({
+    const { processor, payments, schedule, orders } = build({
       attempt: {
         status: SubscriptionRenewalAttemptStatus.SUCCEEDED,
         orderId: 'ord-1',
@@ -338,6 +384,8 @@ describe('SubscriptionsRenewalProcessor', () => {
 
     expect(result.outcome).toBe('succeeded');
     expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).not.toHaveBeenCalled();
+    expect(orders.transitionOrder).not.toHaveBeenCalled();
     expect(schedule.advancePeriod).not.toHaveBeenCalled();
   });
 
@@ -365,6 +413,7 @@ describe('SubscriptionsRenewalProcessor', () => {
     });
 
     expect(result.outcome).toBe('authorized_awaiting_clinical');
+    expect(payments.authorizeForOrder).not.toHaveBeenCalled();
     expect(payments.capturePayment).not.toHaveBeenCalled();
     expect(orders.transitionOrder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -375,34 +424,354 @@ describe('SubscriptionsRenewalProcessor', () => {
     );
   });
 
-  it('P13e characterization: non-Rx CAPTURED+PAYMENT_PENDING completes period without re-transition', async () => {
-    // Documents pre-existing P14e ordering: capture/period advance may commit
-    // before Reserve; SUCCEEDED short-circuit does not retry transitionOrder.
-    const { processor, payments, orders, schedule } = build({
-      attempt: {
-        status: SubscriptionRenewalAttemptStatus.PROCESSING,
-        orderId: 'ord-1',
+  describe('P14f inventory failure policy', () => {
+    it('non-Rx: Reserve ERR-INV-001 after capture fails attempt without period advance or refund', async () => {
+      const { processor, payments, schedule, subscriptions, renewal, orders } =
+        build({
+          transitionError: new BadRequestException({
+            code: ErrorCodes.INV_INSUFFICIENT,
+            message: 'Insufficient stock for this operation',
+          }),
+        });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'manual',
+        source: 'crm',
+      });
+
+      expect(result.outcome).toBe('inventory_insufficient');
+      expect(result.attemptStatus).toBe(
+        SubscriptionRenewalAttemptStatus.FAILED,
+      );
+      expect(payments.capturePayment).toHaveBeenCalledTimes(1);
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+      expect(payments.voidOrRefundForOrder).not.toHaveBeenCalled();
+      expect(renewal.markAttemptOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
+        }),
+      );
+      expect(orders.createOrderFromSnapshots).toHaveBeenCalledTimes(1);
+    });
+
+    it('non-Rx CAPTURED+PAYMENT_PENDING retry re-runs Reserve without authorize/capture', async () => {
+      const { processor, payments, orders, schedule, renewal } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: false,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('succeeded');
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+      expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+      expect(orders.transitionOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toStatus: OrderStatus.AWAITING_FULFILLMENT,
+          expectedStatus: OrderStatus.PAYMENT_PENDING,
+          reason: 'renewal_captured_inventory_retry',
+        }),
+      );
+      expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
+        }),
+      );
+    });
+
+    it('non-Rx CAPTURED+PAYMENT_PENDING: completeRenewalOnCapture does not advance until Reserve', async () => {
+      const { processor, schedule, prisma, payments } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: false,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      });
+
+      // Simulate onRenewalCaptureSucceeded firing while Order still PAYMENT_PENDING.
+      await processor.completeRenewalOnCapture({
+        subscriptionId: 'sub-1',
+        billingPeriodKey,
         paymentId: 'pay-1',
-      },
-      order: {
+        source: 'payment',
+      });
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+
+      // After Reserve succeeds, order is AWAITING_FULFILLMENT.
+      prisma.order.findUnique.mockResolvedValue({
+        id: 'ord-1',
         isRxOrder: false,
-        status: OrderStatus.PAYMENT_PENDING,
-      },
-    });
-    payments.findLatestForOrder.mockResolvedValue({
-      id: 'pay-1',
-      lifecycleState: PaymentLifecycleState.CAPTURED,
-    });
-
-    const result = await processor.processSubscription({
-      subscriptionId: 'sub-1',
-      mode: 'retry',
-      source: 'system',
+        status: OrderStatus.AWAITING_FULFILLMENT,
+      });
+      await processor.completeRenewalOnCapture({
+        subscriptionId: 'sub-1',
+        billingPeriodKey,
+        paymentId: 'pay-1',
+        source: 'payment',
+      });
+      expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
     });
 
-    expect(result.outcome).toBe('succeeded');
-    expect(orders.transitionOrder).not.toHaveBeenCalled();
-    expect(payments.capturePayment).not.toHaveBeenCalled();
-    expect(schedule.advancePeriod).toHaveBeenCalled();
+    it('non-Rx retry after inventory failure does not advance period twice', async () => {
+      const { processor, payments, schedule, renewal } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: false,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      });
+
+      await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+      expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
+
+      // Second call: already SUCCEEDED — no further period/payment side effects.
+      renewal.openRenewalAttempt.mockResolvedValue({
+        billingPeriodKey,
+        attempt: {
+          ...attemptBase,
+          status: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        subscription: subscriptionBase,
+        orderRequest: { lines: [] },
+      });
+
+      const second = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+      expect(second.outcome).toBe('succeeded');
+      expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+    });
+
+    it('Rx: Reserve ERR-INV-001 after authorize fails without capture or PAST_DUE', async () => {
+      const { processor, payments, schedule, subscriptions, renewal } = build({
+        order: { isRxOrder: true },
+        transitionError: new BadRequestException({
+          code: ErrorCodes.INV_INSUFFICIENT,
+          message: 'Oversell prevented by inventory policy',
+        }),
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('inventory_insufficient');
+      expect(payments.authorizeForOrder).toHaveBeenCalledTimes(1);
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+      expect(renewal.markAttemptOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
+        }),
+      );
+    });
+
+    it('Rx FAILED+AUTHORIZED+PAYMENT_PENDING retry re-transitions clinical without authorize/capture', async () => {
+      const { processor, payments, orders, schedule } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: true,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.AUTHORIZED,
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'crm',
+      });
+
+      expect(result.outcome).toBe('authorized_awaiting_clinical');
+      expect(result.attemptStatus).toBe(
+        SubscriptionRenewalAttemptStatus.PROCESSING,
+      );
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+      expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+      expect(orders.transitionOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
+          reason: 'renewal_authorized_retry',
+        }),
+      );
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+    });
+
+    it('unrelated Order transition errors are not converted to inventory FAILED', async () => {
+      const { processor, renewal } = build({
+        transitionError: new BadRequestException({
+          code: ErrorCodes.ORD_CONFLICT,
+          message: 'Order was modified concurrently',
+        }),
+      });
+
+      await expect(
+        processor.processSubscription({
+          subscriptionId: 'sub-1',
+          mode: 'manual',
+          source: 'crm',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
+        }),
+      );
+    });
+
+    it('FAILED auth attempt falls through to authorize retry (not inventory resume)', async () => {
+      const { processor, payments, orders } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: false,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      // First lookup in resumeExistingAttempt sees auth failure → fall through.
+      payments.findLatestForOrder
+        .mockResolvedValueOnce({
+          id: 'pay-1',
+          lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+          status: PaymentStatus.FAILED,
+        })
+        .mockImplementation(() =>
+          Promise.resolve({
+            id: 'pay-1',
+            lifecycleState: PaymentLifecycleState.CAPTURED,
+            status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          }),
+        );
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('succeeded');
+      expect(payments.authorizeForOrder).toHaveBeenCalled();
+      expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+    });
+
+    it('processDueBatch isolates inventory failure and continues', async () => {
+      const invError = new BadRequestException({
+        code: ErrorCodes.INV_INSUFFICIENT,
+        message: 'Insufficient stock',
+      });
+      const { processor, prisma } = build({
+        dueIds: ['sub-1', 'sub-2'],
+        transitionError: invError,
+      });
+
+      // First subscription fails inventory; second succeeds (no transition error on 2nd).
+      let call = 0;
+      jest
+        .spyOn(processor, 'processSubscription')
+        .mockImplementation((input) => {
+          call += 1;
+          if (input.subscriptionId === 'sub-1') {
+            return Promise.resolve({
+              subscriptionId: 'sub-1',
+              billingPeriodKey,
+              attemptId: 'att-1',
+              orderId: 'ord-1',
+              paymentId: 'pay-1',
+              outcome: 'inventory_insufficient' as const,
+              attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
+            });
+          }
+          return Promise.resolve({
+            subscriptionId: 'sub-2',
+            billingPeriodKey: 'sub-2:2026-03-01',
+            attemptId: 'att-2',
+            orderId: 'ord-2',
+            paymentId: 'pay-2',
+            outcome: 'succeeded' as const,
+            attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+          });
+        });
+
+      prisma.subscription.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) =>
+          Promise.resolve({
+            status: SubscriptionStatus.ACTIVE,
+            id: where.id,
+          }),
+      );
+
+      const result = await processor.processDueBatch({ limit: 10 });
+
+      expect(result.processed).toBe(2);
+      expect(result.failed).toBe(1);
+      expect(result.succeeded).toBe(1);
+      expect(call).toBe(2);
+    });
   });
 });

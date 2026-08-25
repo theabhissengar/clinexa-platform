@@ -46,6 +46,7 @@ describe('SubscriptionsRenewalProcessor', () => {
     addressError?: boolean;
     transitionError?: Error;
     dueIds?: string[];
+    subscription?: Record<string, unknown>;
   }) {
     const attempt = { ...attemptBase, ...overrides?.attempt };
     const order =
@@ -72,7 +73,13 @@ describe('SubscriptionsRenewalProcessor', () => {
         findUnique: jest.fn(() => Promise.resolve(order)),
       },
       subscription: {
-        findUnique: jest.fn(() => Promise.resolve({ ...subscriptionBase })),
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            ...subscriptionBase,
+            clinicalRequirement: 'NONE',
+            ...(overrides?.subscription ?? {}),
+          }),
+        ),
       },
       subscriptionRenewalAttempt: {
         findUnique: jest.fn(() => Promise.resolve(attempt)),
@@ -120,6 +127,10 @@ describe('SubscriptionsRenewalProcessor', () => {
     };
 
     const schedule = {
+      billingPeriodKey: jest.fn(
+        (subscriptionId: string, periodEnd: Date) =>
+          `${subscriptionId}:${periodEnd.toISOString().slice(0, 10)}`,
+      ),
       advancePeriod: jest.fn(() => ({
         currentPeriodStart: new Date('2026-03-01T00:00:00.000Z'),
         currentPeriodEnd: new Date('2026-04-01T00:00:00.000Z'),
@@ -365,6 +376,155 @@ describe('SubscriptionsRenewalProcessor', () => {
         status: SubscriptionRenewalAttemptStatus.FAILED,
       }),
     );
+  });
+
+  it('P14g: DECLINED_HOLD short-circuits without authorize/Order/capture', async () => {
+    const { processor, payments, orders, renewal, schedule } = build({
+      subscription: { clinicalRequirement: 'DECLINED_HOLD' },
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.FAILED,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'auto',
+      source: 'system',
+    });
+
+    expect(result.outcome).toBe('clinical_hold');
+    expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).not.toHaveBeenCalled();
+    expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+    expect(orders.transitionOrder).not.toHaveBeenCalled();
+    expect(renewal.openRenewalAttempt).not.toHaveBeenCalled();
+    expect(schedule.advancePeriod).not.toHaveBeenCalled();
+  });
+
+  it('P14g: CLINICAL_APPROVED resume captures without re-authorize', async () => {
+    const { processor, payments, orders, schedule } = build({
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.PROCESSING,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+      order: {
+        isRxOrder: true,
+        status: OrderStatus.CLINICAL_APPROVED,
+      },
+    });
+    let lifecycle = PaymentLifecycleState.AUTHORIZED;
+    payments.findLatestForOrder.mockImplementation(() =>
+      Promise.resolve({
+        id: 'pay-1',
+        lifecycleState: lifecycle,
+        status:
+          lifecycle === PaymentLifecycleState.CAPTURED
+            ? PaymentStatus.AUTHORIZED_OR_CAPTURED
+            : PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      }),
+    );
+    payments.capturePayment.mockImplementation(() => {
+      lifecycle = PaymentLifecycleState.CAPTURED;
+      return Promise.resolve({
+        paymentId: 'pay-1',
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        paymentStatusSummary: 'authorized_or_captured',
+      });
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'retry',
+      source: 'system',
+    });
+
+    expect(result.outcome).toBe('succeeded');
+    expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).toHaveBeenCalled();
+    expect(orders.transitionOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toStatus: OrderStatus.AWAITING_FULFILLMENT,
+        source: 'clinical',
+        expectedStatus: OrderStatus.CLINICAL_APPROVED,
+      }),
+    );
+    expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it('P14g: CLINICAL_DECLINED resume does not re-authorize', async () => {
+    const { processor, payments, orders, schedule } = build({
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.FAILED,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+      order: {
+        isRxOrder: true,
+        status: OrderStatus.CLINICAL_DECLINED,
+      },
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'retry',
+      source: 'crm',
+    });
+
+    expect(result.outcome).toBe('clinical_hold');
+    expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).not.toHaveBeenCalled();
+    expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+    expect(schedule.advancePeriod).not.toHaveBeenCalled();
+  });
+
+  it('P14g: AWAITING_FULFILLMENT + CAPTURE_FAILED retries capture only', async () => {
+    const { processor, payments, orders, schedule } = build({
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.FAILED,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+      order: {
+        isRxOrder: true,
+        status: OrderStatus.AWAITING_FULFILLMENT,
+      },
+    });
+    let lifecycle = PaymentLifecycleState.CAPTURE_FAILED;
+    payments.findLatestForOrder.mockImplementation(() =>
+      Promise.resolve({
+        id: 'pay-1',
+        lifecycleState: lifecycle,
+        status:
+          lifecycle === PaymentLifecycleState.CAPTURED
+            ? PaymentStatus.AUTHORIZED_OR_CAPTURED
+            : PaymentStatus.FAILED,
+      }),
+    );
+    payments.capturePayment.mockImplementation(() => {
+      lifecycle = PaymentLifecycleState.CAPTURED;
+      return Promise.resolve({
+        paymentId: 'pay-1',
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        paymentStatusSummary: 'authorized_or_captured',
+      });
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'retry',
+      source: 'system',
+    });
+
+    expect(result.outcome).toBe('succeeded');
+    expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).toHaveBeenCalled();
+    expect(orders.createOrderFromSnapshots).not.toHaveBeenCalled();
+    expect(schedule.advancePeriod).toHaveBeenCalledTimes(1);
   });
 
   it('idempotent short-circuit when attempt already succeeded', async () => {

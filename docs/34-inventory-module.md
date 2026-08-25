@@ -364,8 +364,8 @@ Product read-through remains association-only: `GET /admin/products/{id}/invento
 | Ledger append | Every mutation path must append movement(s) before/with projection update |
 | Warehouse required | Reject writes missing `warehouse_id` |
 | Oversell | Enforce `FR-INV-003` / policy; available = f(on_hand, reserved, policy) |
-| Concurrent reserve | Transactional; safe win/lose under contention |
-| Idempotency | Commit/release keyed by reservation/order id |
+| Concurrent reserve | Transactional; `FOR UPDATE` on `inventory_balances` after upsert-zero row (P13e); safe win/lose under PREVENT |
+| Idempotency | Commit/release keyed by reservation/order id; unique nullable `stock_reservations.order_id` (P13e) |
 | Digital / non-tracked | No ledger rows; availability returns not-tracked |
 | Adjust reason | Required for Guardian adjustments |
 | Orders isolation | Reject any Orders/Products path that attempts direct balance UPDATE |
@@ -535,8 +535,8 @@ No balances, reservations, or movements for those SKUs. Checkout/Orders skip Inv
 | **P12c** | Admin APIs `/admin/inventory…` + policies + Class D |
 | **P12d** | Guardian UI: dashboard, stock, adjust, receiving, warehouses (lean), policies, history/activity stubs |
 | **P12e** | Products summary wire-up; CRM consume widgets (no CRM admin) |
-| **P12f** | Orders integration (service-only) + transactional coupling |
-| **P12g** | Low-stock event emit; reservation expiry worker; verification; future read-model note only |
+| **P12f** | Orders integration (service-only) + transactional coupling | **Closed by P13e** on `feature/inventory-orchestration` |
+| **P12g** | Low-stock event emit; reservation expiry worker; verification; future read-model note only | Not started |
 
 ---
 
@@ -561,5 +561,6 @@ No balances, reservations, or movements for those SKUs. Checkout/Orders skip Inv
 | --- | --- | --- | --- |
 | 1.0 | 2026-08-03 | Platform Engineering | Initial Inventory Module Blueprint (`GRD-033` / `CRM-037` consume-only): Guardian-only admin; ledger-first SoT; warehouse FKs from day one; platform policies; Orders service-only; History/Activity/Audit split; low-stock events; digital no-track; P12a–g roadmap |
 | 1.1 | 2026-08-03 | Platform Engineering | P12 implementation in progress: Prisma `DB-042`/`043`/`063`–`066`, Nest inventory module, Guardian `/guardian/inventory` UI, domain reservation APIs |
+| 1.2 | 2026-08-25 | Platform Engineering | P12f closed by P13e: Orders in-txn Reserve/Release/Commit/Restock; unique `order_id` on reservations; `FOR UPDATE` balance locks; P12g still open |
 
 *End of 34 — Inventory Module.*

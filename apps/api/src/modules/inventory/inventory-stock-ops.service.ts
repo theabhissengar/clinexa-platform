@@ -1,5 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ProductType, StockMovementType } from '../../../generated/prisma';
+import {
+  Prisma,
+  ProductType,
+  ReservationStatus,
+  StockMovementType,
+} from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -10,6 +15,9 @@ import type {
 } from './dto/inventory.dto';
 import { InventoryLedgerService } from './inventory-ledger.service';
 import { WarehouseService } from './warehouse.service';
+
+type Tx = Prisma.TransactionClient;
+type DbClient = Tx | PrismaService;
 
 async function assertTrackedVariant(
   prisma: PrismaService,
@@ -103,12 +111,12 @@ export class InventoryRestockService {
     private readonly warehouses: WarehouseService,
   ) {}
 
-  async restock(dto: RestockDto, actorUserId?: string) {
+  async restock(dto: RestockDto, actorUserId?: string, tx?: Tx) {
     await assertTrackedVariant(this.prisma, dto.productVariantId);
     const warehouseId = await this.warehouses.resolveWarehouseId(
       dto.warehouseId,
     );
-    return this.prisma.$transaction((tx) =>
+    const run = (client: DbClient) =>
       this.ledger.appendAndProject(
         {
           warehouseId,
@@ -119,8 +127,62 @@ export class InventoryRestockService {
           actorUserId,
           reason: dto.reason ?? 'Restock',
         },
+        client,
+      );
+    if (tx) {
+      return run(tx);
+    }
+    return this.prisma.$transaction((inner) => run(inner));
+  }
+
+  /**
+   * Post-fulfill refund path: restock each committed reservation line once.
+   * Idempotent when RESTOCK movements already exist for orderId+reservationId.
+   */
+  async restockCommittedReservation(
+    orderId: string,
+    reservationId: string,
+    actorUserId: string | undefined,
+    tx: Tx,
+  ) {
+    const reservation = await tx.stockReservation.findUnique({
+      where: { id: reservationId },
+      include: { lines: true },
+    });
+    if (!reservation || reservation.orderId !== orderId) {
+      return null;
+    }
+    if (reservation.status !== ReservationStatus.COMMITTED) {
+      return null;
+    }
+
+    const existingRestock = await tx.stockMovement.findFirst({
+      where: {
+        orderId,
+        reservationId,
+        movementType: StockMovementType.RESTOCK,
+      },
+    });
+    if (existingRestock) {
+      return reservation;
+    }
+
+    for (const line of reservation.lines) {
+      await this.ledger.appendAndProject(
+        {
+          warehouseId: line.warehouseId,
+          productVariantId: line.productVariantId,
+          movementType: StockMovementType.RESTOCK,
+          quantity: line.quantity,
+          orderId,
+          reservationId,
+          actorUserId,
+          reason: 'Restock post-fulfill refund',
+        },
         tx,
-      ),
-    );
+      );
+    }
+
+    return reservation;
   }
 }

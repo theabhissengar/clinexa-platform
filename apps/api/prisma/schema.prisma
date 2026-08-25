@@ -696,7 +696,8 @@ model StockReservation {
   lines     StockReservationLine[]
   movements StockMovement[]
 
-  @@index([orderId])
+  /// At most one reservation per order (NULL orderId allowed for HTTP ad-hoc reserves).
+  @@unique([orderId])
   @@index([status, expiresAt])
   @@map("stock_reservations")
 }

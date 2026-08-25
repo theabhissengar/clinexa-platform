@@ -37,7 +37,7 @@ export class InventoryLedgerService {
 
   /**
    * Append a movement and update the balance projection in the same transaction.
-   * Movement ledger is source of truth; balances are derived.
+   * Upserts a zero row if needed, then FOR UPDATE locks it before math (P13e).
    */
   async appendAndProject(
     input: LedgerAppendInput,
@@ -78,6 +78,31 @@ export class InventoryLedgerService {
     const oversellMode = policy?.oversellMode ?? OversellMode.PREVENT;
     const allowNegative = policy?.allowNegativeStock ?? false;
     const threshold = policy?.lowStockThreshold ?? 5;
+
+    // Ensure row exists without mutating quantities (create race serializes on unique).
+    await client.inventoryBalance.upsert({
+      where: {
+        warehouseId_productVariantId: {
+          warehouseId: input.warehouseId,
+          productVariantId: input.productVariantId,
+        },
+      },
+      create: {
+        warehouseId: input.warehouseId,
+        productVariantId: input.productVariantId,
+        quantityOnHand: 0,
+        quantityReserved: 0,
+      },
+      update: {},
+    });
+
+    // Same-txn row lock — mirrors SubscriptionsRenewalProcessor FOR UPDATE pattern.
+    await client.$queryRaw`
+      SELECT id FROM inventory_balances
+      WHERE warehouse_id = ${input.warehouseId}::uuid
+        AND product_variant_id = ${input.productVariantId}::uuid
+      FOR UPDATE
+    `;
 
     const existing = await client.inventoryBalance.findUnique({
       where: {
@@ -168,20 +193,14 @@ export class InventoryLedgerService {
       },
     });
 
-    const balance = await client.inventoryBalance.upsert({
+    const balance = await client.inventoryBalance.update({
       where: {
         warehouseId_productVariantId: {
           warehouseId: input.warehouseId,
           productVariantId: input.productVariantId,
         },
       },
-      create: {
-        warehouseId: input.warehouseId,
-        productVariantId: input.productVariantId,
-        quantityOnHand: onHand,
-        quantityReserved: reserved,
-      },
-      update: {
+      data: {
         quantityOnHand: onHand,
         quantityReserved: reserved,
       },

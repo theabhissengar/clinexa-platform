@@ -182,7 +182,7 @@ export class CrmOrdersController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:
-      'CRM fulfill/ship (API-075). Inventory Commit deferred to P13e hooks.',
+      'CRM fulfill/ship (API-075). Inventory Commit via P13e in-txn orchestration.',
   })
   async fulfill(
     @Param('id', ParseUUIDPipe) id: string,

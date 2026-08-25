@@ -124,6 +124,7 @@ export class CommerceIntegrationModule implements OnModuleInit {
           subscriptionId: input.subscriptionId,
           billingPeriodKey: attempt.billingPeriodKey,
           paymentId: input.paymentId,
+          orderId: input.orderId,
           source: 'payment',
         });
       },

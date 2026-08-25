@@ -65,20 +65,23 @@ describe('InventoryReservationService', () => {
             },
           ],
         }),
-        update: jest.fn().mockImplementation(({ data }) =>
-          Promise.resolve({
-            id: 'res-1',
-            orderId: 'ord-1',
-            status: data.status,
-            lines: [
-              {
-                warehouseId: 'wh-1',
-                productVariantId: 'var-tracked',
-                quantity: 2,
-              },
-            ],
-          }),
-        ),
+        update: jest
+          .fn()
+          .mockImplementation(
+            ({ data }: { data: { status: ReservationStatus } }) =>
+              Promise.resolve({
+                id: 'res-1',
+                orderId: 'ord-1',
+                status: data.status,
+                lines: [
+                  {
+                    warehouseId: 'wh-1',
+                    productVariantId: 'var-tracked',
+                    quantity: 2,
+                  },
+                ],
+              }),
+          ),
       },
       stockReservationLine: {
         create: jest.fn().mockResolvedValue({ id: 'line-1' }),
@@ -88,11 +91,17 @@ describe('InventoryReservationService', () => {
 
     const prisma = {
       productVariant: {
-        findFirst: jest.fn().mockImplementation(({ where: { id } }) =>
-          Promise.resolve(variants[id] ?? null),
-        ),
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where: { id } }: { where: { id: string } }) =>
+            Promise.resolve(variants[id] ?? null),
+          ),
       },
-      $transaction: jest.fn().mockImplementation(async (fn) => fn(tx)),
+      $transaction: jest
+        .fn()
+        .mockImplementation((fn: (client: typeof tx) => Promise<unknown>) =>
+          fn(tx),
+        ),
       stockReservation: tx.stockReservation,
     };
 

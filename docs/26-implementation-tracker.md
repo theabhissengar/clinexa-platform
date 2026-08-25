@@ -100,7 +100,7 @@ Every phase record in §5 carries these fields.
 | **P11** | Asset Library platform module (reusable business assets + storage resolution) | In progress | P5 (shell); P8 opaque asset ID pattern; P6 for Class D |
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
 | **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13e complete; **P13f partial via P14e**; P13g not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
-| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | In progress (P14 blueprint + **P14a–g complete**; P14h pending) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
+| **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | **Complete** (P14a–h; verification freeze on `feature/subscriptions-p14h-freeze`) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -323,12 +323,12 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Deliver Subscriptions as the shared platform aggregate for recurring commitments: canonical lifecycle (separate from payment/renewal/clinical dimensions), in-module renewal orchestration, CRM operational surface, Guardian admin/plans/Class D — without a standalone Renewals module |
-| **Status** | In progress (P14 blueprint complete; **P14a–g complete**; P14h pending) |
+| **Status** | **Complete** (P14 blueprint + **P14a–h complete**) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/subscriptions-clinical-integration` (P14g); prior P14f on `feature/subscriptions-inventory-policy`; P14e on `feature/subscriptions-renewal-payments`; P14a–d on `feature/subscriptions-foundation` / `dev` |
+| **Branch** | `feature/subscriptions-p14h-freeze` (P14h); prior P14g on `feature/subscriptions-clinical-integration`; P14f on `feature/subscriptions-inventory-policy`; P14e on `feature/subscriptions-renewal-payments`; P14a–d on `feature/subscriptions-foundation` / `dev` |
 | **PR** | — |
 | **Dependencies** | P5 shell; P8 Products; P9 Users; P13 Orders (`orderType` / `subscriptionId`); Inventory via Orders (P13e + P14f); Payments boundary (P14e); Class D patterns; blueprint [36](36-subscriptions-module.md) |
-| **Scope** | **P14a–d (complete):** schema, domain, CRM, Guardian. **P14e (complete):** Nest `PaymentsModule`; renewal processor; Internal worker; webhook. **P14f (complete):** `ERR-INV-001` attempt `FAILED` policy; hold captured money; payment-aware resume of Reserve transition; period only after CAPTURED + Reserve-committed Order. **P14g (complete):** Clinical refs/events adapter — CRM API-090/091 on opaque `consultationId`; domain-guard clinical transitions; `DECLINED_HOLD` worker short-circuit; single decline reaction; no clinical authoring / Consultation Prisma models. **Not this pass:** Store/Portal, Stripe, questionnaire authoring, reassessment cadence evaluation. **Later:** P14h freeze. **No Renewals phase.** |
+| **Scope** | **P14a–d (complete):** schema, domain, CRM, Guardian. **P14e (complete):** Nest `PaymentsModule`; renewal processor; Internal worker; webhook. **P14f (complete):** `ERR-INV-001` attempt `FAILED` policy; hold captured money; payment-aware resume of Reserve transition; period only after CAPTURED + Reserve-committed Order. **P14g (complete):** Clinical refs/events adapter — CRM API-090/091 on opaque `consultationId`; domain-guard clinical transitions; `DECLINED_HOLD` worker short-circuit; single decline reaction; no clinical authoring / Consultation Prisma models. **P14h (complete):** RBAC seed/guard verification; §20 regression suite; documentation freeze. **Deferred (not P14):** Store/Portal, Stripe, questionnaire authoring, reassessment cadence evaluation. **No Renewals phase.** |
 | **Architecture changes** | Shared domain; CRM no Create/Class D; four-way status split; `SubscriptionsRenewalService` + processor inside SUB; Order owns the renewal transaction; Payments owns money tables; pause skips missed cycles; Clinical module is integration adapter (not clinical SoT) |
 | **Documentation updates** | [36](36-subscriptions-module.md), [15](15-payment-flow.md), [10](10-database-design.md), [11](11-api-design.md), [35](35-orders-module.md), [27](27-module-registry.md), this record |
 | **Notes** | CRM Create locked No. Clinical decline → `DECLINED_HOLD` (not PAST_DUE / not auto-cancel). Period advances after capture **and** Reserve (P14f). Inventory-only failure does not mark `PAST_DUE` (OD-SUB-04). Optional `RENEWAL_CRON_ENABLED` local cron (default false); production uses Internal HTTP job. **P14g open:** plan reassessment cadence math (`requiresReassessment` / `reassessmentIntervalCycles`) still unresolved — not invented in P14g. Approve does not auto-clear `clinicalRequirement`. |
@@ -514,6 +514,7 @@ A phase is complete when all of the following hold.
 | 2.12 | 2026-08-25 | Platform Engineering | P13e on `feature/inventory-orchestration`: Order→Inventory in-txn orchestration closes P12f; Rx renewal retry guard; P14f still pending for stock-out attempt policy |
 | 2.13 | 2026-08-25 | Platform Engineering | P14f on `feature/subscriptions-inventory-policy`: `ERR-INV-001` → attempt FAILED; hold capture; payment-aware Reserve retry; period only after CAPTURED + Reserve |
 | 2.14 | 2026-08-25 | Platform Engineering | P14g on `feature/subscriptions-clinical-integration`: Clinical refs/events adapter (API-090/091); clinical-source Order guard; DECLINED_HOLD short-circuit; single decline path; reassessment cadence still open |
+| 2.15 | 2026-08-25 | Platform Engineering | P14h on `feature/subscriptions-p14h-freeze`: verification/regression freeze; RBAC seed/guards confirmed; §20 matrix satisfied; tracker/registry/blueprint aligned; **P14 Complete** |
 
 ---
 

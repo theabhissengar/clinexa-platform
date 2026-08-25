@@ -5,14 +5,14 @@
 | Document | Subscriptions Module — Platform blueprint instance |
 | Product | Clinexa |
 | Version | 1.0 |
-| Status | P14a–P14g complete — P14h pending |
+| Status | **P14 Complete** — P14a–h complete |
 | Audience | Architects, backend, frontend, QA, product, operations, security |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
 | Related docs | [03](03-functional-requirements.md), [08](08-role-permissions.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [18](18-crm.md), [25](25-guardian.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [28](28-ownership-matrix.md), [29](29-navigation-blueprint.md), [31](31-products-module.md), [32](32-users-module.md), [33](33-asset-library-module.md), [34](34-inventory-module.md), [35](35-orders-module.md) |
 
 This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a–g complete.** **P13e** wires Inventory through Orders; **P14f** owns renewal stock-out attempt policy; **P14g** owns clinical refs/events (approve/decline) — **not** questionnaire/clinical authoring. **Not this pass:** Store/Portal, Stripe/real PSP, reassessment cadence evaluation.
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14 Complete (P14a–h).** **P13e** wires Inventory through Orders; **P14f** owns renewal stock-out attempt policy; **P14g** owns clinical refs/events (approve/decline) — **not** questionnaire/clinical authoring. **P14h** verified RBAC seed/guards, §20 regression, and documentation freeze. **Deferred:** Store/Portal, Stripe/real PSP, reassessment cadence evaluation.
 
 > **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
 
@@ -742,7 +742,7 @@ Document only. **No UI in this repository.**
 
 ## 20. Testing strategy
 
-P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. **P13e** wires Inventory through Orders; **P14f** adds `ERR-INV-001` attempt FAILED policy + captured+unreserved recovery.
+P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. **P13e** wires Inventory through Orders; **P14f** adds `ERR-INV-001` attempt FAILED policy + captured+unreserved recovery. **P14g** adds clinical outcomes/boundaries/permissions. **P14h** re-verifies the full §20 matrix and RBAC seed/guards (including Internal worker `AUTH-015`).
 
 | Area | Cases |
 | --- | --- |
@@ -753,18 +753,18 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | Duplicate prevention | Same period key → existing attempt (incl. P2002 race) — **P14b** |
 | Idempotent retry | Failed payment retry does not new-period — **P14e** continues same attempt/order |
 | Payment failure | Authorize fail → `PAST_DUE` + notify hook — **P14e** |
-| Clinical decline | Void/refund; subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14e** |
+| Clinical decline | Void/refund; subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14g** |
 | Inventory failure | `ERR-INV-001` → attempt `FAILED`; hold capture; retry Reserve; no second Order/payment; period once — **P14f** |
 | Cancellation | Stops future renewals; not Class D — **P14b**; open orders follow order rules later |
 | Manual renewal | Explicit path; same idempotency key — **P14b primitive** |
 | Snapshots | Product/User live edits do not rewrite subscription history — **P14b** |
-| RBAC | Permissions seeded in P14a; HTTP guards **P14c CRM + P14d Guardian** |
+| RBAC | Permissions seeded in P14a; HTTP guards **P14c CRM + P14d Guardian**; worker `AUTH-015` — **P14h verified** |
 | History / Activity / Audit | Separation preserved; Class D `platformAuditDeferred` — **P14b** |
 | Store/Portal | Own-scope APIs designed; no UI in this repo |
 
 ---
 
-## 21. Definition of done (implementation — later)
+## 21. Definition of done (implementation)
 
 - Shared domain services enforce lifecycle, snapshots, renewal idempotency, allowlists — **P14b complete**
 - CRM and Guardian UIs use one domain with distinct actions — **P14c/d complete**
@@ -772,9 +772,9 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 - Guardian create, plans, Class D, correction, override — **P14d complete**
 - No Renewals module, nav, or DB domain — held
 - Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; **P13e Inventory via Orders**; **P14f attempt policy complete**; **P14g Clinical refs/events adapter complete**
-- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d; retry allows 003|008
-- Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory policy P14f; Clinical refs/events P14g
-- Docs remain aligned with this blueprint
+- Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d; retry allows 003|008 — **P14h verified**
+- Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory policy P14f; Clinical refs/events P14g — **P14h verified**
+- Docs remain aligned with this blueprint — **P14h complete**
 
 ---
 
@@ -788,10 +788,10 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | **P14b** | Domain: lifecycle, snapshots, schedule, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order hook) | **Complete** on `feature/subscriptions-foundation`. No cron; no controllers |
 | **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | **Complete** on `feature/subscriptions-foundation`. Current shell patterns |
 | **P14d** | Guardian APIs + UI + plans + Class D | **Complete** on `feature/subscriptions-foundation`. Current shell; not P10 redesign |
-| **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance on capture only; Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. |
+| **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance after capture **and** Reserve-committed Order (see §11.3 / P14f); Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. |
 | **P14f** | Inventory-through-Orders attempt policy | **Complete** on `feature/subscriptions-inventory-policy`. `ERR-INV-001` → attempt `FAILED` (not auto-`SKIPPED`); hold captured money; resume Reserve only; period advances only after CAPTURED + Reserve-committed Order; lifecycle unchanged (OD-SUB-04). Does **not** own clinical authoring, Store/Portal, Stripe, P12g expiry, or notifications dispatcher. |
 | **P14g** | Clinical integration (refs/events) | **Complete** on `feature/subscriptions-clinical-integration`. Thin Clinical adapter: opaque `consultationId` on Order; CRM API-090/091 (`PERM-CRM-002`/`003`); approve → existing capture → `onRenewalCaptureSucceeded`; decline → void once + `DECLINED_HOLD`; domain rejects non-`clinical` sources for `CLINICAL_*`; worker short-circuit + resume without re-authorize. **No** Consultation/QST/Rx Prisma models; reassessment cadence **not** invented. |
-| **P14h** | RBAC seed, tests, documentation freeze | Pending |
+| **P14h** | RBAC seed, tests, documentation freeze | **Complete** on `feature/subscriptions-p14h-freeze`. Re-verified §20 matrix; RBAC seed/guards + worker `AUTH-015`; full API regression suite; tracker/registry/blueprint aligned; no schema migration. |
 
 Order: schema → shared logic (including renewal primitives) → CRM ops → Guardian/Class D → payments → inventory-via-orders → clinical → verification.
 
@@ -825,5 +825,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.6 | 2026-08-25 | Platform Engineering | P13e Inventory via Orders complete; P14f reframed to attempt/SKIPPED + captured+unreserved policy; Rx renewal retry guard noted |
 | 1.7 | 2026-08-25 | Platform Engineering | P14f complete: `ERR-INV-001` → retryable attempt `FAILED`; hold capture; payment-aware resume; period only after CAPTURED + Reserve; no auto-SKIPPED / no PAST_DUE / no refund |
 | 1.8 | 2026-08-25 | Platform Engineering | P14g complete: Clinical refs/events adapter (API-090/091); clinical-source Order guard; DECLINED_HOLD short-circuit; single decline path; reassessment cadence still open |
+| 1.9 | 2026-08-25 | Platform Engineering | P14h complete: verification/regression freeze; RBAC seed/guards confirmed; §20 satisfied; **P14 Complete** |
 
 *End of 36 — Subscriptions Module.*

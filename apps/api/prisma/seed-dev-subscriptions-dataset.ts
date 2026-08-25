@@ -376,6 +376,22 @@ export async function seedDevSubscriptionsDataset(
 
   const catalog = await ensureSubscriptionCatalog(prisma);
 
+  // Clear Order FKs before deleting seed subscriptions (orders.subscription_id Restrict).
+  const priorSubs = await prisma.subscription.findMany({
+    where: { subscriptionNumber: { startsWith: SUB_NUMBER_PREFIX } },
+    select: { id: true },
+  });
+  if (priorSubs.length > 0) {
+    const ids = priorSubs.map((s) => s.id);
+    await prisma.order.updateMany({
+      where: { subscriptionId: { in: ids } },
+      data: { subscriptionId: null },
+    });
+    await prisma.subscriptionRenewalAttempt.deleteMany({
+      where: { subscriptionId: { in: ids } },
+    });
+  }
+
   await prisma.subscription.deleteMany({
     where: { subscriptionNumber: { startsWith: SUB_NUMBER_PREFIX } },
   });

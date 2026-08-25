@@ -5,6 +5,8 @@ import {
   OrderStatus,
   OrderType,
   ProductType,
+  ReservationStatus,
+  StockMovementType,
   UserStatus,
   type PrismaClient,
 } from '../generated/prisma';
@@ -164,6 +166,7 @@ async function ensureDevCatalogVariants(
       label: string;
       priceCents: number;
       salePriceCents?: number;
+      isFulfillable?: boolean;
     }>;
   }> = [
     {
@@ -200,6 +203,31 @@ async function ensureDevCatalogVariants(
           salePriceCents: 3900,
         },
         { sku: 'DEMO-SERUM-60', label: '60 ml', priceCents: 7200 },
+      ],
+    },
+    {
+      productSlug: 'demo-digital-guide',
+      productName: 'Demo Digital Guide',
+      isRxEligible: false,
+      productType: ProductType.DIGITAL,
+      categorySlug: 'mens-health',
+      variants: [
+        {
+          sku: 'DEMO-DIGITAL-GUIDE',
+          label: 'PDF guide',
+          priceCents: 900,
+          isFulfillable: false,
+        },
+      ],
+    },
+    {
+      productSlug: 'demo-lowstock-item',
+      productName: 'Demo Low Stock Item',
+      isRxEligible: false,
+      productType: ProductType.STANDARD,
+      categorySlug: 'skincare',
+      variants: [
+        { sku: 'DEMO-LOWSTOCK-1', label: 'Single unit', priceCents: 1200 },
       ],
     },
   ];
@@ -247,7 +275,7 @@ async function ensureDevCatalogVariants(
             priceCents: variant.priceCents,
             salePriceCents: variant.salePriceCents ?? null,
             currency: 'USD',
-            isFulfillable: true,
+            isFulfillable: variant.isFulfillable ?? true,
           },
         });
       }
@@ -276,6 +304,8 @@ async function ensureDevCatalogVariants(
     'DEMO-VITD-60',
     'DEMO-SERUM-30',
     'DEMO-SERUM-60',
+    'DEMO-DIGITAL-GUIDE',
+    'DEMO-LOWSTOCK-1',
   ];
 
   const variants = await prisma.productVariant.findMany({
@@ -300,6 +330,280 @@ async function ensureDevCatalogVariants(
   }
 
   return variants;
+}
+
+/** Ensure DEFAULT warehouse has enough stock for seed orders + live CRM ops. */
+async function ensureDevInventoryStock(
+  prisma: PrismaClient,
+  variants: VariantRow[],
+): Promise<string> {
+  const warehouse = await prisma.warehouse.findFirst({
+    where: { isDefault: true },
+  });
+  if (!warehouse) {
+    throw new Error('Default warehouse missing — run seedInventoryDefaults first.');
+  }
+
+  const stockBySku: Record<string, number> = {
+    'DEMO-WEIGHT-30': 2000,
+    'DEMO-SKIN-50ML': 2000,
+    'DEMO-HAIR-1MG': 2000,
+    'DEMO-VITD-60': 2000,
+    'DEMO-SERUM-30': 2000,
+    'DEMO-SERUM-60': 2000,
+    'DEMO-LOWSTOCK-1': 1,
+  };
+
+  for (const variant of variants) {
+    if (variant.product.productType === ProductType.DIGITAL) continue;
+    const target = stockBySku[variant.sku];
+    if (target == null) continue;
+
+    const existing = await prisma.inventoryBalance.findUnique({
+      where: {
+        warehouseId_productVariantId: {
+          warehouseId: warehouse.id,
+          productVariantId: variant.id,
+        },
+      },
+    });
+    if (existing) {
+      // Reset projection for deterministic reseed (movements from prior ORD-SEED cleared above).
+      if (
+        existing.quantityOnHand !== target ||
+        existing.quantityReserved !== 0
+      ) {
+        const delta = target - existing.quantityOnHand;
+        if (delta !== 0) {
+          await prisma.stockMovement.create({
+            data: {
+              id: randomUUID(),
+              warehouseId: warehouse.id,
+              productVariantId: variant.id,
+              movementType: StockMovementType.ADJUST,
+              quantityDelta: delta,
+              reason: 'Seed balance reset for ORD-SEED dataset',
+            },
+          });
+        }
+        await prisma.inventoryBalance.update({
+          where: { id: existing.id },
+          data: { quantityOnHand: target, quantityReserved: 0 },
+        });
+      }
+      continue;
+    }
+
+    await prisma.stockMovement.create({
+      data: {
+        id: randomUUID(),
+        warehouseId: warehouse.id,
+        productVariantId: variant.id,
+        movementType: StockMovementType.RECEIVE,
+        quantityDelta: target,
+        reason: 'Seed receiving',
+      },
+    });
+    await prisma.inventoryBalance.create({
+      data: {
+        id: randomUUID(),
+        warehouseId: warehouse.id,
+        productVariantId: variant.id,
+        quantityOnHand: target,
+        quantityReserved: 0,
+      },
+    });
+  }
+
+  return warehouse.id;
+}
+
+/**
+ * Create a real StockReservation + ledger movements for a seed order.
+ * Returns reservation id or null when no tracked lines / no auth-equivalent status.
+ */
+async function seedOrderReservation(
+  prisma: PrismaClient,
+  input: {
+    orderId: string;
+    warehouseId: string;
+    terminal: OrderStatus;
+    path: OrderStatus[];
+    lines: Array<{
+      variantId: string;
+      quantity: number;
+      productType: string;
+    }>;
+    createdAt: Date;
+  },
+): Promise<string | null> {
+  const needsAuthReserve =
+    input.path.includes(OrderStatus.AWAITING_CLINICAL_REVIEW) ||
+    input.path.includes(OrderStatus.AWAITING_FULFILLMENT) ||
+    input.path.includes(OrderStatus.FULFILLED) ||
+    input.path.includes(OrderStatus.CLINICAL_APPROVED) ||
+    input.path.includes(OrderStatus.CLINICAL_DECLINED);
+
+  // Cancel after payment_pending without fulfillment path may still have reserved
+  // if path went through awaiting_fulfillment / clinical.
+  const cancelledAfterReserve =
+    input.terminal === OrderStatus.CANCELLED &&
+    (input.path.includes(OrderStatus.AWAITING_FULFILLMENT) ||
+      input.path.includes(OrderStatus.AWAITING_CLINICAL_REVIEW));
+
+  if (!needsAuthReserve && !cancelledAfterReserve) {
+    return null;
+  }
+
+  // DRAFT / PAYMENT_PENDING never reserved.
+  if (
+    input.terminal === OrderStatus.DRAFT ||
+    input.terminal === OrderStatus.PAYMENT_PENDING
+  ) {
+    return null;
+  }
+
+  const trackedLines = input.lines.filter(
+    (l) => l.productType !== String(ProductType.DIGITAL),
+  );
+  if (trackedLines.length === 0) {
+    return null;
+  }
+
+  let status: ReservationStatus = ReservationStatus.PENDING;
+  if (input.terminal === OrderStatus.FULFILLED) {
+    status = ReservationStatus.COMMITTED;
+  } else if (
+    input.terminal === OrderStatus.CANCELLED ||
+    input.terminal === OrderStatus.CLINICAL_DECLINED
+  ) {
+    status = ReservationStatus.RELEASED;
+  } else if (
+    input.terminal === OrderStatus.REFUNDED &&
+    input.path.includes(OrderStatus.FULFILLED)
+  ) {
+    status = ReservationStatus.COMMITTED; // restocked after commit
+  } else if (input.terminal === OrderStatus.REFUNDED) {
+    status = ReservationStatus.RELEASED; // pre-fulfill refund
+  }
+
+  const reservationId = randomUUID();
+  await prisma.stockReservation.create({
+    data: {
+      id: reservationId,
+      orderId: input.orderId,
+      status,
+      expiresAt: new Date(input.createdAt.getTime() + 60 * 60 * 1000),
+      createdAt: input.createdAt,
+      updatedAt: input.createdAt,
+      lines: {
+        create: trackedLines.map((line) => ({
+          id: randomUUID(),
+          warehouseId: input.warehouseId,
+          productVariantId: line.variantId,
+          quantity: line.quantity,
+        })),
+      },
+    },
+  });
+
+  for (const line of trackedLines) {
+    // RESERVE movement
+    await prisma.stockMovement.create({
+      data: {
+        id: randomUUID(),
+        warehouseId: input.warehouseId,
+        productVariantId: line.variantId,
+        movementType: StockMovementType.RESERVE,
+        quantityDelta: line.quantity,
+        orderId: input.orderId,
+        reservationId,
+        reason: 'Seed reserve',
+        createdAt: input.createdAt,
+      },
+    });
+
+    const balance = await prisma.inventoryBalance.findUnique({
+      where: {
+        warehouseId_productVariantId: {
+          warehouseId: input.warehouseId,
+          productVariantId: line.variantId,
+        },
+      },
+    });
+    if (balance) {
+      let onHand = balance.quantityOnHand;
+      let reserved = balance.quantityReserved + line.quantity;
+
+      if (status === ReservationStatus.COMMITTED) {
+        await prisma.stockMovement.create({
+          data: {
+            id: randomUUID(),
+            warehouseId: input.warehouseId,
+            productVariantId: line.variantId,
+            movementType: StockMovementType.COMMIT,
+            quantityDelta: -line.quantity,
+            orderId: input.orderId,
+            reservationId,
+            reason: 'Seed commit',
+            createdAt: addMinutes(input.createdAt, 30),
+          },
+        });
+        reserved -= line.quantity;
+        onHand -= line.quantity;
+
+        if (
+          input.terminal === OrderStatus.REFUNDED &&
+          input.path.includes(OrderStatus.FULFILLED)
+        ) {
+          await prisma.stockMovement.create({
+            data: {
+              id: randomUUID(),
+              warehouseId: input.warehouseId,
+              productVariantId: line.variantId,
+              movementType: StockMovementType.RESTOCK,
+              quantityDelta: line.quantity,
+              orderId: input.orderId,
+              reservationId,
+              reason: 'Seed restock',
+              createdAt: addMinutes(input.createdAt, 60),
+            },
+          });
+          onHand += line.quantity;
+        }
+      } else if (status === ReservationStatus.RELEASED) {
+        await prisma.stockMovement.create({
+          data: {
+            id: randomUUID(),
+            warehouseId: input.warehouseId,
+            productVariantId: line.variantId,
+            movementType: StockMovementType.RELEASE,
+            quantityDelta: -line.quantity,
+            orderId: input.orderId,
+            reservationId,
+            reason: 'Seed release',
+            createdAt: addMinutes(input.createdAt, 30),
+          },
+        });
+        reserved -= line.quantity;
+      }
+
+      await prisma.inventoryBalance.update({
+        where: { id: balance.id },
+        data: {
+          quantityOnHand: Math.max(0, onHand),
+          quantityReserved: Math.max(0, reserved),
+        },
+      });
+    }
+  }
+
+  await prisma.order.update({
+    where: { id: input.orderId },
+    data: { reservationId },
+  });
+
+  return reservationId;
 }
 
 async function seedDevPatients(
@@ -400,13 +704,37 @@ async function seedDevOrders(
   variants: VariantRow[],
   actorUserId: string | null,
 ): Promise<void> {
-  // Idempotent: remove previous ORD-SEED-* orders (cascades items/history/etc.).
-  const deleted = await prisma.order.deleteMany({
+  // Idempotent: remove previous ORD-SEED-* orders and their seed reservations.
+  const priorOrders = await prisma.order.findMany({
     where: { orderNumber: { startsWith: DEV_ORDER_NUMBER_PREFIX } },
+    select: { id: true, reservationId: true },
   });
-  if (deleted.count > 0) {
+  if (priorOrders.length > 0) {
+    const reservationIds = priorOrders
+      .map((o) => o.reservationId)
+      .filter((id): id is string => !!id);
+    if (reservationIds.length > 0) {
+      await prisma.stockMovement.deleteMany({
+        where: { reservationId: { in: reservationIds } },
+      });
+      await prisma.stockReservation.deleteMany({
+        where: { id: { in: reservationIds } },
+      });
+    }
+    const deleted = await prisma.order.deleteMany({
+      where: { orderNumber: { startsWith: DEV_ORDER_NUMBER_PREFIX } },
+    });
     console.log(`Removed ${deleted.count} prior ${DEV_ORDER_NUMBER_PREFIX}* orders.`);
   }
+
+  const warehouseId = await ensureDevInventoryStock(prisma, variants);
+
+  const physicalVariants = variants.filter(
+    (v) =>
+      v.product.productType !== ProductType.DIGITAL &&
+      v.sku !== 'DEMO-LOWSTOCK-1',
+  );
+  const digitalVariant = variants.find((v) => v.sku === 'DEMO-DIGITAL-GUIDE');
 
   const statusCounts: Record<string, number> = {};
   const typeCounts: Record<string, number> = {};
@@ -420,7 +748,10 @@ async function seedDevOrders(
     const lineCount = 1 + (i % 4);
     const selected: VariantRow[] = [];
     for (let li = 0; li < lineCount; li++) {
-      selected.push(variants[(i + li) % variants.length]!);
+      selected.push(physicalVariants[(i + li) % physicalVariants.length]!);
+    }
+    if (digitalVariant && i % 11 === 0) {
+      selected.push(digitalVariant);
     }
     const preferClinical = selected.some((v) => v.product.isRxEligible);
     const path = statusPath(finalStatus, preferClinical);
@@ -587,7 +918,7 @@ async function seedDevOrders(
         ? addMinutes(createdAt, path.length * 45)
         : null;
 
-    await prisma.order.create({
+    const order = await prisma.order.create({
       data: {
         id: randomUUID(),
         orderNumber: orderNumber(i),
@@ -622,11 +953,7 @@ async function seedDevOrders(
             ? null
             : `00000000-0000-4000-9000-${String(i).padStart(12, '0')}`,
         paymentStatusSummary,
-        reservationId:
-          path.includes(OrderStatus.AWAITING_FULFILLMENT) ||
-          path.includes(OrderStatus.FULFILLED)
-            ? `00000000-0000-4000-a000-${String(i).padStart(12, '0')}`
-            : null,
+        reservationId: null,
         consultationId: requiresClinicalReview
           ? `00000000-0000-4000-b000-${String(i).padStart(12, '0')}`
           : null,
@@ -678,6 +1005,19 @@ async function seedDevOrders(
         activities: { create: activityCreates },
         notes: noteCreates.length ? { create: noteCreates } : undefined,
       },
+    });
+
+    await seedOrderReservation(prisma, {
+      orderId: order.id,
+      warehouseId,
+      terminal,
+      path,
+      lines: lineRows.map((l) => ({
+        variantId: l.variantId,
+        quantity: l.quantity,
+        productType: l.productType,
+      })),
+      createdAt,
     });
 
     statusCounts[terminal] = (statusCounts[terminal] ?? 0) + 1;

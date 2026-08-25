@@ -12,7 +12,7 @@
 
 This document is the durable **Module Blueprint** instance for Subscriptions (`GRD-035`, `CRM-042`). It follows [27 §6](27-module-registry.md#6-module-blueprint).
 
-> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a:** Prisma/database foundation. **P14b:** NestJS domain services. **P14c:** CRM `/v1/crm/subscriptions` APIs + `/crm/subscriptions` UI. **P14d:** Guardian `/v1/admin/subscriptions` + `/v1/admin/subscription-plans` APIs and `/guardian/subscriptions` UI. **P14e (this pass):** Payments domain module (simulated gateway), renewal Order create from snapshots, authorize→capture orchestration, Internal renewal worker, Payments-only webhooks — on `feature/subscriptions-renewal-payments`. **Not this pass:** Inventory-through-Orders (P14f), clinical authoring (P14g), Store/Portal, Stripe/real PSP.
+> Delivery phase: **P14 — Subscriptions Platform Module** ([26](26-implementation-tracker.md)). **P14a–e complete.** **P13e** wires Inventory through Orders. **Not this pass:** P14f attempt/SKIPPED stock-out policy, clinical authoring (P14g), Store/Portal, Stripe/real PSP.
 
 > **Primary SoT.** This blueprint is the detailed source of truth for Subscriptions architecture. Sibling docs carry synchronized summaries and pointers here.
 
@@ -503,7 +503,7 @@ A subscription is due when **all** hold:
 3. If attempt already has `orderId`, **reuse that Order** — never create a second order for the period.
 4. If no `orderId`, Orders `createOrderFromSnapshots` with `orderType = SUBSCRIPTION_RENEWAL`, `idempotencyKey = renewal:{subId}:{billingPeriodKey}`, copying **subscription item snapshots** (not live catalog). Addresses: latest order → user shipping JSON → fail `ERR-VAL-002` (no placeholders).
 5. Record `orderId` on the attempt; set `latestOrderId` on the subscription.
-6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize. Inventory hooks remain NOOP until P14f/P13e.
+6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize. **P13e** Reserves on Order transition leaving `payment_pending`. **P14f** still owns attempt FAILED/SKIPPED mapping when Reserve fails after non-Rx capture (period may already have advanced — pre-existing P14e ordering).
 7. Subscriptions records payment status snapshot and attempt status from those outcomes.
 8. On **capture** success: advance `currentPeriodStart/End`, `nextRenewalAt`, `cycleNumber`; attempt=`SUCCEEDED`; lifecycle stays `ACTIVE` (or `COMPLETED` if last cycle). Authorize alone does **not** consume the period.
 9. On authorize failure: attempt=`FAILED`; lifecycle `PAST_DUE`; notify `NTF-042`. Clinical decline: void/refund; `DECLINED_HOLD`; **not** PAST_DUE; **not** auto-cancel.
@@ -560,9 +560,9 @@ Subscriptions **never** write inventory tables, balances, reservations, or movem
 | --- | --- | --- |
 | Insufficient stock (`ERR-INV-001`) | Order stays non-fulfilled; attempt=`FAILED` or `SKIPPED` per policy | **Unchanged** unless payment also failed |
 | Digital / not tracked | Inventory no-op on the Order | Unchanged |
-| P13e not wired | Hooks no-op (known) | Blueprint still forbids SUB table writes |
+| P13e wired; P14f pending | Orders Reserve/Release/Commit/Restock run; attempt SKIPPED/FAILED on `ERR-INV-001` and captured+unreserved reconciliation still P14f | Blueprint still forbids SUB table writes |
 
-P14f depends on Orders P13e. Until then, document the contract; do not have Subscriptions call Inventory directly as a workaround.
+P14f depends on Orders P13e (**P13e complete**). Do not have Subscriptions call Inventory directly as a workaround.
 
 ---
 
@@ -726,7 +726,7 @@ Document only. **No UI in this repository.**
 | Products (P8) | Variants, pricing, Rx flags, `limitSubscription`, subscription product types |
 | Users (P9) | Patient identity FK + snapshot source |
 | Orders (P13) | Renewal/initial orders; `orderType` / `subscriptionId` |
-| Inventory (P12 + P13e) | Reserve/Release/Commit via Orders — P14f blocked on P13e |
+| Inventory (P12 + P13e) | Reserve/Release/Commit via Orders — **P13e complete**; P14f owns attempt/stock-out policy |
 | Payments ([15](15-payment-flow.md) + P13f) | Money execution — P14e |
 | Clinical / QST | Later; refs and events — P14g |
 | RBAC / Class D patterns | Permission enforcement |
@@ -738,7 +738,7 @@ Document only. **No UI in this repository.**
 
 ## 20. Testing strategy
 
-P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. Inventory-through-Orders remains P14f.
+P14b implements **domain/unit** coverage for lifecycle, create validation, period math, renewal-attempt idempotency, snapshots, history/activity, and module boundaries. **P14c/P14d** add CRM and Guardian HTTP authorization tests. **P14e** adds Payments + renewal processor + worker/webhook coverage. **P13e** wires Inventory through Orders; **P14f** remains for attempt FAILED/SKIPPED / captured+unreserved policy.
 
 | Area | Cases |
 | --- | --- |
@@ -767,7 +767,7 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 - CRM has no create/Class D surfaces — **P14c complete**
 - Guardian create, plans, Class D, correction, override — **P14d complete**
 - No Renewals module, nav, or DB domain — held
-- Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; Inventory still NOOP (P14f)
+- Payments / Inventory / Clinical / Product / User boundaries held — **P14e Payments execution**; **P13e Inventory via Orders**; P14f attempt policy pending
 - Permissions seeded including `PERM-SUB-004`–`009`/`014`; CRM never receives `005`/`009`/`010`–`012`/`014` — P14a seed; HTTP guards P14c/d; retry allows 003|008
 - Verification matrix §20 passes — domain P14b; CRM/Guardian HTTP P14c/d; Payments/renewal P14e; Inventory later
 - Docs remain aligned with this blueprint
@@ -784,8 +784,8 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | **P14b** | Domain: lifecycle, snapshots, schedule, edit policy, **renewal orchestration primitives** (due, idempotent attempt, request Order hook) | **Complete** on `feature/subscriptions-foundation`. No cron; no controllers |
 | **P14c** | CRM APIs + UI (`/crm/subscriptions…`; no create; no Class D) | **Complete** on `feature/subscriptions-foundation`. Current shell patterns |
 | **P14d** | Guardian APIs + UI + plans + Class D | **Complete** on `feature/subscriptions-foundation`. Current shell; not P10 redesign |
-| **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance on capture only; Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. Inventory hooks remain NOOP (P14f). |
-| **P14f** | Inventory through Orders | Pending. Depends on P13e |
+| **P14e** | Payments integration + renewal processing | **Complete** on `feature/subscriptions-renewal-payments`. Nest `PaymentsModule` (simulated gateway, DB-028–031); renewal Order via Orders snapshots + `idempotencyKey`; authorize→clinical→capture; period advance on capture only; Internal worker `POST /v1/internal/jobs/subscription-renewals`; webhook `POST /v1/webhooks/payments`; cancel → `cancelRecurring`. |
+| **P14f** | Inventory through Orders (attempt / SKIPPED policy) | Pending. **P13e complete** (Order→Inventory wiring). P14f owns `ERR-INV-001` attempt FAILED/SKIPPED and non-Rx captured+unreserved reconciliation. P13e Rx retry guard: PROCESSING+PAYMENT_PENDING+AUTHORIZED re-attempts clinical transition (does not capture). |
 | **P14g** | Clinical integration | Pending. Refs/events; no clinical authoring |
 | **P14h** | RBAC seed, tests, documentation freeze | Pending |
 
@@ -818,5 +818,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.3 | 2026-08-24 | Platform Engineering | P14c CRM: `/v1/crm/subscriptions` (API-083, API-213–224) + `/crm/subscriptions` UI; no create/Class D; optional `SEED_DEV_DATASET` subscription rows |
 | 1.4 | 2026-08-24 | Platform Engineering | P14d Guardian: `/v1/admin/subscriptions` (API-225–240) + `/v1/admin/subscription-plans` (API-084–087) + `/guardian/subscriptions` UI; additive activate/renewal POST and plan unpublish/archive/restore; CRM still has no create/Class D |
 | 1.5 | 2026-08-24 | Platform Engineering | P14e: Payments Nest module (simulated gateway, DB-028–031, Order.idempotencyKey); renewal processor (attempt→Order→authorize→capture→advance); Internal worker + webhook; CRM/Guardian renew runs payment path; P13f recorded partial |
+| 1.6 | 2026-08-25 | Platform Engineering | P13e Inventory via Orders complete; P14f reframed to attempt/SKIPPED + captured+unreserved policy; Rx renewal retry guard noted |
 
 *End of 36 — Subscriptions Module.*

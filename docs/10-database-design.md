@@ -737,7 +737,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | --- | --- |
 | Purpose | Reservation header (`pending` \| `committed` \| `released` \| `expired`) |
 | Primary key | `id` |
-| Relationships | Optional Order; 1:N StockReservationLines |
+| Relationships | Optional Order; 1:N StockReservationLines; **unique nullable `order_id`** (at most one reservation per order — P13e migration `20260825120000_stock_reservation_order_unique`) |
 | Trace | FR-INV-002, OR-12 |
 
 #### DB-065 StockReservationLines
@@ -1795,6 +1795,7 @@ flowchart LR
 | 1.7 | 2026-08-24 | Platform Engineering | TBD | P14a Prisma: `SubscriptionPlan`/`Subscription`/`SubscriptionItem`/`SubscriptionRenewalAttempt` + history/activity/notes; migration `20260824120000_subscriptions_platform_module_foundation`; `orders.subscription_id` FK | Draft for review |
 | 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: no schema change; NestJS Subscriptions domain services consume `DB-032`–`034` | Draft for review |
 | 1.9 | 2026-08-24 | Platform Engineering | TBD | P14e Prisma: `Payment`/`Refund`/`SavedPaymentMethod`/`PaymentWebhookEvent` + `Order.idempotencyKey`; migration `20260824180000_payments_domain_and_order_idempotency` | Draft for review |
+| 2.0 | 2026-08-25 | Platform Engineering | TBD | P13e: unique nullable `stock_reservations.order_id`; Orders↔Inventory same-txn coupling via Nest services | Draft for review |
 
 ---
 

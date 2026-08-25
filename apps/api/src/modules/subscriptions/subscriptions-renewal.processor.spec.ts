@@ -340,4 +340,69 @@ describe('SubscriptionsRenewalProcessor', () => {
     expect(payments.authorizeForOrder).not.toHaveBeenCalled();
     expect(schedule.advancePeriod).not.toHaveBeenCalled();
   });
+
+  it('P13e Rx retry: PROCESSING+PAYMENT_PENDING+AUTHORIZED re-transitions clinical, does not capture', async () => {
+    const { processor, payments, orders } = build({
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.PROCESSING,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+      order: {
+        isRxOrder: true,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    });
+    payments.findLatestForOrder.mockResolvedValue({
+      id: 'pay-1',
+      lifecycleState: PaymentLifecycleState.AUTHORIZED,
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'retry',
+      source: 'system',
+    });
+
+    expect(result.outcome).toBe('authorized_awaiting_clinical');
+    expect(payments.capturePayment).not.toHaveBeenCalled();
+    expect(orders.transitionOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
+        expectedStatus: OrderStatus.PAYMENT_PENDING,
+        reason: 'renewal_authorized_retry',
+      }),
+    );
+  });
+
+  it('P13e characterization: non-Rx CAPTURED+PAYMENT_PENDING completes period without re-transition', async () => {
+    // Documents pre-existing P14e ordering: capture/period advance may commit
+    // before Reserve; SUCCEEDED short-circuit does not retry transitionOrder.
+    const { processor, payments, orders, schedule } = build({
+      attempt: {
+        status: SubscriptionRenewalAttemptStatus.PROCESSING,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      },
+      order: {
+        isRxOrder: false,
+        status: OrderStatus.PAYMENT_PENDING,
+      },
+    });
+    payments.findLatestForOrder.mockResolvedValue({
+      id: 'pay-1',
+      lifecycleState: PaymentLifecycleState.CAPTURED,
+    });
+
+    const result = await processor.processSubscription({
+      subscriptionId: 'sub-1',
+      mode: 'retry',
+      source: 'system',
+    });
+
+    expect(result.outcome).toBe('succeeded');
+    expect(orders.transitionOrder).not.toHaveBeenCalled();
+    expect(payments.capturePayment).not.toHaveBeenCalled();
+    expect(schedule.advancePeriod).toHaveBeenCalled();
+  });
 });

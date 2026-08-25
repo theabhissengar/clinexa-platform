@@ -91,6 +91,8 @@ export class CommerceIntegrationModule implements OnModuleInit {
           }
         }
       },
+      // Inventory mutations are in-txn via OrderInventoryOrchestrator (P13e).
+      // Do not register onInventory write path here — merge preserves any existing.
     });
 
     this.payments.setOutcomeHandlers({

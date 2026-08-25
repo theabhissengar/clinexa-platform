@@ -214,6 +214,7 @@ A module that skips step 5 or step 8 is not a module; it is an unguarded surface
 | 2.3 | 2026-08-24 | Platform Engineering | Subscriptions P14c CRM HTTP + UI implemented; Guardian still pending |
 | 2.4 | 2026-08-24 | Platform Engineering | Subscriptions P14d Guardian HTTP + UI + plans + Class D implemented; P14e–h pending |
 | 2.5 | 2026-08-24 | Platform Engineering | P14e: Payments Nest module (simulated) in delivery; Subscriptions worker/payments complete; P13f partial via renewal Order + payment hooks |
+| 2.6 | 2026-08-25 | Platform Engineering | P13e Inventory orchestration complete (Orders in-txn Reserve/Release/Commit/Restock); P14f still pending for stock-out attempt policy |
 
 ---
 

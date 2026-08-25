@@ -12,6 +12,7 @@ import {
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { OrderEditPolicyService } from './order-edit-policy.service';
+import { OrderInventoryOrchestrator } from './order-inventory.orchestrator';
 import { OrderLifecycleService } from './order-lifecycle.service';
 import { OrderSnapshotService } from './order-snapshot.service';
 import { OrderTotalsService } from './order-totals.service';
@@ -157,13 +158,19 @@ describe('OrdersService', () => {
   }
 
   function buildService(prisma: unknown) {
-    return new OrdersService(
+    const inventory = {
+      applyTransitionIntent: jest.fn().mockResolvedValue(undefined),
+      applyOverrideInventory: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new OrdersService(
       prisma as PrismaService,
       new OrderLifecycleService(),
       new OrderTotalsService(),
       new OrderSnapshotService(),
       new OrderEditPolicyService(),
+      inventory as unknown as OrderInventoryOrchestrator,
     );
+    return Object.assign(service, { _inventory: inventory });
   }
 
   const baseCreateInput = {
@@ -282,6 +289,15 @@ describe('OrdersService', () => {
 
     expect(tx.orderStatusHistory.create).toHaveBeenCalled();
     expect(tx.orderActivity.create).toHaveBeenCalled();
+    expect(
+      (service as unknown as { _inventory: { applyTransitionIntent: jest.Mock } })
+        ._inventory.applyTransitionIntent,
+    ).toHaveBeenCalledWith(
+      'reserve_on_auth_success',
+      'ord-1',
+      undefined,
+      tx,
+    );
     expect(hooks.onInventory).toHaveBeenCalledWith(
       'reserve_on_auth_success',
       'ord-1',
@@ -506,6 +522,17 @@ describe('OrdersService', () => {
       classDAuthorized: true,
       actorUserId: 'admin-1',
     });
+
+    expect(
+      (service as unknown as { _inventory: { applyOverrideInventory: jest.Mock } })
+        ._inventory.applyOverrideInventory,
+    ).toHaveBeenCalledWith(
+      OrderStatus.DRAFT,
+      OrderStatus.FULFILLED,
+      'ord-1',
+      'admin-1',
+      tx,
+    );
 
     expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({

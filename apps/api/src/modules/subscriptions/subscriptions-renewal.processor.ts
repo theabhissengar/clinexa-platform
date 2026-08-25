@@ -121,11 +121,36 @@ export class SubscriptionsRenewalProcessor {
         };
       }
       // Capture retry path for non-Rx stuck after auth.
+      // Rx stock-out retry must re-attempt clinical transition — never capture without clinical (P13e).
       if (
         order?.status === OrderStatus.PAYMENT_PENDING ||
         order?.status === OrderStatus.AWAITING_FULFILLMENT
       ) {
         const payment = await this.payments.findLatestForOrder(order.id);
+        if (
+          order.isRxOrder &&
+          order.status === OrderStatus.PAYMENT_PENDING &&
+          payment &&
+          payment.lifecycleState === PaymentLifecycleState.AUTHORIZED
+        ) {
+          await this.orders.transitionOrder({
+            orderId: order.id,
+            toStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            reason: 'renewal_authorized_retry',
+            expectedStatus: OrderStatus.PAYMENT_PENDING,
+          });
+          return {
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId: order.id,
+            paymentId: payment.id,
+            outcome: 'authorized_awaiting_clinical',
+            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+          };
+        }
         if (
           payment &&
           payment.lifecycleState === PaymentLifecycleState.AUTHORIZED

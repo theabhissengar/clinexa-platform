@@ -595,10 +595,17 @@ async function seedInventoryDefaults(prisma: PrismaClient): Promise<void> {
     update: {},
   });
 
-  const demoVariant = await prisma.productVariant.findFirst({
-    where: { sku: 'DEMO-SKIN-50ML', deletedAt: null },
-  });
-  if (demoVariant) {
+  const baselineSkus: Array<{ sku: string; quantity: number }> = [
+    { sku: 'DEMO-SKIN-50ML', quantity: 500 },
+    { sku: 'DEMO-WEIGHT-30', quantity: 500 },
+  ];
+
+  for (const row of baselineSkus) {
+    const demoVariant = await prisma.productVariant.findFirst({
+      where: { sku: row.sku, deletedAt: null },
+    });
+    if (!demoVariant) continue;
+
     const existing = await prisma.inventoryBalance.findUnique({
       where: {
         warehouseId_productVariantId: {
@@ -607,30 +614,32 @@ async function seedInventoryDefaults(prisma: PrismaClient): Promise<void> {
         },
       },
     });
-    if (!existing) {
-      await prisma.stockMovement.create({
-        data: {
-          id: randomUUID(),
-          warehouseId: warehouse.id,
-          productVariantId: demoVariant.id,
-          movementType: 'RECEIVE',
-          quantityDelta: 50,
-          reason: 'Seed receiving',
-        },
-      });
-      await prisma.inventoryBalance.create({
-        data: {
-          id: randomUUID(),
-          warehouseId: warehouse.id,
-          productVariantId: demoVariant.id,
-          quantityOnHand: 50,
-          quantityReserved: 0,
-        },
-      });
-    }
+    if (existing) continue;
+
+    await prisma.stockMovement.create({
+      data: {
+        id: randomUUID(),
+        warehouseId: warehouse.id,
+        productVariantId: demoVariant.id,
+        movementType: 'RECEIVE',
+        quantityDelta: row.quantity,
+        reason: 'Seed receiving',
+      },
+    });
+    await prisma.inventoryBalance.create({
+      data: {
+        id: randomUUID(),
+        warehouseId: warehouse.id,
+        productVariantId: demoVariant.id,
+        quantityOnHand: row.quantity,
+        quantityReserved: 0,
+      },
+    });
   }
 
-  console.log('Seeded inventory: default warehouse, policies, demo stock for DEMO-SKIN-50ML when present.');
+  console.log(
+    'Seeded inventory: default warehouse, policies, demo stock for baseline catalog SKUs when present.',
+  );
 }
 
 async function main(): Promise<void> {

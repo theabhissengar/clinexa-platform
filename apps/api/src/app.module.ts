@@ -14,6 +14,7 @@ import { AssetsModule } from './modules/assets/assets.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { ClinicalModule } from './modules/clinical/clinical.module';
 import { CommerceIntegrationModule } from './modules/subscriptions/commerce-integration.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 
@@ -37,6 +38,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     InventoryModule,
     OrdersModule,
     PaymentsModule,
+    ClinicalModule,
     SubscriptionsModule,
     CommerceIntegrationModule,
   ],

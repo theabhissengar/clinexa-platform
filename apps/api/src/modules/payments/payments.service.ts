@@ -527,24 +527,13 @@ export class PaymentsService {
       return;
     }
     if (event === 'void_or_refund_required') {
-      const order = await this.prisma.order.findUnique({
-        where: { id: orderId },
-      });
       await this.voidOrRefundForOrder({
         orderId,
         reason: 'order_void_or_refund_required',
         idempotencyKey: `void_refund:${orderId}`,
       });
-      if (
-        order?.subscriptionId &&
-        order.status === 'CLINICAL_DECLINED' &&
-        this.handlers.onClinicalDeclineHold
-      ) {
-        await this.handlers.onClinicalDeclineHold({
-          orderId,
-          subscriptionId: order.subscriptionId,
-        });
-      }
+      // P14g: subscription DECLINED_HOLD is owned by CommerceIntegration after this void —
+      // Payments must not call clinical/subscription handlers.
     }
   }
 

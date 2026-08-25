@@ -366,6 +366,8 @@ Orders **react** to clinical module outcomes (approve/decline/pharmacy ready). O
 - Approve/decline prescriptions
 - Mutate questionnaire responses
 
+**P14g:** Transitions to `CLINICAL_APPROVED` / `CLINICAL_DECLINED` via `transitionOrder` require `source === 'clinical'` (Clinical decision path). Guardian/CRM generic Order transitions must not clinical-decide. Class D `overrideOrder` remains available with reason + `PERM-ORD-014` and is unchanged. Opaque clinical refs (`consultationId`, etc.) are attached by the Clinical adapter — Orders stores them only.
+
 ---
 
 ## 10. Inventory interaction policy (locked V1)
@@ -614,3 +616,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.4 | 2026-08-24 | Platform Engineering | P14e / P13f partial: `createOrderFromSnapshots` + `idempotencyKey`; payment capture/void hooks; inventory still NOOP |
 | 1.5 | 2026-08-25 | Platform Engineering | P13e: in-txn `OrderInventoryOrchestrator` Reserve/Release/Commit/Restock; unique `StockReservation.orderId`; Rx renewal retry guard; seed real reservations |
 | 1.6 | 2026-08-25 | Platform Engineering | Pointer: renewal Reserve `ERR-INV-001` attempt policy is P14f; later fulfill Commit failure still no auto-refund |
+| 1.7 | 2026-08-25 | Platform Engineering | P14g: clinical transitions require `source=clinical`; Class D override unchanged; opaque clinical refs via Clinical adapter |

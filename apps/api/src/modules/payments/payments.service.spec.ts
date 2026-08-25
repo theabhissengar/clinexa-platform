@@ -327,4 +327,28 @@ describe('PaymentsService (simulated gateway)', () => {
     const payment = prisma._store.payments.find((p) => p.id === auth.paymentId);
     expect(payment?.lifecycleState).toBe(PaymentLifecycleState.VOIDED);
   });
+
+  it('P14g: void_or_refund hook does not invoke clinical decline hold', async () => {
+    const onClinicalDeclineHold = jest.fn();
+    service.setOutcomeHandlers({ onClinicalDeclineHold });
+
+    await service.authorizeForOrder({
+      orderId: 'ord-clin-void',
+      paymentMethodId: 'spm-1',
+      amountCents: 2000,
+      purpose: PaymentPurpose.RENEWAL,
+      idempotencyKey: 'renewal:sub:clin-void:authorize',
+    });
+
+    await service.handleOrderPaymentHook(
+      'void_or_refund_required',
+      'ord-clin-void',
+    );
+
+    expect(onClinicalDeclineHold).not.toHaveBeenCalled();
+    const payment = prisma._store.payments.find(
+      (p) => p.orderId === 'ord-clin-void',
+    );
+    expect(payment?.lifecycleState).toBe(PaymentLifecycleState.VOIDED);
+  });
 });

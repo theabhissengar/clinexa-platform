@@ -2,6 +2,8 @@ import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 
 import { OrderStatus, OrderType } from '../../../generated/prisma';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { ClinicalModule } from '../clinical/clinical.module';
+import { ClinicalOutcomesService } from '../clinical/clinical-outcomes.service';
 import { OrdersModule } from '../orders/orders.module';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentsModule } from '../payments/payments.module';
@@ -12,7 +14,7 @@ import { SubscriptionsRenewalProcessor } from './subscriptions-renewal.processor
 import { SubscriptionsService } from './subscriptions.service';
 
 /**
- * Composition root: wires Subscriptions ↔ Orders ↔ Payments side-effect hooks
+ * Composition root: wires Subscriptions ↔ Orders ↔ Payments ↔ Clinical hooks
  * without circular Nest imports inside domain service constructors.
  */
 @Module({
@@ -20,6 +22,7 @@ import { SubscriptionsService } from './subscriptions.service';
     forwardRef(() => SubscriptionsModule),
     forwardRef(() => OrdersModule),
     forwardRef(() => PaymentsModule),
+    ClinicalModule,
   ],
 })
 export class CommerceIntegrationModule implements OnModuleInit {
@@ -29,6 +32,7 @@ export class CommerceIntegrationModule implements OnModuleInit {
     private readonly subscriptions: SubscriptionsService,
     private readonly processor: SubscriptionsRenewalProcessor,
     private readonly addresses: RenewalAddressResolver,
+    private readonly clinical: ClinicalOutcomesService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -76,6 +80,8 @@ export class CommerceIntegrationModule implements OnModuleInit {
     this.orders.setSideEffectHooks({
       onPayment: async (event, orderId) => {
         await this.payments.handleOrderPaymentHook(event, orderId);
+        // P14g: composition root owns subscription decline reaction (once).
+        // Payments executes void/refund only — does not call clinical handlers.
         if (event === 'void_or_refund_required') {
           const order = await this.prisma.order.findUnique({
             where: { id: orderId },
@@ -91,8 +97,10 @@ export class CommerceIntegrationModule implements OnModuleInit {
           }
         }
       },
+      onEnteredClinicalReview: async (orderId) => {
+        await this.clinical.ensureOpaqueConsultationRef(orderId);
+      },
       // Inventory mutations are in-txn via OrderInventoryOrchestrator (P13e).
-      // Do not register onInventory write path here — merge preserves any existing.
     });
 
     this.payments.setOutcomeHandlers({
@@ -128,9 +136,7 @@ export class CommerceIntegrationModule implements OnModuleInit {
           source: 'payment',
         });
       },
-      onClinicalDeclineHold: async (input) => {
-        await this.processor.onClinicalDecline(input);
-      },
+      // P14g: do not wire onClinicalDeclineHold — composition root owns decline.
     });
   }
 }

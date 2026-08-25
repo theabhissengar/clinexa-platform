@@ -589,4 +589,117 @@ describe('OrdersService', () => {
       }),
     );
   });
+
+  it('P14g: rejects clinical approve/decline unless source=clinical', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.AWAITING_CLINICAL_REVIEW;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    const service = buildService(prisma);
+
+    await expect(
+      service.transitionOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.CLINICAL_APPROVED,
+        source: 'guardian',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.ORD_INVALID_TRANSITION },
+    });
+
+    await expect(
+      service.transitionOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.CLINICAL_DECLINED,
+        source: 'crm',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.ORD_INVALID_TRANSITION },
+    });
+
+    expect(tx.order.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('P14g: allows clinical transitions when source=clinical', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.AWAITING_CLINICAL_REVIEW;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    tx.order.findUniqueOrThrow = jest.fn().mockResolvedValue({
+      ...createdOrder,
+      status: OrderStatus.CLINICAL_APPROVED,
+      statusHistory: [],
+    });
+    const service = buildService(prisma);
+
+    await service.transitionOrder({
+      orderId: 'ord-1',
+      toStatus: OrderStatus.CLINICAL_APPROVED,
+      source: 'clinical',
+      expectedStatus: OrderStatus.AWAITING_CLINICAL_REVIEW,
+    });
+
+    expect(tx.order.updateMany).toHaveBeenCalled();
+    expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          toStatus: OrderStatus.CLINICAL_APPROVED,
+          source: 'clinical',
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
+  it('P14g: Class D override can still set clinical statuses', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.AWAITING_CLINICAL_REVIEW;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    tx.order.update = jest.fn().mockResolvedValue({
+      ...createdOrder,
+      status: OrderStatus.CLINICAL_APPROVED,
+    });
+    const service = buildService(prisma);
+
+    await service.overrideOrder({
+      orderId: 'ord-1',
+      toStatus: OrderStatus.CLINICAL_APPROVED,
+      reason: 'documented clinical exception',
+      classDAuthorized: true,
+      actorUserId: 'admin-1',
+    });
+
+    expect(tx.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: OrderStatus.CLINICAL_APPROVED,
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
+  it('P14g: attachClinicalRefs persists opaque consultationId only', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    const service = buildService(prisma);
+
+    await service.attachClinicalRefs({
+      orderId: 'ord-1',
+      consultationId: '11111111-1111-4111-8111-111111111111',
+      source: 'clinical',
+      actorUserId: 'doc-1',
+    });
+
+    expect(tx.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          consultationId: '11111111-1111-4111-8111-111111111111',
+        },
+      }),
+    );
+    expect(tx.orderActivity.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          kind: 'clinical_refs_attached',
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
 });

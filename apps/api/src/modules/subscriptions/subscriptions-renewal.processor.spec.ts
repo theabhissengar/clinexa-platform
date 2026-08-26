@@ -46,6 +46,8 @@ describe('SubscriptionsRenewalProcessor', () => {
     addressError?: boolean;
     transitionError?: Error;
     dueIds?: string[];
+    /** P3-REN-001: ids returned by expire lock (first $queryRaw). */
+    expiredIds?: string[];
     subscription?: Record<string, unknown>;
   }) {
     const attempt = { ...attemptBase, ...overrides?.attempt };
@@ -68,6 +70,7 @@ describe('SubscriptionsRenewalProcessor', () => {
             [key: string]: unknown;
           });
 
+    let queryRawCalls = 0;
     const prisma = {
       order: {
         findUnique: jest.fn(() => Promise.resolve(order)),
@@ -94,9 +97,15 @@ describe('SubscriptionsRenewalProcessor', () => {
         };
         return fn(tx);
       }),
-      $queryRaw: jest.fn(() =>
-        Promise.resolve((overrides?.dueIds ?? []).map((id) => ({ id }))),
-      ),
+      // First call = expire lock; second = due lock (P3-REN-001).
+      $queryRaw: jest.fn(() => {
+        queryRawCalls += 1;
+        const ids =
+          queryRawCalls === 1
+            ? (overrides?.expiredIds ?? [])
+            : (overrides?.dueIds ?? []);
+        return Promise.resolve(ids.map((id) => ({ id })));
+      }),
     };
 
     const renewal = {
@@ -219,6 +228,9 @@ describe('SubscriptionsRenewalProcessor', () => {
       markPastDue: jest.fn(),
       notify: jest.fn(),
       setClinicalRequirement: jest.fn(),
+      expire: jest.fn(() =>
+        Promise.resolve({ id: 'sub-exp', status: SubscriptionStatus.EXPIRED }),
+      ),
     };
 
     const processor = new SubscriptionsRenewalProcessor(
@@ -931,7 +943,47 @@ describe('SubscriptionsRenewalProcessor', () => {
       expect(result.processed).toBe(2);
       expect(result.failed).toBe(1);
       expect(result.succeeded).toBe(1);
+      expect(result.expired).toBe(0);
       expect(call).toBe(2);
+    });
+
+    it('P3-REN-001: expires ACTIVE endsAt<=now before due processing', async () => {
+      const { processor, subscriptions } = build({
+        expiredIds: ['sub-ended'],
+        dueIds: ['sub-due'],
+      });
+
+      const processSpy = jest
+        .spyOn(processor, 'processSubscription')
+        .mockResolvedValue({
+          subscriptionId: 'sub-due',
+          billingPeriodKey: 'sub-due:2026-03-01',
+          attemptId: 'att-due',
+          orderId: 'ord-due',
+          paymentId: 'pay-due',
+          outcome: 'succeeded',
+          attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+        });
+
+      const result = await processor.processDueBatch({ limit: 10 });
+
+      expect(subscriptions.expire).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subscriptionId: 'sub-ended',
+          toStatus: SubscriptionStatus.EXPIRED,
+          source: 'system',
+        }),
+      );
+      expect(result.expired).toBe(1);
+      expect(result.processed).toBe(1);
+      expect(result.succeeded).toBe(1);
+      // Expire runs before due: expire called, then processSubscription for due id only.
+      expect(processSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ subscriptionId: 'sub-due' }),
+      );
+      expect(processSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({ subscriptionId: 'sub-ended' }),
+      );
     });
   });
 });

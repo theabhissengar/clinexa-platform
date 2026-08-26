@@ -588,6 +588,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | **Partial** (via P14e): `createOrderFromSnapshots` + `Order.idempotencyKey`; `onPayment` capture/void; Store intents deferred |
 | **P13g** | RBAC seed, verification, documentation freeze | Not started |
 | **P15 (adjacent)** | Guardian create-order `couponCode` → Promotions `evaluatePricing` → persist `appliedCouponId` + `pricingSnapshotJson`; Payments charges `order.totalCents` only | **In progress** on `feature/payments-phase2` — see [37](37-promotions-module.md) |
+| **Phase 3 (adjacent)** | Subscription create may mint `SUBSCRIPTION_INITIAL` DRAFT via `createOrderFromSnapshots` (no coupon); subscription cancel may cancel open INITIAL/RENEWAL DRAFT/PAYMENT_PENDING orders (skips CAPTURED hold) | **In progress** on `feature/payments-phase3` — see [36](36-subscriptions-module.md) |
 
 Order rationale: schema → shared logic → CRM ops value → Guardian/Class D → inventory wiring → payment hooks → verification. Do not put CRM create anywhere. Do not put Class D before shared domain.
 
@@ -619,3 +620,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.6 | 2026-08-25 | Platform Engineering | Pointer: renewal Reserve `ERR-INV-001` attempt policy is P14f; later fulfill Commit failure still no auto-refund |
 | 1.7 | 2026-08-25 | Platform Engineering | P14g: clinical transitions require `source=clinical`; Class D override unchanged; opaque clinical refs via Clinical adapter |
 | 1.8 | 2026-08-26 | Platform Engineering | P15: create-order coupon boundary (`couponCode` only); persist pricing snapshot; Promotions owns validation/pricing ([37](37-promotions-module.md)) |
+| 1.9 | 2026-08-26 | Platform Engineering | Phase 3 adjacent: subscription create/cancel may create/cancel INITIAL/RENEWAL orders via existing Orders APIs (no schema change) |

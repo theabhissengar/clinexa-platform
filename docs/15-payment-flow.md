@@ -138,6 +138,8 @@ Define a production-grade payment architecture for Clinexa so that:
 | **PAY-006** | V1 merchant timing: Authorize → Clinical Review → Capture → Fulfillment | PRD §13.6 / §9.7; this document |
 | **PAY-007** | Provider abstraction: domain rules do not depend on a named PSP | `NFR-137`, `ARCH-070` |
 
+**Phase 2 money + pricing boundary (P15).** Promotions calculates price → Orders persists finalized totals + `pricingSnapshotJson` → Payments charges `order.totalCents` only. Payments never receives `couponCode` or Coupon rules. Live Stripe (including an adapter skeleton) remains deferred; the runtime stack is `PaymentGateway` + `ProviderRegistry` + `SimulatedPaymentAdapter`.
+
 ### 2.2 Payment service responsibilities
 
 The Payments domain (`ARCH-046`) within the Backend API is responsible for:
@@ -148,7 +150,7 @@ The Payments domain (`ARCH-046`) within the Backend API is responsible for:
 | Tokenization handoff | Patient completes PSP-hosted / tokenized collection; Clinexa stores tokens and display metadata only | `FR-PAY-001`, `DB-030` |
 | Authorization | Place authorization hold (or equivalent PSP authorize semantics) after checkout gates succeed | `FR-CHK-004`, **PAY-006** |
 | Capture | Capture authorized funds after clinical approval (Rx) or after payment success path for non-Rx when capture is required before fulfillment | `BP-05`, **PAY-006** |
-| Refunds | Initiate policy-checked refunds; record amounts actually refunded | `FR-PAY-003`, `OR-11`, `DB-029` |
+| Refunds | Initiate policy-checked refunds; record amounts actually refunded; staff paths require `Idempotency-Key`; cumulative `sum(SUCCEEDED) + requested ≤ captured` | `FR-PAY-003`, `OR-11`, `DB-029`, `API-067` |
 | Saved methods | Attach/list/delete patient-owned tokenized methods for renewals | `FR-PAY-004`, `FR-PRT-004`, `API-064`–`066` |
 | Webhook ingest | Verify provider signature; apply durable outcomes idempotently | `API-068`, `AUTH-016`, `DB-031` |
 | State projection | Update payment, order, and subscription records from confirmed outcomes | `FR-PAY-002`, `ARCH-047`, `ARCH-048` |
@@ -831,7 +833,7 @@ flowchart TD
 | `ERR-PAY-002` | Idempotency conflict | **PAY-114** |
 | `ERR-PAY-003` | Webhook signature invalid | **PAY-111**; reject |
 | `ERR-PAY-004` | Refund ineligible | **PAY-090** policy deny |
-| `ERR-PAY-005` | Payment method missing | Renewal/checkout cannot charge |
+| `ERR-PAY-005` | Payment method missing **or ownership mismatch** | Renewal/checkout cannot charge; saved method `userId` must equal `order.patientUserId` |
 | `ERR-PAY-006` | PSP timeout | **PAY-117** fail-safe |
 
 ### 9.4 Ownership matrix
@@ -969,6 +971,7 @@ Component-level ownership for implementation and operations handoff. Complements
 | 1.1 | 2026-08-24 | Platform Engineering | Pending | `PAY-023`/`PAY-070` aligned to [36](36-subscriptions-module.md): order opened with attempt; Subscriptions does not execute payments; no `renewing` lifecycle status | Draft for review |
 | 1.2 | 2026-08-24 | Platform Engineering | Pending | P14e: redraw §5.10 — attempt → Order → authorize → clinical → capture → period advance on capture only; Nest PaymentsModule simulated gateway | Draft for review |
 | 1.3 | 2026-08-25 | Platform Engineering | Pending | P14f: period advance requires CAPTURED + Reserve-committed Order; hold capture on `ERR-INV-001`; no auto refund | Draft for review |
+| 1.4 | 2026-08-26 | Platform Engineering | Pending | P15: money/pricing boundary; staff refunds + ownership `ERR-PAY-005`; Stripe still deferred; Promotions owns coupons ([37](37-promotions-module.md)) | Draft for review |
 
 ---
 

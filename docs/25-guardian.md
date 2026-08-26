@@ -308,6 +308,7 @@ Modules marked **Shared** are dual-mounted with CRM under different action sets 
 | --- | --- |
 | Products / Categories (`GRD-031`/`032`) | Unsafe Rx configurations are blocked at publish (`OR-14`); Store shows published state only |
 | Orders administration (`GRD-034`) | Operational refund assist and policy cancel remain in CRM under existing support FRs; **financial corrections, administrative overrides, archive, delete, and restore are Guardian-only** |
+| Payments (Commerce nav) / Coupons (`GRD-044`) / Payment providers (`GRD-049`) | **UI-only.** Guardian pages call Payments/Promotions APIs. No Prisma, PSP SDK, coupon validation, or pricing logic in `apps/admin`. Payment list/detail uses `PERM-ORD-001`. Provider page is non-secret metadata (`PERM-SET-002`). Redemptions page calls `API-147`. |
 | Users administration (`GRD-042`) | Last-admin safeguard applies; role changes bump session/token version; deletion is soft by default (`GRD-007`) |
 | Questionnaires (`GRD-046`) | **CRM-only Internal Platform UI.** Definitions, bindings, and clinician case view are under `/crm/questionnaires`. Guardian does not list or host this module. Versions bound to submitted answers remain immutable and never deletable in the API. |
 | Audit / activity logs (`GRD-053`/`054`) | Guardian can query but never mutate; retention ≥ 1 year (`SEC-036`) |
@@ -323,7 +324,7 @@ Guardian navigation uses **grouped enterprise navigation**. Full behavior—nest
 | Group | Intent | Representative modules |
 | --- | --- | --- |
 | Dashboard | Home and platform KPIs | `GRD-030` |
-| Commerce | Catalog and commerce administration | `GRD-031`–`GRD-036` |
+| Commerce | Catalog and commerce administration | `GRD-031`–`GRD-036` (Payments list is Commerce nav, `PERM-ORD-001`) |
 | Content | Content and Asset Library administration | `GRD-037`–`GRD-041` |
 | Users | Identity administration | `GRD-042`, `GRD-043` |
 | Marketing | Growth configuration | `GRD-044`, `GRD-045` |
@@ -355,6 +356,17 @@ Guardian navigation uses **grouped enterprise navigation**. Full behavior—nest
 ### 5.2 Module as mini application
 
 **GRD-074** — Every major module is a mini application under its context prefix, for example `/guardian/products`, `/guardian/products/new`, `/guardian/products/:id`, `/guardian/products/:id/edit`. The context prefix—not a feature flag or client state—determines whether destructive actions are reachable.
+
+Phase 2 Guardian payment/coupon routes (UI-only API clients):
+
+| Page | Route |
+| --- | --- |
+| Payment list | `/guardian/payments` |
+| Payment detail | `/guardian/payments/:id` |
+| Payment providers (read-only) | `/guardian/settings/payment-providers` |
+| Coupon list / create / detail / edit | `/guardian/coupons`, `/guardian/coupons/new`, `/guardian/coupons/:id`, `/guardian/coupons/:id/edit` |
+| Coupon redemptions | `/guardian/coupons/:id/redemptions` |
+
 
 ### 5.3 Recommended module page hierarchy (architectural standard)
 
@@ -690,6 +702,7 @@ Migration mechanics, redirect mapping, verification checks, and required test ca
 | 1.4 | 2026-08-03 | Platform Engineering | Pending | `GRD-033` full Inventory admin (not policy-only); CRM consume-only; blueprint [34](34-inventory-module.md); APIs `API-187`–`203` | Draft for review |
 | 1.5 | 2026-08-20 | Platform Engineering | Pending | `GRD-034` Orders admin Create/Class D clarified; link [35](35-orders-module.md) | Draft for review |
 | 1.6 | 2026-08-24 | Platform Engineering | Pending | `GRD-035` Subscriptions: CRM no Create; Class D + override; link [36](36-subscriptions-module.md) | Draft for review |
+| 1.8 | 2026-08-26 | Platform Engineering | Pending | P15 routes: `/guardian/payments`, `/guardian/payments/:id`, `/guardian/settings/payment-providers`, `/guardian/coupons/*`, `/guardian/coupons/:id/redemptions` | Draft for review |
 
 ---
 

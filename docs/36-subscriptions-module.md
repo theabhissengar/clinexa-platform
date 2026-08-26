@@ -24,7 +24,7 @@ Subscriptions is the **authoritative platform aggregate for recurring customer c
 
 **Requirements:** `FR-SUB-001`–`005`, `OR-10`, `AC-BR-11`, `FR-PAY-004`, `FR-PRT-004`; payment timing [15](15-payment-flow.md); order coupling [35](35-orders-module.md).
 
-**Not its job:** Individual order transactions; Payment authorize/capture/refund execution or PSP secrets; Inventory ledger writes; Product catalog authorship; User identity store; Clinical authoring (consultations, prescriptions, questionnaire definitions/answers); Document/file storage; Notification template delivery; Store/Portal UX shells; platform-wide UI modernization (P10).
+**Not its job:** Individual order transactions; Payment authorize/capture/refund execution or PSP secrets; Inventory ledger writes; Product catalog authorship; User identity store; Clinical authoring (consultations, prescriptions, questionnaire definitions/answers); Document/file storage; Notification template delivery; Store/Portal UX shells; platform-wide UI modernization (P10); **Phase 2 coupon application on renewals** (renewal Orders are created from snapshots with no `couponCode`).
 
 There is **no standalone Renewals module**, Renewals database domain, Renewals navigation section, or separate ownership boundary. Renewal orchestration is a **child workflow of Subscriptions**.
 
@@ -501,7 +501,7 @@ A subscription is due when **all** hold:
 1. Compute `billingPeriodKey` for the period being billed.
 2. Insert or load `SubscriptionRenewalAttempt` (unique `subscriptionId` + `billingPeriodKey`).
 3. If attempt already has `orderId`, **reuse that Order** — never create a second order for the period.
-4. If no `orderId`, Orders `createOrderFromSnapshots` with `orderType = SUBSCRIPTION_RENEWAL`, `idempotencyKey = renewal:{subId}:{billingPeriodKey}`, copying **subscription item snapshots** (not live catalog). Addresses: latest order → user shipping JSON → fail `ERR-VAL-002` (no placeholders).
+4. If no `orderId`, Orders `createOrderFromSnapshots` with `orderType = SUBSCRIPTION_RENEWAL`, `idempotencyKey = renewal:{subId}:{billingPeriodKey}`, copying **subscription item snapshots** (not live catalog). Addresses: latest order → user shipping JSON → fail `ERR-VAL-002` (no placeholders). **Do not pass `couponCode`.** Phase 2 coupons do not apply to renewals.
 5. Record `orderId` on the attempt; set `latestOrderId` on the subscription.
 6. Payments **authorizes** the saved method (opaque refs only). Rx: clinical review then capture; non-Rx: capture after authorize (ordering unchanged). **P13e** Reserves on Order transition leaving `payment_pending`. **P14f:** on `ERR-INV-001`, attempt=`FAILED` (`lastErrorCode=ERR-INV-001`); lifecycle unchanged (not `PAST_DUE`); no refund/void. Non-Rx may be CAPTURED + `PAYMENT_PENDING` until Reserve succeeds — period does **not** advance until capture **and** Reserve-committed status (`AWAITING_FULFILLMENT` / `FULFILLED`).
 7. Subscriptions records payment status snapshot and attempt status from those outcomes.
@@ -826,5 +826,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.7 | 2026-08-25 | Platform Engineering | P14f complete: `ERR-INV-001` → retryable attempt `FAILED`; hold capture; payment-aware resume; period only after CAPTURED + Reserve; no auto-SKIPPED / no PAST_DUE / no refund |
 | 1.8 | 2026-08-25 | Platform Engineering | P14g complete: Clinical refs/events adapter (API-090/091); clinical-source Order guard; DECLINED_HOLD short-circuit; single decline path; reassessment cadence still open |
 | 1.9 | 2026-08-25 | Platform Engineering | P14h complete: verification/regression freeze; RBAC seed/guards confirmed; §20 satisfied; **P14 Complete** |
+| 1.10 | 2026-08-26 | Platform Engineering | P15: renewals remain coupon-free; capture-success redemption is Orders/Payments/Promotions composition, not Subscription domain logic |
 
 *End of 36 — Subscriptions Module.*

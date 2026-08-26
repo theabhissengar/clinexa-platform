@@ -8,7 +8,7 @@
 | Status | Draft for review |
 | Audience | Engineering leadership, architects, engineers, product, QA |
 | Source of truth | [00 — Product Requirements Document](00-product-requirements-document.md) |
-| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [35 — Orders module](35-orders-module.md), [36 — Subscriptions module](36-subscriptions-module.md) |
+| Related docs | [05 — System architecture](05-system-architecture.md), [08 — Role permissions](08-role-permissions.md), [09 — Feature roadmap](09-feature-roadmap.md), [11 — API design](11-api-design.md), [18 — CRM](18-crm.md), [21 — Development guidelines](21-development-guidelines.md), [25 — Guardian](25-guardian.md), [27 — Module registry](27-module-registry.md), [28 — Ownership matrix](28-ownership-matrix.md), [29 — Navigation blueprint](29-navigation-blueprint.md), [30 — Migration and verification](30-migration-and-verification.md), [31 — Products module](31-products-module.md), [32 — Users module](32-users-module.md), [35 — Orders module](35-orders-module.md), [36 — Subscriptions module](36-subscriptions-module.md), [37 — Promotions module](37-promotions-module.md) |
 
 This document is the **governance record** for delivering the Clinexa ecosystem architecture: the Internal Platform with its CRM and Guardian contexts, the application-agnostic backend, and the extension points for future clients.
 
@@ -101,6 +101,7 @@ Every phase record in §5 carries these fields.
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
 | **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13e complete; **P13f partial via P14e**; P13g not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
 | **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | **Complete** (P14a–h; verification freeze on `feature/subscriptions-p14h-freeze`) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
+| **P15** | Payments Phase 2 + Promotions / Coupons (Guardian payments UI, staff refunds, coupon pricing boundary; no Stripe) | In progress (`feature/payments-phase2`) | P14 complete; P13 Orders |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -333,6 +334,22 @@ Every phase record in §5 carries these fields.
 | **Documentation updates** | [36](36-subscriptions-module.md), [15](15-payment-flow.md), [10](10-database-design.md), [11](11-api-design.md), [35](35-orders-module.md), [27](27-module-registry.md), this record |
 | **Notes** | CRM Create locked No. Clinical decline → `DECLINED_HOLD` (not PAST_DUE / not auto-cancel). Period advances after capture **and** Reserve (P14f). Inventory-only failure does not mark `PAST_DUE` (OD-SUB-04). Optional `RENEWAL_CRON_ENABLED` local cron (default false); production uses Internal HTTP job. **P14g open:** plan reassessment cadence math (`requiresReassessment` / `reassessmentIntervalCycles`) still unresolved — not invented in P14g. Approve does not auto-clear `clinicalRequirement`. |
 | **Verification** | API typecheck/lint/tests including Payments + renewal processor + P14f inventory-failure matrix + P14g clinical outcomes/boundaries/permissions + CRM/Guardian Subscription specs; Orders clinical-source guard + Inventory orchestration tests |
+
+### P15 — Payments Phase 2 + Promotions / Coupons
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Establish a durable payment + promotion architecture: Guardian payment administration (UI-only), PromotionsModule for coupons/pricing, staff refund APIs with cumulative partial-refund + Idempotency-Key, without Stripe or changing P14 renewal behavior |
+| **Status** | In progress |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-phase2` |
+| **PR** | — |
+| **Dependencies** | P14 complete (`dev` @ P14h); P13 Orders; RBAC dictionary `PERM-PAY-003`, `PERM-ORD-001`, `PERM-CPN-001`/`002`/`010`, `PERM-SET-002` |
+| **Scope** | Payments admin list/detail/refund (API-067) + CRM refund assist; ProviderRegistry read-only metadata; saved-method ownership (`ERR-PAY-005`); PromotionsModule (validation ≠ pricing ≠ redemption); coupon CRUD + API-147 redemptions; Orders `couponCode` → pricing snapshot; capture-success atomic redemption; Guardian Payments/Coupons/providers UI (thin client); webhook simulated event expansion |
+| **Architecture changes** | Money boundary unchanged; Promotions is the pricing boundary; Guardian UI-only; no Stripe adapter |
+| **Documentation updates** | [37](37-promotions-module.md), [26](26-implementation-tracker.md) (this record), [27](27-module-registry.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [35](35-orders-module.md), [36](36-subscriptions-module.md), [25](25-guardian.md), [08](08-role-permissions.md) |
+| **Notes** | Renewals remain coupon-free. `PERM-CPN-010` seeded. Capture-success redemption failure is an explicit audit outcome (no payment rollback). |
+| **Verification** | Payments refund/idempotency/ownership/webhook tests; Promotions validation/pricing/redemption tests; static module-boundary specs (admin/Orders/Subscriptions/Payments/Promotions); P13e/P14e–g regression green |
 
 ### P10 — Internal Platform UX/UI Modernization
 

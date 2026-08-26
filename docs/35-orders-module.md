@@ -24,7 +24,7 @@ Orders is the **authoritative commerce order aggregate**. It owns order records,
 
 **Requirements:** `FR-ORD-001`–`006`, `OR-03`–`05`, `OR-08`, `OR-09`, `OR-11`, `OR-12`; payment timing [15](15-payment-flow.md); inventory coupling [34](34-inventory-module.md).
 
-**Not its job:** Payment authorize/capture/refund execution or PSP secrets; Inventory ledger writes; Product catalog authorship; User identity store; Clinical authoring (consultations, prescriptions, questionnaire definitions/answers); Subscription renewal logic; Document/file storage; Notification template delivery; Store/Portal UX shells.
+**Not its job:** Payment authorize/capture/refund execution or PSP secrets; Coupon rule inspection or discount calculation (Orders passes opaque `couponCode` to Promotions only); Inventory ledger writes; Product catalog authorship; User identity store; Clinical authoring (consultations, prescriptions, questionnaire definitions/answers); Subscription renewal logic; Document/file storage; Notification template delivery; Store/Portal UX shells.
 
 ### 1.1 Owns vs does not own
 
@@ -33,7 +33,7 @@ Orders is the **authoritative commerce order aggregate**. It owns order records,
 | Order aggregate and status machine | Payment transaction records (`DB-028`/`029`) |
 | OrderItems with immutable catalog/price snapshots | Live Product/Variant mutability |
 | Customer / shipping / billing **snapshots** | Live User profile / address book SoT |
-| Server-computed money totals on the order | PSP communication and payment secrets |
+| Server-computed money totals on the order | PSP communication, payment secrets, and coupon/discount calculation |
 | Order notes, history, activity (entity UX) | Platform Audit Log (`GRD-053`) |
 | Opaque refs to payment / clinical / questionnaire / subscription / reservation | Clinical approve/decline workflows |
 | Orchestration requests to Inventory services | Direct inventory table mutations |
@@ -587,6 +587,7 @@ Orders does **not** own file storage. Do **not** use Asset Library as an order-d
 | **P13e** | Inventory orchestration (closes P12f) | **Complete** on `feature/inventory-orchestration` |
 | **P13f** | Payment integration hooks (refs + reactions; Payments may still be stub) | **Partial** (via P14e): `createOrderFromSnapshots` + `Order.idempotencyKey`; `onPayment` capture/void; Store intents deferred |
 | **P13g** | RBAC seed, verification, documentation freeze | Not started |
+| **P15 (adjacent)** | Guardian create-order `couponCode` → Promotions `evaluatePricing` → persist `appliedCouponId` + `pricingSnapshotJson`; Payments charges `order.totalCents` only | **In progress** on `feature/payments-phase2` — see [37](37-promotions-module.md) |
 
 Order rationale: schema → shared logic → CRM ops value → Guardian/Class D → inventory wiring → payment hooks → verification. Do not put CRM create anywhere. Do not put Class D before shared domain.
 
@@ -617,3 +618,4 @@ Order rationale: schema → shared logic → CRM ops value → Guardian/Class D 
 | 1.5 | 2026-08-25 | Platform Engineering | P13e: in-txn `OrderInventoryOrchestrator` Reserve/Release/Commit/Restock; unique `StockReservation.orderId`; Rx renewal retry guard; seed real reservations |
 | 1.6 | 2026-08-25 | Platform Engineering | Pointer: renewal Reserve `ERR-INV-001` attempt policy is P14f; later fulfill Commit failure still no auto-refund |
 | 1.7 | 2026-08-25 | Platform Engineering | P14g: clinical transitions require `source=clinical`; Class D override unchanged; opaque clinical refs via Clinical adapter |
+| 1.8 | 2026-08-26 | Platform Engineering | P15: create-order coupon boundary (`couponCode` only); persist pricing snapshot; Promotions owns validation/pricing ([37](37-promotions-module.md)) |

@@ -477,19 +477,21 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | --- | --- |
 | Purpose | Percent/fixed coupons with validity windows, usage limits, catalog scope |
 | Primary key | `id` |
-| Relationships | 1:N CouponRedemptions; scoped to products/categories as configured |
-| Business rules | Server-side validation at checkout (`FR-CPN-002`); deactivate preferred (`FR-CPN-001`) |
-| Retention | Deactivate; retain for redemption history |
-| Trace | FR-CPN-001–003, OR-13 adjacent, ROAD-022 |
+| Relationships | 1:N CouponRedemptions; optional N:1 from Order (`appliedCouponId`); scoped to products/categories as configured |
+| Business rules | Server-side validation at checkout (`FR-CPN-002`); deactivate preferred (`FR-CPN-001`); Phase 2 MVP evaluates **ORDER** + manual codes only |
+| Persistence (P15) | Prisma `Coupon` (`coupons`): extensible `applicability` / `rulesJson` / stacking fields reserved for Phase 3+; migration `20260826120000_promotions_coupons_and_order_snapshot` |
+| Retention | Deactivate; retain for redemption history. Class D delete (`PERM-CPN-010`) is blocked when recorded redemptions exist |
+| Trace | FR-CPN-001–003, OR-13 adjacent, ROAD-022; blueprint [37](37-promotions-module.md) |
 
 #### DB-025 CouponRedemptions
 
 | Field | Detail |
 | --- | --- |
-| Purpose | Record successful coupon use on paid orders |
+| Purpose | Record coupon use on paid orders (successful capture) plus explicit limit-failure audit rows |
 | Primary key | `id` |
-| Relationships | N:1 Coupon; N:1 Order; N:1 User (patient) |
-| Business rules | Record on successful payment (`FR-CPN-003`); immutable |
+| Relationships | N:1 Coupon; N:1 Order; N:1 User (patient); optional N:1 Payment |
+| Business rules | Record on successful payment (`FR-CPN-003`); validate ≠ redeem; `RECORDED` vs `FAILED_LIMIT`; immutable after insert |
+| Persistence (P15) | Prisma `CouponRedemption` (`coupon_redemptions`); written only after capture success |
 | Retention | Retain with order history |
 | Trace | FR-CPN-003 |
 
@@ -505,6 +507,7 @@ Retention notes use intents from NFR-062/064 and FR §11; numeric legal holds ar
 | Inventory coupling | **Reserve on successful payment authorization** when leaving `payment_pending`; Release/Commit/Restock via Inventory services only — Orders never writes inventory tables ([35 §10](35-orders-module.md), [34](34-inventory-module.md)) |
 | Persistence (P13a) | Prisma models `Order`, `OrderItem`, `OrderAddress`, `OrderStatusHistory`, `OrderActivity`, `OrderNote`, `OrderAdjustment`; migration `20260820120000_orders_platform_module_foundation` |
 | Persistence (P14e) | Additive `Order.idempotencyKey` (unique, nullable) for renewal Order replay (`renewal:{subscriptionId}:{billingPeriodKey}`); migration `20260824180000_payments_domain_and_order_idempotency` |
+| Persistence (P15) | Nullable `Order.appliedCouponId` + `Order.pricingSnapshotJson` (historical pricing SoT). Coupon edits/deactivation must not rewrite historical totals |
 | Retention | Retain indefinitely for clinical/commerce audit intent; cancel/refund via status; prefer terminal status over hard delete |
 | Trace | FR-ORD-001–006, ARCH-047, ROAD-010; blueprint [35](35-orders-module.md) |
 
@@ -540,6 +543,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Relationships | N:1 Order and/or Subscription; optional SavedPaymentMethod; 1:N Refunds |
 | Business rules | Statuses: `pending`, `authorized_or_captured`, `failed`, `refunded` (FR §14); PSP tokens only; drives order/subscription transitions (`FR-PAY-002`) |
 | Persistence (P14e) | Prisma `Payment` (`payments`): `amountCents`, `status`/`lifecycleState`/`purpose` enums, provider refs, unique `idempotencyKey`; migration `20260824180000_payments_domain_and_order_idempotency`. Nest `PaymentsModule` owns all writes — Subscriptions/Orders must not use `prisma.payment.` |
+| Persistence (P15) | List indexes `createdAt`, `provider`, `(status, createdAt)`; migration `20260826100000_payments_admin_indexes`. Saved-method ownership: charged user must own the method (`ERR-PAY-005`) |
 | Retention | Retain financial history |
 | Trace | FR-PAY-001–005, ARCH-046, ROAD-009 |
 
@@ -552,6 +556,7 @@ Platform Audit remains `GRD-053` — not duplicated here. Payment/Refund tables 
 | Relationships | N:1 Payment; N:1 Order; optional actor User (staff) |
 | Business rules | Clinical decline pre-fulfillment default eligible captured refund; post-fulfillment manual + reason; coupon-adjusted; may trigger inventory restock (`OR-11`, FR-PAY-003) |
 | Persistence (P14e) | Prisma `Refund` (`refunds`): unique `idempotencyKey`; service-path void/refund only in P14e (no public refund HTTP) |
+| Persistence (P15) | Staff refund HTTP (`API-067`) on `/v1/admin/payments/{id}/refunds` and `/v1/crm/payments/{id}/refunds`; `Idempotency-Key` maps to `Refund.idempotencyKey`; cumulative `sum(SUCCEEDED) + requested ≤ captured` |
 | Retention | Retain with payments/orders |
 | Trace | OR-11, FR-PAY-003, FR-ORD-006, AC-BR-10 |
 
@@ -1796,6 +1801,7 @@ flowchart LR
 | 1.8 | 2026-08-24 | Platform Engineering | TBD | P14b: no schema change; NestJS Subscriptions domain services consume `DB-032`–`034` | Draft for review |
 | 1.9 | 2026-08-24 | Platform Engineering | TBD | P14e Prisma: `Payment`/`Refund`/`SavedPaymentMethod`/`PaymentWebhookEvent` + `Order.idempotencyKey`; migration `20260824180000_payments_domain_and_order_idempotency` | Draft for review |
 | 2.0 | 2026-08-25 | Platform Engineering | TBD | P13e: unique nullable `stock_reservations.order_id`; Orders↔Inventory same-txn coupling via Nest services | Draft for review |
+| 2.1 | 2026-08-26 | Platform Engineering | TBD | P15: `Coupon`/`CouponRedemption` + `Order.appliedCouponId`/`pricingSnapshotJson`; payment list indexes; migrations `20260826100000_payments_admin_indexes`, `20260826120000_promotions_coupons_and_order_snapshot` | Draft for review |
 
 ---
 

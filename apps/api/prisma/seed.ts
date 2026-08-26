@@ -15,6 +15,7 @@ import {
 import { Roles, type RoleCode } from '../src/modules/rbac/constants/roles';
 import { seedDevOrdersDataset } from './seed-dev-orders-dataset';
 import { seedDevSubscriptionsDataset } from './seed-dev-subscriptions-dataset';
+import { seedDevCouponsDataset } from './seed-dev-coupons-dataset';
 
 /**
  * Canonical RBAC seed + optional local staff users for role testing.
@@ -661,6 +662,7 @@ async function main(): Promise<void> {
     await seedDemoPatients(prisma);
     await seedDevOrdersDataset(prisma, hashPassword);
     await seedDevSubscriptionsDataset(prisma);
+    await seedDevCouponsDataset(prisma);
   } finally {
     await prisma.$disconnect();
   }

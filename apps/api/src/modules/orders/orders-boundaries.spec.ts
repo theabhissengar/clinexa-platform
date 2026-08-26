@@ -39,4 +39,21 @@ describe('Orders domain boundaries', () => {
       sources.some((f) => f.name === 'order-inventory.orchestrator.ts'),
     ).toBe(true);
   });
+
+  it('does not import PSP adapters or provider-specific types', () => {
+    for (const file of sources) {
+      expect(file.text.includes('PaymentGateway')).toBe(false);
+      expect(file.text.includes('SimulatedPaymentAdapter')).toBe(false);
+      expect(file.text.toLowerCase().includes("from 'stripe'")).toBe(false);
+    }
+  });
+
+  it('does not inspect Coupon entities or calculate discounts itself', () => {
+    for (const file of sources) {
+      expect(file.text.includes('prisma.coupon')).toBe(false);
+      expect(file.text.includes('tx.coupon')).toBe(false);
+      expect(file.text.includes('CouponDiscountType')).toBe(false);
+      expect(file.text.includes('CouponValidationService')).toBe(false);
+    }
+  });
 });

@@ -8,18 +8,58 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { CouponValidationService } from './coupon-validation.service';
 import { CouponsService } from './coupons.service';
 
+type CouponState = {
+  id: string;
+  globalUsageLimit: number | null;
+  perUserUsageLimit: number | null;
+  usageCount: number;
+  isActive: boolean;
+  deletedAt: Date | null;
+};
+
+type RedemptionRow = {
+  id?: string;
+  status?: string;
+  orderId?: string;
+  couponId?: string;
+  patientUserId?: string;
+  [key: string]: unknown;
+};
+
+type CouponsPrismaMock = {
+  order: {
+    findUnique: jest.Mock;
+    update: jest.Mock;
+    updateMany: jest.Mock;
+  };
+  coupon: {
+    findUnique: jest.Mock;
+    update: jest.Mock;
+  };
+  couponRedemption: {
+    findFirst: jest.Mock;
+    count: jest.Mock;
+    findMany: jest.Mock;
+    create: jest.Mock;
+  };
+  $executeRaw: jest.Mock;
+  $transaction: jest.Mock;
+  _redemptions: RedemptionRow[];
+  _coupon: CouponState;
+};
+
 describe('CouponsService.recordRedemption', () => {
   function build() {
-    const redemptions: Array<Record<string, unknown>> = [];
-    const coupon = {
+    const redemptions: RedemptionRow[] = [];
+    const coupon: CouponState = {
       id: 'cpn-1',
-      globalUsageLimit: 1 as number | null,
-      perUserUsageLimit: 1 as number | null,
+      globalUsageLimit: 1,
+      perUserUsageLimit: 1,
       usageCount: 0,
       isActive: true,
       deletedAt: null,
     };
-    const prisma = {
+    const prisma: CouponsPrismaMock = {
       order: {
         findUnique: jest.fn().mockResolvedValue({
           id: 'ord-1',
@@ -93,19 +133,26 @@ describe('CouponsService.recordRedemption', () => {
             ),
         ),
         findMany: jest.fn(
-          ({ select }: { select?: Record<string, boolean> }) =>
-            Promise.resolve(
+          ({
+            select,
+          }: {
+            select?: Record<string, boolean>;
+          }): Promise<RedemptionRow[]> => {
+            if (!select) {
+              return Promise.resolve(redemptions);
+            }
+            return Promise.resolve(
               redemptions.map((row) => {
-                if (!select) {
-                  return row;
+                const picked: RedemptionRow = {};
+                for (const key of Object.keys(select)) {
+                  if (select[key]) {
+                    picked[key] = row[key];
+                  }
                 }
-                return Object.fromEntries(
-                  Object.keys(select)
-                    .filter((key) => select[key])
-                    .map((key) => [key, row[key]]),
-                );
+                return picked;
               }),
-            ),
+            );
+          },
         ),
         create: jest.fn(({ data }: { data: Record<string, unknown> }) => {
           const row = { id: `red-${redemptions.length + 1}`, ...data };
@@ -114,12 +161,13 @@ describe('CouponsService.recordRedemption', () => {
         }),
       },
       $executeRaw: jest.fn().mockResolvedValue(1),
-      $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
-        fn(prisma),
-      ),
+      $transaction: jest.fn(),
       _redemptions: redemptions,
       _coupon: coupon,
     };
+    prisma.$transaction.mockImplementation(
+      (fn: (tx: CouponsPrismaMock) => Promise<unknown>) => fn(prisma),
+    );
     const service = new CouponsService(
       prisma as never,
       new CouponValidationService(prisma as never),
@@ -147,7 +195,9 @@ describe('CouponsService.recordRedemption', () => {
       paymentId: 'pay-2',
     });
     expect(second.outcome).toBe('limit_exceeded');
-    expect(second).toMatchObject({ errorCode: ErrorCodes.CPN_REDEMPTION_LIMIT });
+    expect(second).toMatchObject({
+      errorCode: ErrorCodes.CPN_REDEMPTION_LIMIT,
+    });
     expect(prisma._coupon.usageCount).toBe(1);
     expect(
       prisma._redemptions.some(
@@ -201,7 +251,10 @@ describe('CouponsService.recordRedemption', () => {
       orderId: 'ord-1',
       paymentId: 'pay-1',
     });
-    const listed = await service.listRedemptions('cpn-1', { skip: 0, take: 50 });
+    const listed = await service.listRedemptions('cpn-1', {
+      skip: 0,
+      take: 50,
+    });
     expect(listed.total).toBe(1);
     expect(listed.items[0]).toEqual(
       expect.objectContaining({
@@ -235,7 +288,9 @@ describe('CouponsService.recordRedemption', () => {
     const frozen = structuredClone(orderRow);
     await service.deactivateCoupon('cpn-1');
     prisma._coupon.usageCount = 99;
-    const reread = await prisma.order.findUnique({ where: { id: 'ord-1' } });
+    const reread = (await prisma.order.findUnique({
+      where: { id: 'ord-1' },
+    })) as typeof orderRow | null;
     expect(reread).toEqual(frozen);
     expect(reread?.pricingSnapshotJson).toEqual(snapshot);
     expect(prisma.coupon.update).toHaveBeenCalledWith({

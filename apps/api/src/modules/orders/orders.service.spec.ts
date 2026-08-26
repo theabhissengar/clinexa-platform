@@ -38,6 +38,11 @@ type TxMock = {
   orderAdjustment: { create: jest.Mock; findMany: jest.Mock };
 };
 
+function firstMockCallArg<T>(mock: jest.Mock): T {
+  const calls = mock.mock.calls as Array<[T]>;
+  return calls[0][0];
+}
+
 describe('OrdersService', () => {
   const patient = {
     id: 'user-1',
@@ -208,22 +213,17 @@ describe('OrdersService', () => {
 
     expect(order.id).toBe('ord-1');
     expect(tx.order.create).toHaveBeenCalled();
-    const createCalls = tx.order.create.mock.calls as Array<
-      [
-        {
-          data: {
-            items: { create: Array<Record<string, unknown>> };
-            subtotalCents: number;
-            totalCents: number;
-            customerEmail: string;
-            addresses: { create: unknown[] };
-            statusHistory: { create: { toStatus: OrderStatus } };
-            activities: { create: { kind: string } };
-          };
-        },
-      ]
-    >;
-    const createArg = createCalls[0][0];
+    const createArg = firstMockCallArg<{
+      data: {
+        items: { create: Array<Record<string, unknown>> };
+        subtotalCents: number;
+        totalCents: number;
+        customerEmail: string;
+        addresses: { create: unknown[] };
+        statusHistory: { create: { toStatus: OrderStatus } };
+        activities: { create: { kind: string } };
+      };
+    }>(tx.order.create);
     const firstItem = createArg.data.items.create[0];
     expect(firstItem.productName).toBe('Widget');
     expect(firstItem.sku).toBe('W-1');
@@ -261,14 +261,14 @@ describe('OrdersService', () => {
     expect(pricing.evaluatePricing).toHaveBeenCalledWith(
       expect.objectContaining({ couponCode: 'SAVE10' }),
     );
-    const createArg = tx.order.create.mock.calls[0][0] as {
+    const createArg = firstMockCallArg<{
       data: {
         appliedCouponId: string;
         totalCents: number;
         discountTotalCents: number;
         pricingSnapshotJson: { couponCode: string };
       };
-    };
+    }>(tx.order.create);
     expect(createArg.data.appliedCouponId).toBe('cpn-1');
     expect(createArg.data.totalCents).toBe(1620);
     expect(createArg.data.discountTotalCents).toBe(180);
@@ -305,13 +305,13 @@ describe('OrdersService', () => {
         lines: [expect.objectContaining({ discountCents: 0 })],
       }),
     );
-    const createArg = tx.order.create.mock.calls[0][0] as {
+    const createArg = firstMockCallArg<{
       data: {
         discountTotalCents: number;
         totalCents: number;
         items: { create: Array<{ discountCents: number }> };
       };
-    };
+    }>(tx.order.create);
     expect(createArg.data.discountTotalCents).toBe(180);
     expect(createArg.data.totalCents).toBe(1620);
     expect(createArg.data.items.create.at(0)?.discountCents).toBe(180);

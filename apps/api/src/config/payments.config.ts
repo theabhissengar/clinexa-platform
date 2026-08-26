@@ -2,6 +2,10 @@ import { registerAs } from '@nestjs/config';
 
 export default registerAs('payments', () => ({
   provider: (process.env.PAYMENTS_PROVIDER ?? 'simulated').toLowerCase(),
+  mode: (process.env.PAYMENTS_MODE ?? 'sandbox').toLowerCase(),
+  webhookPublicBase:
+    process.env.PAYMENTS_WEBHOOK_PUBLIC_BASE ??
+    `http://localhost:${process.env.PORT ?? '3001'}`,
   webhookSecret:
     process.env.PAYMENTS_WEBHOOK_SECRET ?? 'dev-payments-webhook-secret',
   simulatedForce: process.env.PAYMENTS_SIMULATED_FORCE ?? null,

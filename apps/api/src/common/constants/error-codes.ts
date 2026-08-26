@@ -114,10 +114,21 @@ export const ErrorCodes = {
   PAY_WEBHOOK_INVALID: 'ERR-PAY-003',
   /** Refund not eligible under OR-11. */
   PAY_REFUND_INELIGIBLE: 'ERR-PAY-004',
-  /** Saved payment method missing/invalid. */
+  /** Saved payment method missing/invalid or ownership mismatch. */
   PAY_METHOD_INVALID: 'ERR-PAY-005',
   /** PSP timeout / unavailable (fail-safe). */
   PAY_PROVIDER_UNAVAILABLE: 'ERR-PAY-006',
+
+  /** Coupon missing, inactive, expired, or not applicable. */
+  CPN_INVALID: 'ERR-CPN-001',
+  /** Coupon ineligible for cart scope / min order / dates. */
+  CPN_INELIGIBLE: 'ERR-CPN-002',
+  /** Redemption usage limit exceeded at capture (no payment rollback). */
+  CPN_REDEMPTION_LIMIT: 'ERR-CPN-003',
+  /** Coupon not found. */
+  CPN_NOT_FOUND: 'ERR-CPN-004',
+  /** Destructive coupon delete refused (redemption history retained). */
+  CPN_RETENTION_BLOCK: 'ERR-CPN-005',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

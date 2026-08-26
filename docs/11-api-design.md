@@ -810,7 +810,10 @@ Reusable business assets only. Business modules store opaque `assetId` values an
 | API-064 | GET | `/payment-methods` | List own saved methods | Yes | P | FR-PAY-004, FR-PRT-004 | Tokens only |
 | API-065 | POST | `/payment-methods` | Attach saved method | Yes | P | FR-PAY-001/004 | PSP token reference |
 | API-066 | DELETE | `/payment-methods/{id}` | Remove saved method | Yes | P | FR-PRT-004 | Soft-deactivate |
-| API-067 | POST | `/payments/{id}/refunds` | Initiate refund | Yes | Su, Op, Ad◐, P◐ | FR-PAY-003, FR-ORD-006, FR-SUP-005 | OR-11 tiers; clinical decline path eligible |
+| API-067 | POST | `/admin/payments/{id}/refunds` and `/crm/payments/{id}/refunds` | Initiate refund | Yes | Su, Op, Ad◐ | FR-PAY-003, FR-ORD-006, FR-SUP-005 | **P15 mounted.** `PERM-PAY-003`; **`Idempotency-Key` required** and maps to `Refund.idempotencyKey` (globally unique; clients prefix `{paymentId}:{uuid}`); cumulative `sum(SUCCEEDED)+requested ≤ captured`; Guardian and CRM share `PaymentsService.initiateRefund()` |
+| API-067a | GET | `/admin/payments` | Guardian payment list | Yes | Su, Op, Ad | FR-PAY-005, FR-ORD-005 | `PERM-ORD-001` (do **not** add `PERM-PAY-004`) |
+| API-067b | GET | `/admin/payments/{id}` | Guardian operational payment detail | Yes | Su, Op, Ad | FR-PAY-005 | `PERM-ORD-001`; refunds + webhooks + linked order |
+| API-067c | GET | `/admin/payment-providers` | Read-only provider metadata | Yes | Ad | FR-SET-001 | `PERM-SET-002`; **no secrets** |
 | API-068 | POST | `/webhooks/payments` | PSP webhook ingest | No† | Sys (PSP) | FR-PAY-002/004/005, FR-SUB-002/003 | Verify signature (`X-Payments-Webhook-Secret`); idempotent by `(provider, providerEventId)` insert-before-apply; drive order/sub state; **P14e mounted** |
 
 †Not user JWT; provider verification required.
@@ -1041,12 +1044,12 @@ Delivery is asynchronous via workers (`FR-NTF-001`–`003`); no patient “send 
 
 | API ID | Method | Resource | Purpose | Auth | Roles Allowed | Related FR IDs | Business Rules |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| API-142 | POST | `/coupons/validate` | Validate code for cart | No* | G, P | FR-CPN-002, FR-CART-003 | Server-side; final check at checkout |
-| API-143 | GET | `/admin/coupons` | List coupons | Yes | Mk, Ad | FR-CPN-001 | |
-| API-144 | POST | `/admin/coupons` | Create coupon | Yes | Mk, Ad | FR-CPN-001 | Windows, limits, scope |
-| API-145 | PATCH | `/admin/coupons/{id}` | Update coupon | Yes | Mk, Ad | FR-CPN-001 | |
-| API-146 | POST | `/admin/coupons/{id}/deactivate` | Deactivate | Yes | Mk, Ad | FR-CPN-001 | |
-| API-147 | GET | `/admin/coupons/{id}/redemptions` | Redemption list | Yes | Mk, Ad | FR-CPN-003 | Recorded after successful payment |
+| API-142 | POST | `/coupons/validate` | Validate code for cart | Yes | G, P | FR-CPN-002, FR-CART-003 | **P15 mounted.** `PERM-CPN-002`; advisory only — **does not** consume usage |
+| API-143 | GET | `/admin/coupons` | List coupons | Yes | Mk, Ad | FR-CPN-001 | **P15 mounted.** `PERM-CPN-001` |
+| API-144 | POST | `/admin/coupons` | Create coupon | Yes | Mk, Ad | FR-CPN-001 | **P15 mounted.** Windows, limits, scope; PRODUCT/CATEGORY require IDs; `applicability` if sent must be `ORDER` |
+| API-145 | PATCH | `/admin/coupons/{id}` | Update coupon | Yes | Mk, Ad | FR-CPN-001 | **P15 mounted.** |
+| API-146 | POST | `/admin/coupons/{id}/deactivate` | Deactivate | Yes | Mk, Ad | FR-CPN-001 | **P15 mounted.** Historical order snapshots unchanged |
+| API-147 | GET | `/admin/coupons/{id}/redemptions` | Redemption list | Yes | Mk, Ad | FR-CPN-003 | **P15 mounted.** `PERM-CPN-001`; `id`, `orderId`, `patientUserId`, `redeemedAt`, `discountAppliedCents`, `status`; no `rulesJson` |
 
 ### 6.24 CMS
 
@@ -1850,6 +1853,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.9 | 2026-08-24 | Platform Engineering | TBD | P14c: CRM `API-083` / `API-213`–`224` mounted; Guardian/patient Subscription APIs still unmounted | Draft for review |
 | 1.10 | 2026-08-24 | Platform Engineering | TBD | P14d: Guardian `API-225`–`240` and `API-084`–`087` mounted; additive activate/renewal POST and plan unpublish/archive/restore; patient APIs still unmounted | Draft for review |
 | 1.11 | 2026-08-24 | Platform Engineering | TBD | P14e: `API-068` webhook + Internal renewal job mounted; renew `Idempotency-Key`; retry AuthZ 003\|008; `API-062`–`067` still unmounted | Draft for review |
+| 1.12 | 2026-08-26 | Platform Engineering | TBD | P15: mounted staff `API-067` (Guardian+CRM), admin payment list/detail/providers, `API-142`–`147`; `Idempotency-Key` on refunds; Stripe still deferred | Draft for review |
 
 ---
 

@@ -1,6 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 
 import { InventoryModule } from '../inventory/inventory.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { PromotionsModule } from '../promotions/promotions.module';
 import { AdminOrdersController } from './admin-orders.controller';
 import { CrmOrdersController } from './crm-orders.controller';
 import { OrderEditPolicyService } from './order-edit-policy.service';
@@ -15,7 +17,11 @@ import { OrdersService } from './orders.service';
  * P13e: InventoryModule imported for in-txn Reserve/Release/Commit/Restock.
  */
 @Module({
-  imports: [InventoryModule],
+  imports: [
+    InventoryModule,
+    forwardRef(() => PromotionsModule),
+    forwardRef(() => PaymentsModule),
+  ],
   controllers: [CrmOrdersController, AdminOrdersController],
   providers: [
     OrderLifecycleService,

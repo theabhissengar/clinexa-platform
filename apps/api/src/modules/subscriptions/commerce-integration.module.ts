@@ -8,6 +8,8 @@ import { OrdersModule } from '../orders/orders.module';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { PaymentsService } from '../payments/payments.service';
+import { PromotionsModule } from '../promotions/promotions.module';
+import { CouponsService } from '../promotions/coupons.service';
 import { RenewalAddressResolver } from './renewal-address.resolver';
 import { SubscriptionsModule } from './subscriptions.module';
 import { SubscriptionsRenewalProcessor } from './subscriptions-renewal.processor';
@@ -22,6 +24,7 @@ import { SubscriptionsService } from './subscriptions.service';
     forwardRef(() => SubscriptionsModule),
     forwardRef(() => OrdersModule),
     forwardRef(() => PaymentsModule),
+    forwardRef(() => PromotionsModule),
     ClinicalModule,
   ],
 })
@@ -34,6 +37,7 @@ export class CommerceIntegrationModule implements OnModuleInit {
     private readonly addresses: RenewalAddressResolver,
     private readonly clinical: ClinicalOutcomesService,
     private readonly prisma: PrismaService,
+    private readonly coupons: CouponsService,
   ) {}
 
   onModuleInit(): void {
@@ -134,6 +138,34 @@ export class CommerceIntegrationModule implements OnModuleInit {
           paymentId: input.paymentId,
           orderId: input.orderId,
           source: 'payment',
+        });
+      },
+      onPaymentCaptured: async (input) => {
+        if (!input.orderId) {
+          return;
+        }
+        const result = await this.coupons.recordRedemption({
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+        });
+        if (result.outcome === 'limit_exceeded') {
+          await this.orders.recordCouponRedemptionFailure({
+            orderId: result.orderId,
+            couponId: result.couponId,
+            paymentId: result.paymentId,
+            errorCode: result.errorCode,
+          });
+        }
+      },
+      onRefundSucceeded: async (input) => {
+        if (!input.orderId) {
+          return;
+        }
+        await this.orders.recordRefundedTotal({
+          orderId: input.orderId,
+          refundedTotalCents: input.refundedTotalCents,
+          paymentId: input.paymentId,
+          refundId: input.refundId,
         });
       },
       // P14g: do not wire onClinicalDeclineHold — composition root owns decline.

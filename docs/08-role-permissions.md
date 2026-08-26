@@ -365,8 +365,8 @@ Human-readable catalog of every `PERM-*` capability referenced in this specifica
 | PERM-CHK-002 | Finalize order | Complete checkout and create an order after authentication and payment rules. | CHK | Patient |
 | PERM-PAY-001 | Pay | Submit payment for checkout or renewal via PSP tokenization (no raw PAN). | PAY | Patient |
 | PERM-PAY-002 | Manage own payment methods | View/update saved payment methods for the owning patient. | PAY | Patient |
-| PERM-PAY-003 | Initiate refund | Start a staff- or policy-allowed refund against an order/payment. | PAY | Support, Operations; Patient (request scoped); Admin (scoped) |
-| PERM-ORD-001 | View orders | View order records—own for patients; role-scoped for authorized staff. | ORD | Patient (own); Doctor, Pharmacist, Support, Operations, Admin (scoped) |
+| PERM-PAY-003 | Initiate refund | Start a staff- or policy-allowed refund against an order/payment. Guardian payment **list/detail** uses `PERM-ORD-001` (do **not** add `PERM-PAY-004`). | PAY | Support, Operations; Patient (request scoped); Admin (scoped) |
+| PERM-ORD-001 | View orders | View order records—own for patients; role-scoped for authorized staff. Also used for Guardian payment list/detail. | ORD | Patient (own); Doctor, Pharmacist, Support, Operations, Admin (scoped) |
 | PERM-ORD-002 | Cancel order | Cancel an order or apply cancel/refund outcomes when policy allows. | ORD | Patient (own, scoped); Support, Operations; Admin (scoped) |
 | PERM-ORD-003 | Fulfill/ship order | Record fulfillment/shipment after required clinical and pharmacy gates clear for Rx. | ORD | Operations |
 | PERM-ORD-004 | Create order (admin) | Create an order via Guardian administrative path. **Never granted to CRM principals in V1.** | ORD | Admin (Guardian) |
@@ -939,6 +939,7 @@ flowchart TB
 | 1.9 | 2026-08-20 | Platform Engineering | — | `PERM-ORD-004` admin create (Guardian only); `PERM-ORD-005` context-scoped edit; CRM never Create/Class D; link [35](35-orders-module.md) | Draft for review |
 | 2.0 | 2026-08-24 | Platform Engineering | — | `PERM-SUB-004`–`009`/`014`; CRM never Subscription Create/Class D; link [36](36-subscriptions-module.md) | Draft for review |
 | 2.1 | 2026-08-24 | Platform Engineering | — | P14d Guardian Subscriptions mounted using existing SUB codes; no new permission IDs; plan archive remains `PERM-SUB-002` | Draft for review |
+| 2.2 | 2026-08-26 | Platform Engineering | — | P15: seed `PERM-CPN-010`; Guardian payment read via `PERM-ORD-001` (no `PERM-PAY-004`) | Draft for review |
 
 ---
 
@@ -986,6 +987,8 @@ Notes:
 
 - Guest/Patient **CMS** and **Blogs** access on Store is published-content read only (`◐`); create/publish is CRM Content/Admin.
 - Patient **Coupons** access is redeem-at-checkout only (`PERM-CPN-002`), not coupon administration.
+- **`PERM-CPN-010`** (Class D coupon delete) is seeded for Administrator and Super Administrator; delete is blocked when recorded redemptions exist.
+- Guardian payment administration is **not** a new PAY read code: list/detail = `PERM-ORD-001`.
 - Guest **Checkout** is limited because finalize requires authentication (`PERM-CHK-002`).
 - Staff **Orders**, **Documents**, and **Appointments** are need-to-know / case-or-ticket scoped.
 - Marketing **Analytics** is marketing-safe / PHI-minimized (`PERM-ANL-001`); Ops/clinical metrics use `PERM-ANL-002`.

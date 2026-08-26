@@ -130,7 +130,10 @@ export class AdminCreateOrderDto {
   @Min(0)
   shippingTotalCents?: number;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    description:
+      'Optional staff/manual order discount (cents). Not a coupon promotion input.',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -154,6 +157,15 @@ export class AdminCreateOrderDto {
   @IsOptional()
   @IsEnum(OrderStatus)
   initialStatus?: typeof OrderStatus.DRAFT | typeof OrderStatus.PAYMENT_PENDING;
+
+  @ApiPropertyOptional({
+    description:
+      'Opaque coupon code. Promotions calculates discounts; client discount fields cannot override coupon totals.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  couponCode?: string;
 }
 
 export class AdminUpdateOrderDto {

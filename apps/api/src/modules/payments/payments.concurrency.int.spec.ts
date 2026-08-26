@@ -13,15 +13,19 @@ import { PaymentsService } from './payments.service';
 import {
   createIntegrationPrisma,
   integrationDatabaseUrl,
+  shouldRunPostgresIntegration,
 } from './postgres-integration.util';
 import { SimulatedPaymentAdapter } from './simulated-payment.adapter';
 
 const databaseUrl = integrationDatabaseUrl();
-const describePostgres = databaseUrl ? describe : describe.skip;
+const describePostgres = shouldRunPostgresIntegration()
+  ? describe
+  : describe.skip;
 
 /**
  * Real overlapping Postgres transactions.
- * Skipped when DATABASE_URL is unset — unit tests must not be treated as race proofs.
+ * Skipped when DATABASE_URL is unset, and in CI unless RUN_POSTGRES_INTEGRATION=1.
+ * Unit-test mutex coverage lives in payments.service.spec.ts and is not a race proof.
  */
 describePostgres('PaymentsService refund concurrency (Postgres)', () => {
   const url = databaseUrl!;

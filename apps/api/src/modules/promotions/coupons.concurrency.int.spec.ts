@@ -15,14 +15,17 @@ import { CouponsService } from './coupons.service';
 import {
   createIntegrationPrisma,
   integrationDatabaseUrl,
+  shouldRunPostgresIntegration,
 } from '../payments/postgres-integration.util';
 
 const databaseUrl = integrationDatabaseUrl();
-const describePostgres = databaseUrl ? describe : describe.skip;
+const describePostgres = shouldRunPostgresIntegration()
+  ? describe
+  : describe.skip;
 
 /**
  * Real overlapping Postgres transactions against coupon row FOR UPDATE.
- * Skipped when DATABASE_URL is unset.
+ * Skipped when DATABASE_URL is unset, and in CI unless RUN_POSTGRES_INTEGRATION=1.
  */
 describePostgres('CouponsService redemption concurrency (Postgres)', () => {
   const url = databaseUrl!;

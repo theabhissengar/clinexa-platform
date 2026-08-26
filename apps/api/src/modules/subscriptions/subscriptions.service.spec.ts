@@ -188,6 +188,163 @@ describe('SubscriptionsService', () => {
     expect(createArg.data.activities.create.kind).toBe('subscription_created');
   });
 
+  it('P3-SUB-001: omits initialOrderId → requests DRAFT INITIAL and binds ids', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.subscription.create.mockResolvedValue({
+      ...created,
+      items: [
+        {
+          productId: 'prod-1',
+          variantId: 'var-1',
+          productName: 'Widget Sub',
+          sku: 'W-1',
+          productType: ProductType.SIMPLE_SUBSCRIPTION,
+          isRxEligible: false,
+          catalogMetadata: null,
+          quantity: 1,
+          unitPriceCents: 1000,
+          salePriceCents: 900,
+          currency: 'USD',
+        },
+      ],
+      customerFirstName: 'Pat',
+      customerLastName: 'Ent',
+      customerEmail: patient.email,
+      customerPhone: '555',
+    });
+    const service = buildService(prisma);
+    const onPreflight = jest.fn().mockResolvedValue(undefined);
+    const onRequestInitialOrder = jest.fn().mockResolvedValue('ord-new');
+    service.setSideEffectHooks({
+      onPreflightInitialOrderAddresses: onPreflight,
+      onRequestInitialOrder,
+    });
+
+    const result = await service.createSubscription({
+      context: 'guardian',
+      patientUserId: patient.id,
+      planId: plan.id,
+      actorUserId: 'admin-1',
+      source: 'guardian',
+    });
+
+    expect(onPreflight).toHaveBeenCalledWith(patient.id);
+    expect(onRequestInitialOrder).toHaveBeenCalledTimes(1);
+    const initialCalls = onRequestInitialOrder.mock.calls as Array<
+      [
+        {
+          subscriptionId: string;
+          patientUserId: string;
+          lines: Array<{ productId: string; salePriceCents: number }>;
+        },
+      ]
+    >;
+    const initialRequest = initialCalls[0][0];
+    expect(initialRequest.subscriptionId).toBe('sub-1');
+    expect(initialRequest.patientUserId).toBe(patient.id);
+    expect(initialRequest.lines[0]).toMatchObject({
+      productId: 'prod-1',
+      salePriceCents: 900,
+    });
+    expect(result.initialOrderId).toBe('ord-new');
+    expect(result.latestOrderId).toBe('ord-new');
+    const updateCalls = prisma.subscription.update.mock.calls as Array<
+      [
+        {
+          where: { id: string };
+          data: { initialOrderId: string; latestOrderId: string };
+        },
+      ]
+    >;
+    expect(updateCalls[0][0].where.id).toBe('sub-1');
+    expect(updateCalls[0][0].data.initialOrderId).toBe('ord-new');
+    expect(updateCalls[0][0].data.latestOrderId).toBe('ord-new');
+  });
+
+  it('P3-SUB-001: provided initialOrderId binds without creating an order', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.order.findUnique.mockResolvedValue({
+      id: 'ord-bind',
+      patientUserId: patient.id,
+      orderType: OrderType.SUBSCRIPTION_INITIAL,
+      deletedAt: null,
+    });
+    const service = buildService(prisma);
+    const onRequestInitialOrder = jest.fn();
+    const onPreflight = jest.fn();
+    service.setSideEffectHooks({
+      onPreflightInitialOrderAddresses: onPreflight,
+      onRequestInitialOrder,
+    });
+
+    await service.createSubscription({
+      context: 'guardian',
+      patientUserId: patient.id,
+      planId: plan.id,
+      initialOrderId: 'ord-bind',
+      source: 'guardian',
+    });
+
+    expect(onPreflight).not.toHaveBeenCalled();
+    expect(onRequestInitialOrder).not.toHaveBeenCalled();
+    const createCalls = tx.subscription.create.mock.calls as Array<
+      [{ data: { initialOrderId: string; latestOrderId: string } }]
+    >;
+    expect(createCalls[0][0].data.initialOrderId).toBe('ord-bind');
+    expect(createCalls[0][0].data.latestOrderId).toBe('ord-bind');
+  });
+
+  it('P3-SUB-001: address preflight failure prevents subscription create', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    const service = buildService(prisma);
+    service.setSideEffectHooks({
+      onPreflightInitialOrderAddresses: jest.fn().mockRejectedValue(
+        new BadRequestException({
+          code: ErrorCodes.VAL_MISSING_FIELD,
+          message: 'addresses missing',
+        }),
+      ),
+    });
+
+    await expect(
+      service.createSubscription({
+        context: 'guardian',
+        patientUserId: patient.id,
+        planId: plan.id,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.VAL_MISSING_FIELD },
+    });
+    expect(tx.subscription.create).not.toHaveBeenCalled();
+  });
+
+  it('P3-SUB-002: cancel invokes onSubscriptionCancelled after CANCELLED', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    const active = {
+      ...created,
+      status: SubscriptionStatus.ACTIVE,
+      nextRenewalAt: new Date('2026-02-01T00:00:00.000Z'),
+      statusBeforePause: null,
+      plan,
+    };
+    tx.subscription.findUnique.mockResolvedValue(active);
+    const service = buildService(prisma);
+    const onSubscriptionCancelled = jest.fn().mockResolvedValue(undefined);
+    service.setSideEffectHooks({ onSubscriptionCancelled });
+
+    await service.cancel({
+      subscriptionId: 'sub-1',
+      source: 'crm',
+      actorUserId: 'staff-1',
+    });
+
+    expect(onSubscriptionCancelled).toHaveBeenCalledWith({
+      subscriptionId: 'sub-1',
+      actorUserId: 'staff-1',
+      source: 'crm',
+    });
+  });
+
   it('rejects CRM create, invalid user, unpublished plan, and bad variant', async () => {
     const { prisma, tx } = buildPrismaMock();
     const service = buildService(prisma);

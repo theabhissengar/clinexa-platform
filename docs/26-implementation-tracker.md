@@ -101,7 +101,8 @@ Every phase record in §5 carries these fields.
 | **P12** | Inventory platform module (ledger SoT, Guardian admin, service-only Orders/CRM consume) | In progress | P5 (shell); P8 Products variants; P6 for Class D; Orders depth for P12f (via P13e) |
 | **P13** | Orders platform module (shared domain; CRM ops + Guardian admin/Class D; Inventory/Payments boundaries) | In progress (P13a–P13e complete; **P13f partial via P14e**; P13g not started) | P5 shell; P8 Products; P9 Users; P12 Inventory services; P6 Class D patterns |
 | **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | **Complete** (P14a–h; verification freeze on `feature/subscriptions-p14h-freeze`) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
-| **P15** | Payments Phase 2 + Promotions / Coupons (Guardian payments UI, staff refunds, coupon pricing boundary; no Stripe) | In progress (`feature/payments-phase2`) | P14 complete; P13 Orders |
+| **P15** | Payments Phase 2 + Promotions / Coupons (Guardian payments UI, staff refunds, coupon pricing boundary; no Stripe) | **Complete** (merged to `dev`; renewals remain coupon-free) | P14 complete; P13 Orders |
+| **Phase 3** | Users + Orders + Subscriptions + Renewals expansion (initial DRAFT order on Guardian create; cancel open sub orders with CAPTURED skip; expire on AUTH-015 tick) | In progress (`feature/payments-phase3`) | P14 complete; P15 money/pricing freeze |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | Deferred | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -340,18 +341,32 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Establish a durable payment + promotion architecture: Guardian payment administration (UI-only), PromotionsModule for coupons/pricing, staff refund APIs with cumulative partial-refund + Idempotency-Key, without Stripe or changing P14 renewal behavior |
-| **Status** | In progress |
+| **Status** | **Complete** (Phase 2 delivered; renewals remain coupon-free) |
 | **Owner** | Platform Engineering |
-| **Branch** | `feature/payments-phase2` |
+| **Branch** | `feature/payments-phase2` (merged) |
 | **PR** | — |
 | **Dependencies** | P14 complete (`dev` @ P14h); P13 Orders; RBAC dictionary `PERM-PAY-003`, `PERM-ORD-001`, `PERM-CPN-001`/`002`/`010`, `PERM-SET-002` |
 | **Scope** | Payments admin list/detail/refund (API-067) + CRM refund assist; ProviderRegistry read-only metadata; saved-method ownership (`ERR-PAY-005`); PromotionsModule (validation ≠ pricing ≠ redemption); coupon CRUD + API-147 redemptions; Orders `couponCode` → pricing snapshot; capture-success atomic redemption; Guardian Payments/Coupons/providers UI (thin client); webhook simulated event expansion |
 | **Architecture changes** | Money boundary unchanged; Promotions is the pricing boundary; Guardian UI-only; no Stripe adapter |
 | **Documentation updates** | [37](37-promotions-module.md), [26](26-implementation-tracker.md) (this record), [27](27-module-registry.md), [10](10-database-design.md), [11](11-api-design.md), [15](15-payment-flow.md), [35](35-orders-module.md), [36](36-subscriptions-module.md), [25](25-guardian.md), [08](08-role-permissions.md) |
-| **Notes** | Renewals remain coupon-free. `PERM-CPN-010` seeded. Capture-success redemption failure is an explicit audit outcome (no payment rollback). |
+| **Notes** | Renewals remain coupon-free. `PERM-CPN-010` seeded. Capture-success redemption failure is an explicit audit outcome (no payment rollback). Coupon Phase 3+ fields (`isAutomatic`, stacking, renewal coupons) remain unused. |
 | **Verification** | Payments refund/idempotency/ownership/webhook tests; Promotions validation/pricing/redemption tests; static module-boundary specs (admin/Orders/Subscriptions/Payments/Promotions); P13e/P14e–g regression green |
 
-### P10 — Internal Platform UX/UI Modernization
+### Phase 3 — Users + Orders + Subscriptions + Renewals Expansion
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Additive expansion: Guardian create without `initialOrderId` mints `SUBSCRIPTION_INITIAL` DRAFT; subscription cancel conservatively cancels open INITIAL/RENEWAL orders (skip CAPTURED); AUTH-015 tick expires ACTIVE when `endsAt` reached — no schema migration, Stripe, coupons, Store/Portal, or Phase 4 UI |
+| **Status** | In progress |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-phase3` |
+| **PR** | — |
+| **Dependencies** | P14 complete; P15 money/pricing freeze |
+| **Scope** | **P3-SUB-001** initial DRAFT via `createOrderFromSnapshots`; **P3-SUB-002** cancel DRAFT/PAYMENT_PENDING INITIAL/RENEWAL (skip CAPTURED/REFUND_*); **P3-REN-001** expire before due on same job tick. Excludes: P9 leftovers, P13g feature, coupon Phase 3+, Stripe, CRM Create, auto-COMPLETED |
+| **Architecture changes** | Composition hooks `onRequestInitialOrder` / `onSubscriptionCancelled`; processor expire pass; Subscriptions still does not import Payments |
+| **Documentation updates** | [36](36-subscriptions-module.md), [35](35-orders-module.md), [26](26-implementation-tracker.md), [27](27-module-registry.md), [11](11-api-design.md) |
+| **Notes** | Bind-if-provided path preserved; activate does not mint orders; CAPTURED skip protects P14f no-auto-refund invariant |
+| **Verification** | Subscriptions create/cancel/expire unit tests; open-order-cancel policy; renewal processor expire-before-due; boundaries + P14e/f/g regression |
 
 | Field | Value |
 | --- | --- |
@@ -532,6 +547,7 @@ A phase is complete when all of the following hold.
 | 2.13 | 2026-08-25 | Platform Engineering | P14f on `feature/subscriptions-inventory-policy`: `ERR-INV-001` → attempt FAILED; hold capture; payment-aware Reserve retry; period only after CAPTURED + Reserve |
 | 2.14 | 2026-08-25 | Platform Engineering | P14g on `feature/subscriptions-clinical-integration`: Clinical refs/events adapter (API-090/091); clinical-source Order guard; DECLINED_HOLD short-circuit; single decline path; reassessment cadence still open |
 | 2.15 | 2026-08-25 | Platform Engineering | P14h on `feature/subscriptions-p14h-freeze`: verification/regression freeze; RBAC seed/guards confirmed; §20 matrix satisfied; tracker/registry/blueprint aligned; **P14 Complete** |
+| 2.16 | 2026-08-26 | Platform Engineering | P15 Phase 2 payments/promotions marked complete; Phase 3 expansion record added (`feature/payments-phase3`: P3-SUB-001/002, P3-REN-001) |
 
 ---
 

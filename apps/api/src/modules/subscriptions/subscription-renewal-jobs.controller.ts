@@ -38,7 +38,8 @@ export class SubscriptionRenewalJobsController {
   @Post('subscription-renewals')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Internal renewal due/grace worker tick (AUTH-015)',
+    summary:
+      'Internal subscription expire + renewal due/grace worker tick (AUTH-015)',
   })
   run(@Body() dto: RenewalJobDto) {
     const allowNow =

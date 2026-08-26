@@ -449,14 +449,14 @@ Override (`PERM-SUB-014`) may force a documented exception with required reason;
 
 | Transition | Order | Payments | Inventory | Notifications / events |
 | --- | --- | --- | --- | --- |
-| Create → `PENDING_SETUP` | May request `SUBSCRIPTION_INITIAL` Order | No execute in SUB | None | — |
-| → `ACTIVE` (initial) | Initial order proceeds | Snapshot payment status | Via Orders | `subscription.started` (`NTF-040`) |
+| Create → `PENDING_SETUP` | Guardian/system create **without** `initialOrderId` creates `SUBSCRIPTION_INITIAL` **DRAFT** via `createOrderFromSnapshots` (`idempotencyKey=initial:{subId}`); provided `initialOrderId` binds only | No execute in SUB | None | — |
+| → `ACTIVE` (initial) | Initial order proceeds (activate does **not** mint the order) | Snapshot payment status | Via Orders | `subscription.started` (`NTF-040`) |
 | Pause | Open orders follow order rules | No new charges | None | Future pause NTF (optional) |
 | Resume | **No** order as a side effect | None | None | Future resume NTF (optional) |
 | Renewal due (ACTIVE only) | Request `SUBSCRIPTION_RENEWAL` Order | Orders coordinates Payments | Via Orders | — |
 | Payment fail → `PAST_DUE` | Existing renewal order records failure | Payments owns fail | Release via Orders if reserved | `NTF-042` **mandatory** |
 | Recovery → `ACTIVE` | Same attempt/order succeeds | Snapshot | Via Orders | `NTF-041` |
-| Cancel | Open orders follow order rules; no new renewals | Call Payments to cancel provider-side recurring **if** a provider subscription ref exists | None from SUB | `NTF-043` |
+| Cancel | Cancels matching open `SUBSCRIPTION_INITIAL` / `SUBSCRIPTION_RENEWAL` orders in `DRAFT` / `PAYMENT_PENDING` via `transitionOrder`; **skips** `PAYMENT_PENDING` when latest payment is `CAPTURED` / `REFUND_PENDING` / `REFUNDED` (P14f — no auto-refund); does not touch bound `ONE_TIME` or mid-flow/terminal orders; no new renewals | Call Payments to cancel provider-side recurring **if** a provider subscription ref exists | Via Orders on cancelled non-draft | `NTF-043` |
 | Clinical decline on renewal order | Order clinical_declined / refund path | Payments refund/void via Orders | Release via Orders | `NTF-044` if reassessment; **subscription not auto-cancelled** |
 
 ---
@@ -483,6 +483,8 @@ This is the deterministic V1 behavior. Changing it to “renew immediately if ov
 `SubscriptionsRenewalService` is a thin orchestrator **inside** the Subscriptions module. It is not a Nest Renewals module, not a database domain, not a nav group, and not a P14 implementation phase of its own.
 
 **P14e:** `SubscriptionsRenewalProcessor` runs the money path (attempt → Order → authorize → capture → period advance). Production trigger is the Internal job route; optional flagged local cron (`RENEWAL_CRON_ENABLED`, default false).
+
+**Phase 3 (P3-REN-001):** The same AUTH-015 tick **first** expires `ACTIVE` subscriptions with `endsAt <= now` via `SubscriptionsService.expire()`, then runs due/grace renewal processing. `PAUSED` / `PAST_DUE` / `PENDING_SETUP` are not auto-expired. Auto-`COMPLETED` is not implemented (no cycle-limit column).
 
 ### 11.2 Due detection
 
@@ -748,14 +750,15 @@ P14b implements **domain/unit** coverage for lifecycle, create validation, perio
 | --- | --- |
 | Lifecycle | Legal transitions pass; illegal rejected (`ERR-SUB-005`) — **P14b unit tests** |
 | Pause / resume | PAUSED skips auto-renewal; resume does not create attempt/order; missed periods skipped; PAST_DUE restored if that was prior status — **P14b domain** |
-| Initial subscription | `PENDING_SETUP` → `ACTIVE`; first period math — **P14b**; `SUBSCRIPTION_INITIAL` order create is later |
+| Initial subscription | `PENDING_SETUP` → `ACTIVE`; first period math — **P14b**; Guardian create without `initialOrderId` mints `SUBSCRIPTION_INITIAL` DRAFT — **Phase 3 P3-SUB-001** |
 | Renewal generation | Due ACTIVE → processor: attempt + Order + authorize/capture — **P14e** |
 | Duplicate prevention | Same period key → existing attempt (incl. P2002 race) — **P14b** |
 | Idempotent retry | Failed payment retry does not new-period — **P14e** continues same attempt/order |
 | Payment failure | Authorize fail → `PAST_DUE` + notify hook — **P14e** |
 | Clinical decline | Void/refund; subscription **not** auto-cancelled; `DECLINED_HOLD` — **P14g** |
 | Inventory failure | `ERR-INV-001` → attempt `FAILED`; hold capture; retry Reserve; no second Order/payment; period once — **P14f** |
-| Cancellation | Stops future renewals; not Class D — **P14b**; open orders follow order rules later |
+| Cancellation | Stops future renewals; not Class D — **P14b**; open DRAFT/PAYMENT_PENDING INITIAL/RENEWAL cancelled with CAPTURED skip — **Phase 3 P3-SUB-002** |
+| Expire on end date | AUTH-015 tick expires ACTIVE when `endsAt <= now` before due renewals — **Phase 3 P3-REN-001** |
 | Manual renewal | Explicit path; same idempotency key — **P14b primitive** |
 | Snapshots | Product/User live edits do not rewrite subscription history — **P14b** |
 | RBAC | Permissions seeded in P14a; HTTP guards **P14c CRM + P14d Guardian**; worker `AUTH-015` — **P14h verified** |
@@ -827,5 +830,6 @@ Order: schema → shared logic (including renewal primitives) → CRM ops → Gu
 | 1.8 | 2026-08-25 | Platform Engineering | P14g complete: Clinical refs/events adapter (API-090/091); clinical-source Order guard; DECLINED_HOLD short-circuit; single decline path; reassessment cadence still open |
 | 1.9 | 2026-08-25 | Platform Engineering | P14h complete: verification/regression freeze; RBAC seed/guards confirmed; §20 satisfied; **P14 Complete** |
 | 1.10 | 2026-08-26 | Platform Engineering | P15: renewals remain coupon-free; capture-success redemption is Orders/Payments/Promotions composition, not Subscription domain logic |
+| 1.11 | 2026-08-26 | Platform Engineering | Phase 3: P3-SUB-001 initial DRAFT order on Guardian create; P3-SUB-002 cancel open INITIAL/RENEWAL (skip CAPTURED); P3-REN-001 expire on AUTH-015 tick |
 
 *End of 36 — Subscriptions Module.*

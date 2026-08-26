@@ -31,6 +31,7 @@ import type {
   OrderNote,
   OrderStatusHistory,
 } from "@/features/orders/types";
+import { initiateCrmRefund } from "@/features/payments/api/crm-payments-api";
 
 function Section({
   title,
@@ -97,10 +98,13 @@ export function CrmOrderDetailPage() {
   const [carrier, setCarrier] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
 
   const canEdit = can(Permissions.ORD_EDIT);
   const canCancel = can(Permissions.ORD_CANCEL);
   const canFulfill = can(Permissions.ORD_FULFILL);
+  const canRefund = can(Permissions.PAY_INITIATE_REFUND);
 
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) {
@@ -504,7 +508,16 @@ export function CrmOrderDetailPage() {
           <div>
             <dt className="text-muted-foreground">Latest payment ref</dt>
             <dd className="font-mono text-xs">
-              {order.latestPaymentId ?? "—"}
+              {order.latestPaymentId ? (
+                <Link
+                  href={`/guardian/payments/${order.latestPaymentId}`}
+                  className="underline-offset-4 hover:underline"
+                >
+                  {order.latestPaymentId}
+                </Link>
+              ) : (
+                "—"
+              )}
             </dd>
           </div>
           <div>
@@ -515,8 +528,58 @@ export function CrmOrderDetailPage() {
           </div>
         </dl>
         <p className="mt-2 text-xs text-muted-foreground">
-          Payment actions are owned by Payments — not executed here.
+          Refund assist calls Payments. Guardian owns financial correction.
         </p>
+        {canRefund && order.latestPaymentId ? (
+          <form
+            className="mt-3 grid max-w-md gap-2"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!order.latestPaymentId) return;
+              setBusy(true);
+              setError(null);
+              setMessage(null);
+              try {
+                const key = `${order.latestPaymentId}:${crypto.randomUUID()}`;
+                await initiateCrmRefund(
+                  order.latestPaymentId,
+                  {
+                    amountCents: Number(refundAmount),
+                    reason: refundReason,
+                  },
+                  key,
+                );
+                setMessage("Refund submitted.");
+                setRefundReason("");
+                await load({ quiet: true });
+              } catch (err) {
+                setError(getErrorMessage(err, "Unable to submit refund."));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <Label htmlFor="crm-refund-amount">Refund amount (cents)</Label>
+            <Input
+              id="crm-refund-amount"
+              type="number"
+              min={1}
+              value={refundAmount}
+              onChange={(e) => setRefundAmount(e.target.value)}
+              required
+            />
+            <Label htmlFor="crm-refund-reason">Reason</Label>
+            <Input
+              id="crm-refund-reason"
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              required
+            />
+            <Button type="submit" size="sm" disabled={busy}>
+              {busy ? "Submitting…" : "Assist refund"}
+            </Button>
+          </form>
+        ) : null}
       </Section>
 
       <Section title="Clinical references">

@@ -3,6 +3,7 @@ import {
   Activity,
   ChartColumn,
   ClipboardList,
+  CreditCard,
   FileText,
   Image,
   KeyRound,
@@ -14,6 +15,7 @@ import {
   Shield,
   ShoppingCart,
   Tags,
+  TicketPercent,
   Users,
   Warehouse,
 } from "lucide-react";
@@ -243,6 +245,16 @@ export const NAV_ITEMS: NavItem[] = [
     permission: Permissions.SUB_VIEW,
     order: 40,
   },
+  {
+    key: "guardian-payments",
+    title: "Payments",
+    route: "/guardian/payments",
+    icon: CreditCard,
+    context: "guardian",
+    group: "commerce",
+    permission: Permissions.ORD_VIEW,
+    order: 45,
+  },
   // Users
   {
     key: "guardian-users",
@@ -295,6 +307,16 @@ export const NAV_ITEMS: NavItem[] = [
     permission: Permissions.AST_VIEW,
     order: 80,
   },
+  {
+    key: "guardian-coupons",
+    title: "Coupons",
+    route: "/guardian/coupons",
+    icon: TicketPercent,
+    context: "guardian",
+    group: "marketing",
+    permission: Permissions.CPN_CONFIGURE,
+    order: 85,
+  },
   // Platform
   {
     key: "guardian-activity-log",
@@ -315,6 +337,16 @@ export const NAV_ITEMS: NavItem[] = [
     group: "platform",
     permission: Permissions.SET_MANAGE,
     order: 100,
+  },
+  {
+    key: "guardian-payment-providers",
+    title: "Payment providers",
+    route: "/guardian/settings/payment-providers",
+    icon: CreditCard,
+    context: "guardian",
+    group: "platform",
+    permission: Permissions.SET_OVERSELL_POLICIES,
+    order: 105,
   },
   {
     key: "guardian-administration",

@@ -88,4 +88,20 @@ describe('Subscriptions domain boundaries', () => {
       expect(file.text.includes('SimulatedPaymentAdapter')).toBe(false);
     }
   });
+
+  it('keeps Phase 2 coupon logic out of the subscription domain', () => {
+    const domain = sources.filter(
+      (file) => file.name !== 'commerce-integration.module.ts',
+    );
+    for (const file of domain) {
+      expect(file.text.includes('couponCode')).toBe(false);
+      expect(file.text.includes('PricingEngine')).toBe(false);
+      expect(file.text.includes('CouponValidation')).toBe(false);
+    }
+    const composition = sources.find(
+      (file) => file.name === 'commerce-integration.module.ts',
+    );
+    expect(composition?.text).toContain('recordRedemption');
+    expect(composition?.text.includes('evaluatePricing')).toBe(false);
+  });
 });

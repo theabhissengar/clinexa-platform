@@ -79,6 +79,7 @@ model User {
   orders               Order[]
   subscriptions        Subscription[]
   savedPaymentMethods  SavedPaymentMethod[]
+  couponRedemptions    CouponRedemption[]
 
   @@index([status])
   @@index([deletedAt])
@@ -801,6 +802,10 @@ model Order {
   adjustmentTotalCents Int    @default(0) @map("adjustment_total_cents")
   refundedTotalCents   Int    @default(0) @map("refunded_total_cents")
 
+  /// Historical promotions snapshot (Promotions owns calculation; Orders persists).
+  appliedCouponId      String? @map("applied_coupon_id") @db.Uuid
+  pricingSnapshotJson  Json?   @map("pricing_snapshot_json")
+
   /// Opaque Payments refs / status summary (Payments owns transaction records).
   paymentIntentId      String? @map("payment_intent_id")
   latestPaymentId      String? @map("latest_payment_id") @db.Uuid
@@ -848,6 +853,8 @@ model Order {
   renewalAttempts         SubscriptionRenewalAttempt[]
   payments                Payment[]
   refunds                 Refund[]
+  appliedCoupon           Coupon?                      @relation(fields: [appliedCouponId], references: [id], onDelete: Restrict)
+  couponRedemptions       CouponRedemption[]
 
   @@index([patientUserId, createdAt])
   @@index([status, createdAt])
@@ -858,6 +865,7 @@ model Order {
   @@index([deletedAt])
   @@index([archivedAt])
   @@index([reservationId])
+  @@index([appliedCouponId])
   @@map("orders")
 }
 
@@ -1375,10 +1383,14 @@ model Payment {
   savedPaymentMethod SavedPaymentMethod?  @relation(fields: [savedPaymentMethodId], references: [id], onDelete: Restrict)
   refunds            Refund[]
   webhookEvents      PaymentWebhookEvent[]
+  couponRedemptions  CouponRedemption[]
 
   @@index([orderId])
   @@index([subscriptionId])
   @@index([status])
+  @@index([createdAt])
+  @@index([provider])
+  @@index([status, createdAt])
   @@map("payments")
 }
 
@@ -1420,4 +1432,98 @@ model PaymentWebhookEvent {
   @@unique([provider, providerEventId])
   @@index([paymentId])
   @@map("payment_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Promotions domain (DB-024–025) — owned by Promotions module only.
+// Extensible enums/columns for Phase 3+; Phase 2 MVP uses ORDER + manual codes.
+// ---------------------------------------------------------------------------
+
+enum CouponApplicability {
+  ORDER
+  SUBSCRIPTION
+  RENEWAL
+  FIRST_ORDER
+  FIRST_SUBSCRIPTION
+  BILLING_PERIOD
+}
+
+enum CouponDiscountType {
+  PERCENT
+  FIXED
+}
+
+enum CouponScopeType {
+  ALL
+  PRODUCT
+  CATEGORY
+}
+
+enum CouponRedemptionStatus {
+  RECORDED
+  FAILED_LIMIT
+}
+
+/// Promotional coupon configuration (DB-024).
+model Coupon {
+  id                String              @id @default(uuid()) @db.Uuid
+  code              String              @unique
+  name              String
+  description       String?
+  isActive          Boolean             @default(true) @map("is_active")
+  /// Always false in Phase 2 MVP; reserved for automatic promotions.
+  isAutomatic       Boolean             @default(false) @map("is_automatic")
+  /// Phase 2 MVP evaluates ORDER only; other values are stored for Phase 3+.
+  applicability     CouponApplicability @default(ORDER)
+  discountType      CouponDiscountType  @map("discount_type")
+  /// PERCENT: integer 1–100. FIXED: cents.
+  discountValue     Int                 @map("discount_value")
+  minOrderCents     Int?                @map("min_order_cents")
+  maxDiscountCents  Int?                @map("max_discount_cents")
+  startsAt          DateTime?           @map("starts_at") @db.Timestamptz(3)
+  endsAt            DateTime?           @map("ends_at") @db.Timestamptz(3)
+  globalUsageLimit  Int?                @map("global_usage_limit")
+  perUserUsageLimit Int?                @map("per_user_usage_limit")
+  usageCount        Int                 @default(0) @map("usage_count")
+  scopeType         CouponScopeType     @default(ALL) @map("scope_type")
+  scopeProductIds   String[]            @default([]) @map("scope_product_ids")
+  scopeCategoryIds  String[]            @default([]) @map("scope_category_ids")
+  stackingGroup     String?             @map("stacking_group")
+  priority          Int?
+  /// Versioned rules blob for Phase 3+ (stacking, auto-apply, billing-period).
+  rulesJson         Json?               @map("rules_json")
+  deletedAt         DateTime?           @map("deleted_at") @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  redemptions CouponRedemption[]
+  orders      Order[]
+
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("coupons")
+}
+
+/// Immutable redemption record written on successful capture (DB-025).
+model CouponRedemption {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  couponId             String                 @map("coupon_id") @db.Uuid
+  orderId              String                 @map("order_id") @db.Uuid
+  paymentId            String?                @map("payment_id") @db.Uuid
+  patientUserId        String                 @map("patient_user_id") @db.Uuid
+  discountAppliedCents Int                    @map("discount_applied_cents")
+  status               CouponRedemptionStatus @default(RECORDED)
+  redeemedAt           DateTime               @default(now()) @map("redeemed_at") @db.Timestamptz(3)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  coupon  Coupon   @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  patient User     @relation(fields: [patientUserId], references: [id], onDelete: Restrict)
+
+  @@index([couponId, redeemedAt])
+  @@index([orderId])
+  @@index([patientUserId])
+  @@index([paymentId])
+  @@map("coupon_redemptions")
 }

@@ -19,6 +19,7 @@ import {
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import type { PaymentGateway } from './payment.gateway';
+import { PaymentProviderRegistry } from './payment-provider.registry';
 import {
   PAYMENT_GATEWAY,
   type AuthorizeForOrderInput,
@@ -44,6 +45,18 @@ export type PaymentOutcomeHandlers = {
     orderId: string;
     subscriptionId: string | null;
     paymentId: string;
+  }): Promise<void>;
+  onPaymentCaptured?(input: {
+    orderId: string | null;
+    subscriptionId: string | null;
+    paymentId: string;
+  }): Promise<void>;
+  onRefundSucceeded?(input: {
+    orderId: string | null;
+    paymentId: string;
+    refundId: string;
+    refundedTotalCents: number;
+    paymentStatusSummary: PaymentOutcomeSummary['paymentStatusSummary'];
   }): Promise<void>;
   onRenewalAuthorizationFailed?(input: {
     orderId: string;
@@ -80,6 +93,7 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly registry: PaymentProviderRegistry,
   ) {}
 
   setOutcomeHandlers(handlers: PaymentOutcomeHandlers): void {
@@ -87,7 +101,22 @@ export class PaymentsService {
   }
 
   getProviderName(): string {
-    return this.config.get<string>('payments.provider') ?? 'simulated';
+    return this.registry.getActiveProviderName();
+  }
+
+  getProviderConfig() {
+    return this.registry.getReadModel();
+  }
+
+  async getLatestPaymentLifecycleForOrder(
+    orderId: string,
+  ): Promise<PaymentLifecycleState | null> {
+    const payment = await this.prisma.payment.findFirst({
+      where: { orderId },
+      orderBy: { createdAt: 'desc' },
+      select: { lifecycleState: true },
+    });
+    return payment?.lifecycleState ?? null;
   }
 
   async createSavedPaymentMethod(input: {
@@ -160,6 +189,24 @@ export class PaymentsService {
       throw new BadRequestException({
         code: ErrorCodes.PAY_METHOD_INVALID,
         message: 'Saved payment method missing or invalid',
+      });
+    }
+
+    const order = await this.prisma.order.findUnique({
+      where: { id: input.orderId },
+      select: { patientUserId: true },
+    });
+    if (!order) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Order not found',
+      });
+    }
+    if (method.userId !== order.patientUserId) {
+      throw new BadRequestException({
+        code: ErrorCodes.PAY_METHOD_INVALID,
+        message:
+          'Saved payment method does not belong to the patient being charged',
       });
     }
 
@@ -372,6 +419,13 @@ export class PaymentsService {
         summary,
       );
     }
+    if (captured.orderId && this.handlers.onPaymentCaptured) {
+      await this.handlers.onPaymentCaptured({
+        orderId: captured.orderId,
+        subscriptionId: captured.subscriptionId,
+        paymentId: captured.id,
+      });
+    }
     if (captured.orderId && this.handlers.onRenewalCaptureSucceeded) {
       await this.handlers.onRenewalCaptureSucceeded({
         orderId: captured.orderId,
@@ -537,6 +591,352 @@ export class PaymentsService {
     }
   }
 
+  async listPayments(params: {
+    q?: string;
+    status?: PaymentStatus | 'ALL';
+    provider?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    skip?: number;
+    take?: number;
+  }) {
+    const skip = params.skip ?? 0;
+    const take = Math.min(params.take ?? 50, 100);
+    const where: Prisma.PaymentWhereInput = {};
+    if (params.status && params.status !== 'ALL') {
+      where.status = params.status;
+    }
+    if (params.provider?.trim()) {
+      where.provider = params.provider.trim();
+    }
+    if (params.createdFrom || params.createdTo) {
+      where.createdAt = {};
+      if (params.createdFrom) {
+        where.createdAt.gte = new Date(params.createdFrom);
+      }
+      if (params.createdTo) {
+        where.createdAt.lte = new Date(params.createdTo);
+      }
+    }
+    if (params.q?.trim()) {
+      const q = params.q.trim();
+      where.OR = [
+        { id: { equals: q } },
+        { providerPaymentRef: { contains: q, mode: 'insensitive' } },
+        { idempotencyKey: { contains: q, mode: 'insensitive' } },
+        { order: { orderNumber: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        select: {
+          id: true,
+          orderId: true,
+          subscriptionId: true,
+          amountCents: true,
+          currency: true,
+          status: true,
+          lifecycleState: true,
+          purpose: true,
+          provider: true,
+          createdAt: true,
+          updatedAt: true,
+          order: {
+            select: {
+              orderNumber: true,
+              status: true,
+              patientUserId: true,
+              customerFirstName: true,
+              customerLastName: true,
+            },
+          },
+        },
+      }),
+      this.prisma.payment.count({ where }),
+    ]);
+
+    return { items, total, skip, take };
+  }
+
+  async getPaymentDetail(paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        refunds: { orderBy: { createdAt: 'desc' } },
+        webhookEvents: { orderBy: { createdAt: 'desc' } },
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            patientUserId: true,
+            customerFirstName: true,
+            customerLastName: true,
+            customerEmail: true,
+            totalCents: true,
+            currency: true,
+            statusHistory: {
+              where: { source: 'payment' },
+              orderBy: { createdAt: 'asc' },
+              select: {
+                id: true,
+                fromStatus: true,
+                toStatus: true,
+                source: true,
+                reason: true,
+                createdAt: true,
+              },
+            },
+          },
+        },
+        subscription: {
+          select: { id: true, status: true },
+        },
+      },
+    });
+    if (!payment) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Payment not found',
+      });
+    }
+
+    const succeededRefunded = payment.refunds
+      .filter((r) => r.status === RefundStatus.SUCCEEDED)
+      .reduce((sum, r) => sum + r.amountCents, 0);
+
+    return {
+      id: payment.id,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+      purpose: payment.purpose,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+      status: payment.status,
+      lifecycleState: payment.lifecycleState,
+      provider: payment.provider,
+      providerPaymentRef: payment.providerPaymentRef,
+      providerAuthorizationRef: payment.providerAuthorizationRef,
+      providerCaptureRef: payment.providerCaptureRef,
+      idempotencyKey: payment.idempotencyKey,
+      lastErrorCode: payment.lastErrorCode,
+      refundedCents: succeededRefunded,
+      refundableCents: Math.max(0, payment.amountCents - succeededRefunded),
+      order: payment.order
+        ? {
+            id: payment.order.id,
+            orderNumber: payment.order.orderNumber,
+            status: payment.order.status,
+            totalCents: payment.order.totalCents,
+            currency: payment.order.currency,
+          }
+        : null,
+      subscription: payment.subscription
+        ? { id: payment.subscription.id, status: payment.subscription.status }
+        : null,
+      patient: payment.order
+        ? {
+            userId: payment.order.patientUserId,
+            firstName: payment.order.customerFirstName,
+            lastName: payment.order.customerLastName,
+            email: payment.order.customerEmail,
+          }
+        : null,
+      timeline: payment.order?.statusHistory ?? [],
+      refunds: payment.refunds.map((r) => ({
+        id: r.id,
+        amountCents: r.amountCents,
+        status: r.status,
+        reason: r.reason,
+        actorUserId: r.actorUserId,
+        providerRefundRef: r.providerRefundRef,
+        createdAt: r.createdAt,
+      })),
+      webhookEvents: payment.webhookEvents.map((e) => ({
+        id: e.id,
+        eventType: e.eventType,
+        providerEventId: e.providerEventId,
+        appliedAt: e.appliedAt,
+        createdAt: e.createdAt,
+      })),
+    };
+  }
+
+  async initiateRefund(input: {
+    paymentId: string;
+    amountCents: number;
+    reason: string;
+    actorUserId?: string | null;
+    idempotencyKey: string;
+  }) {
+    if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) {
+      throw new BadRequestException({
+        code: ErrorCodes.PAY_REFUND_INELIGIBLE,
+        message: 'Refund amount must be a positive integer (cents)',
+      });
+    }
+    if (!input.reason?.trim()) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_MISSING_FIELD,
+        message: 'reason is required',
+      });
+    }
+    if (!input.idempotencyKey?.trim()) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_MISSING_FIELD,
+        message: 'Idempotency-Key is required',
+      });
+    }
+    // Refund.idempotencyKey is globally unique (no separate idempotency table).
+    // Clients prefix `{paymentId}:{uuid}` so operations cannot collide across payments.
+
+    const existing = await this.prisma.refund.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+    });
+    if (existing) {
+      this.assertRefundIdempotencyReplay(existing, input);
+      return existing;
+    }
+
+    const refund = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT id FROM payments WHERE id = ${input.paymentId}::uuid FOR UPDATE
+      `;
+
+      const raced = await tx.refund.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+      });
+      if (raced) {
+        this.assertRefundIdempotencyReplay(raced, input);
+        return raced;
+      }
+
+      const payment = await tx.payment.findUnique({
+        where: { id: input.paymentId },
+      });
+      if (!payment) {
+        throw new NotFoundException({
+          code: ErrorCodes.RES_NOT_FOUND,
+          message: 'Payment not found',
+        });
+      }
+      if (
+        payment.lifecycleState !== PaymentLifecycleState.CAPTURED ||
+        !payment.providerPaymentRef ||
+        !payment.providerCaptureRef
+      ) {
+        throw new BadRequestException({
+          code: ErrorCodes.PAY_REFUND_INELIGIBLE,
+          message: 'Payment is not eligible for refund',
+        });
+      }
+
+      const consumed = await tx.refund.aggregate({
+        where: {
+          paymentId: payment.id,
+          status: RefundStatus.SUCCEEDED,
+        },
+        _sum: { amountCents: true },
+      });
+      const alreadyRefunded = consumed._sum.amountCents ?? 0;
+      if (alreadyRefunded + input.amountCents > payment.amountCents) {
+        throw new BadRequestException({
+          code: ErrorCodes.PAY_REFUND_INELIGIBLE,
+          message: 'Refund exceeds remaining refundable amount',
+        });
+      }
+
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: { lifecycleState: PaymentLifecycleState.REFUND_PENDING },
+      });
+
+      const gatewayResult = await this.gateway.refund({
+        providerPaymentRef: payment.providerPaymentRef,
+        providerCaptureRef: payment.providerCaptureRef,
+        amountCents: input.amountCents,
+        idempotencyKey: input.idempotencyKey,
+        reason: input.reason,
+      });
+      if (!gatewayResult.success) {
+        await tx.refund.create({
+          data: {
+            paymentId: payment.id,
+            orderId: payment.orderId,
+            amountCents: input.amountCents,
+            status: RefundStatus.FAILED,
+            reason: input.reason,
+            actorUserId: input.actorUserId ?? null,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: { lifecycleState: PaymentLifecycleState.CAPTURED },
+        });
+        throw new BadRequestException({
+          code: ErrorCodes.PAY_REFUND_INELIGIBLE,
+          message: gatewayResult.errorMessage ?? 'Refund failed',
+        });
+      }
+
+      const fullyRefunded =
+        alreadyRefunded + input.amountCents === payment.amountCents;
+      const created = await tx.refund.create({
+        data: {
+          paymentId: payment.id,
+          orderId: payment.orderId,
+          amountCents: input.amountCents,
+          status: RefundStatus.SUCCEEDED,
+          providerRefundRef: gatewayResult.providerRefundRef ?? null,
+          reason: input.reason,
+          actorUserId: input.actorUserId ?? null,
+          idempotencyKey: input.idempotencyKey,
+        },
+      });
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: fullyRefunded
+          ? {
+              status: PaymentStatus.REFUNDED,
+              lifecycleState: PaymentLifecycleState.REFUNDED,
+            }
+          : { lifecycleState: PaymentLifecycleState.CAPTURED },
+      });
+      return created;
+    });
+
+    if (refund.status === RefundStatus.SUCCEEDED) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { id: input.paymentId },
+      });
+      const agg = await this.prisma.refund.aggregate({
+        where: {
+          paymentId: input.paymentId,
+          status: RefundStatus.SUCCEEDED,
+        },
+        _sum: { amountCents: true },
+      });
+      const refundedTotalCents = agg._sum.amountCents ?? 0;
+      if (payment?.orderId && this.handlers.onRefundSucceeded) {
+        await this.handlers.onRefundSucceeded({
+          orderId: payment.orderId,
+          paymentId: payment.id,
+          refundId: refund.id,
+          refundedTotalCents,
+          paymentStatusSummary: toSummary(payment.status),
+        });
+      }
+    }
+
+    return refund;
+  }
+
   async ingestWebhook(input: {
     secretHeader: string | undefined;
     envelope: WebhookEnvelope;
@@ -589,6 +989,65 @@ export class PaymentsService {
           paymentId: payment.id,
           idempotencyKey: `webhook_capture:${input.envelope.providerEventId}`,
         });
+      } else if (
+        payment &&
+        input.envelope.type === 'payment.authorization_failed'
+      ) {
+        if (
+          payment.lifecycleState !==
+            PaymentLifecycleState.AUTHORIZATION_FAILED &&
+          payment.lifecycleState !== PaymentLifecycleState.VOIDED &&
+          payment.lifecycleState !== PaymentLifecycleState.REFUNDED
+        ) {
+          const failed = await this.prisma.payment.update({
+            where: { id: payment.id },
+            data: {
+              status: PaymentStatus.FAILED,
+              lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+              lastErrorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
+            },
+          });
+          if (failed.orderId) {
+            await this.emitOrderRefs(
+              failed.orderId,
+              failed.id,
+              toSummary(failed.status),
+              null,
+            );
+          }
+        }
+      } else if (payment && input.envelope.type === 'payment.refunded') {
+        if (
+          payment.lifecycleState === PaymentLifecycleState.CAPTURED &&
+          payment.orderId
+        ) {
+          const consumed = await this.prisma.refund.aggregate({
+            where: {
+              paymentId: payment.id,
+              status: RefundStatus.SUCCEEDED,
+            },
+            _sum: { amountCents: true },
+          });
+          const remaining =
+            payment.amountCents - (consumed._sum.amountCents ?? 0);
+          if (remaining > 0) {
+            await this.initiateRefund({
+              paymentId: payment.id,
+              amountCents: remaining,
+              reason: 'webhook_payment.refunded',
+              actorUserId: null,
+              idempotencyKey: `webhook_refund:${input.envelope.providerEventId}`,
+            });
+          }
+        }
+      } else if (payment && input.envelope.type === 'payment.voided') {
+        if (payment.orderId) {
+          await this.voidOrRefundForOrder({
+            orderId: payment.orderId,
+            reason: 'webhook_payment.voided',
+            idempotencyKey: `webhook_void:${input.envelope.providerEventId}`,
+          });
+        }
       }
     }
 
@@ -606,6 +1065,33 @@ export class PaymentsService {
     });
 
     return { accepted: true, duplicate: false };
+  }
+
+  private assertRefundIdempotencyReplay(
+    existing: {
+      paymentId: string;
+      amountCents: number;
+      reason: string | null;
+      actorUserId: string | null;
+    },
+    input: {
+      paymentId: string;
+      amountCents: number;
+      reason: string;
+      actorUserId?: string | null;
+    },
+  ): void {
+    if (
+      existing.paymentId !== input.paymentId ||
+      existing.amountCents !== input.amountCents ||
+      (existing.reason ?? '') !== input.reason.trim() ||
+      (existing.actorUserId ?? null) !== (input.actorUserId ?? null)
+    ) {
+      throw new ConflictException({
+        code: ErrorCodes.PAY_IDEMPOTENCY_CONFLICT,
+        message: 'Refund idempotency key replay with mismatched body',
+      });
+    }
   }
 
   private async emitOrderRefs(

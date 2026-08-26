@@ -139,6 +139,8 @@ export const Permissions = {
 
   CPN_CONFIGURE: 'PERM-CPN-001',
   CPN_REDEEM: 'PERM-CPN-002',
+  /** Class D — delete coupon in Guardian (blocked when redemptions exist). */
+  CPN_DELETE: 'PERM-CPN-010',
 
   SUP_CREATE_TICKET: 'PERM-SUP-001',
   SUP_TRIAGE: 'PERM-SUP-002',
@@ -889,6 +891,15 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     description: 'Apply a valid coupon at checkout.',
     resource: 'coupon',
     action: 'redeem',
+  },
+  {
+    code: Permissions.CPN_DELETE,
+    module: 'CPN',
+    name: 'Delete coupon',
+    description:
+      'Soft-delete a coupon in Guardian; blocked where redemption history requires retention. Class D.',
+    resource: 'coupon',
+    action: 'delete',
   },
   {
     code: Permissions.SUP_CREATE_TICKET,

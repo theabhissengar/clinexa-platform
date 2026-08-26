@@ -872,7 +872,7 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-214 | PATCH | `/crm/subscriptions/{id}` | Operational edit | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-006` CRM allowlist |
 | API-215 | POST | `/crm/subscriptions/{id}/pause` | Pause | Yes | Su◐, Op, Ad | FR-SUB-004 | `PERM-SUB-007` |
 | API-216 | POST | `/crm/subscriptions/{id}/resume` | Resume | Yes | Su◐, Op, Ad | FR-SUB-004 | Skip missed paused periods ([36](36-subscriptions-module.md)) |
-| API-217 | POST | `/crm/subscriptions/{id}/cancel` | Policy cancel assist | Yes | Su◐, Op, Ad | FR-SUB-004 | Not Class D |
+| API-217 | POST | `/crm/subscriptions/{id}/cancel` | Policy cancel assist | Yes | Su◐, Op, Ad | FR-SUB-004 | Not Class D; **Phase 3:** also cancels open INITIAL/RENEWAL DRAFT/PAYMENT_PENDING (skips CAPTURED) |
 | API-218 | GET | `/crm/subscriptions/{id}/renewals` | Attempt history | Yes | Su◐, Op, Ad | FR-SUB-003 | Child of subscription |
 | API-219 | POST | `/crm/subscriptions/{id}/renewals` | Manual renewal | Yes | Su◐, Op, Ad | FR-SUB-002 | `PERM-SUB-008`; period-key idempotent; recommended `Idempotency-Key`; runs authorize/capture path (**P14e**) |
 | API-220 | POST | `/crm/subscriptions/{id}/renewals/{attemptId}/retry` | Retry attempt | Yes | Su◐, Op, Ad | FR-SUB-003 | **any of** `PERM-SUB-008` **or** `PERM-SUB-003`; same attempt/order |
@@ -882,11 +882,11 @@ Store checkout create and Portal own-order APIs remain `API-061` / `API-069`–`
 | API-224 | GET | `/crm/subscriptions/{id}/activity` | Activity | Yes | Su◐, Op, Ad | — | |
 | API-225 | GET | `/admin/subscriptions` | Admin list | Yes | Ad | FR-SUB-001 | `PERM-SUB-004` |
 | API-226 | GET | `/admin/subscriptions/{id}` | Admin detail | Yes | Ad | FR-SUB-001 | |
-| API-227 | POST | `/admin/subscriptions` | Admin create | Yes | Ad | FR-SUB-001 | `PERM-SUB-005`; **CRM must never expose equivalent** |
+| API-227 | POST | `/admin/subscriptions` | Admin create | Yes | Ad | FR-SUB-001 | `PERM-SUB-005`; **CRM must never expose equivalent**; **Phase 3:** omit `initialOrderId` → creates `SUBSCRIPTION_INITIAL` DRAFT |
 | API-228 | PATCH | `/admin/subscriptions/{id}` | Admin edit | Yes | Ad | FR-SUB-001 | `PERM-SUB-006` Guardian allowlist |
 | API-229 | POST | `/admin/subscriptions/{id}/pause` | Pause | Yes | Ad | FR-SUB-004 | |
 | API-230 | POST | `/admin/subscriptions/{id}/resume` | Resume | Yes | Ad | FR-SUB-004 | |
-| API-231 | POST | `/admin/subscriptions/{id}/cancel` | Cancel | Yes | Ad | FR-SUB-004 | |
+| API-231 | POST | `/admin/subscriptions/{id}/cancel` | Cancel | Yes | Ad | FR-SUB-004 | **Phase 3:** same open-order cancel policy as API-217 |
 | API-232 | POST | `/admin/subscriptions/{id}/delete` | Soft-delete | Yes | Ad◐ | — | Class D `PERM-SUB-010` |
 | API-233 | POST | `/admin/subscriptions/{id}/archive` | Archive | Yes | Ad◐ | — | Class D `PERM-SUB-011` |
 | API-234 | POST | `/admin/subscriptions/{id}/restore` | Restore | Yes | Ad◐ | — | Class D `PERM-SUB-012` |
@@ -908,7 +908,7 @@ Additive Guardian paths (same domain; not a parallel catalog family):
 | POST | `/admin/subscription-plans/{id}/unpublish` | Unpublish plan | Yes | `PERM-SUB-002` |
 | POST | `/admin/subscription-plans/{id}/archive` | Archive plan | Yes | `PERM-SUB-002` (not `PERM-SUB-011`) |
 | POST | `/admin/subscription-plans/{id}/restore` | Restore plan | Yes | `PERM-SUB-002` (not `PERM-SUB-012`) |
-| POST | `/internal/jobs/subscription-renewals` | Due/grace renewal worker tick | No† | `AUTH-015` `X-Clinexa-Worker-Secret`; period-key + SKIP LOCKED; **P14e** |
+| POST | `/internal/jobs/subscription-renewals` | Expire ended + due/grace renewal worker tick | No† | `AUTH-015` `X-Clinexa-Worker-Secret`; expire ACTIVE `endsAt<=now` then due; period-key + SKIP LOCKED; **P14e** + **Phase 3 P3-REN-001** |
 
 Renewal charging is executed by workers (`FR-SUB-002`/`003`/`005`) via domain services—not a public patient endpoint.
 

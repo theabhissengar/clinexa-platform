@@ -75,6 +75,17 @@ export class RenewalAddressResolver {
       return fromOrder;
     }
 
+    return this.resolveFromPatientUser(patientUserId);
+  }
+
+  /**
+   * P3-SUB-001 preflight: new subscriptions have no prior order, so require
+   * a valid User.shippingAddress before insert (fail closed, no placeholders).
+   */
+  async resolveFromPatientUser(patientUserId: string): Promise<{
+    shipping: OrderAddressInput;
+    billing: OrderAddressInput;
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: patientUserId },
       select: { shippingAddress: true },

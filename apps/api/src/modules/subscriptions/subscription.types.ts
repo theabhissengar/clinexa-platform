@@ -201,4 +201,26 @@ export type RenewalOrderRequest = {
   }>;
 };
 
+/** P3-SUB-001: Guardian/system create without initialOrderId. */
+export type InitialOrderRequest = {
+  subscriptionId: string;
+  patientUserId: string;
+  actorUserId?: string | null;
+  source: string;
+  customer?: {
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  };
+  lines: RenewalOrderRequest['lines'];
+};
+
+/** P3-SUB-002: after subscription reaches CANCELLED. */
+export type CancelOpenOrdersRequest = {
+  subscriptionId: string;
+  actorUserId?: string | null;
+  source: string;
+};
+
 export { SubscriptionRenewalAttemptStatus };

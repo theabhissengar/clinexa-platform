@@ -29,7 +29,7 @@ If capture succeeds but the limit is already consumed, Promotions records `FAILE
 
 ## Extensible schema
 
-`Coupon.applicability` includes future values (`SUBSCRIPTION`, `RENEWAL`, …). Phase 2 evaluates **ORDER** + manual codes only. `rulesJson`, `isAutomatic`, `stackingGroup`, and `priority` are stored for Phase 3+ and unused by the MVP engine.
+`Coupon.applicability` includes future values (`SUBSCRIPTION`, `RENEWAL`, …). Phase 2 evaluates **ORDER** + manual codes only. `rulesJson`, `isAutomatic`, `stackingGroup`, and `priority` are stored for Phase 3+ and unused by the MVP engine. **Product Phase 3 (Users/Orders/Subscriptions/Renewals expansion) did not activate these coupon Phase 3+ fields.**
 
 Historical orders are immutable: `Order.pricingSnapshotJson` plus cent totals remain the source of truth after a coupon is edited or deactivated.
 

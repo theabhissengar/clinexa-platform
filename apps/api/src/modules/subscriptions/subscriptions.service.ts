@@ -238,8 +238,20 @@ export class SubscriptionsService {
     }
 
     const source = input.source ?? input.context;
+    const shouldCreateInitialOrder =
+      input.initialOrderId == null || input.initialOrderId === '';
 
-    return this.prisma.$transaction(async (tx) => {
+    // P3-SUB-001: fail closed on addresses before insert when auto-creating.
+    if (
+      shouldCreateInitialOrder &&
+      this.sideEffects.onPreflightInitialOrderAddresses
+    ) {
+      await this.sideEffects.onPreflightInitialOrderAddresses(
+        input.patientUserId,
+      );
+    }
+
+    const created = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({
         where: { id: input.patientUserId },
       });
@@ -304,7 +316,7 @@ export class SubscriptionsService {
       const customer = this.snapshots.snapshotCustomer(user, input.customer);
       const subscriptionNumber = await this.allocateSubscriptionNumber(tx);
 
-      const created = await tx.subscription.create({
+      return tx.subscription.create({
         data: {
           subscriptionNumber,
           patientUserId: user.id,
@@ -359,9 +371,56 @@ export class SubscriptionsService {
         },
         include: { items: true, plan: true },
       });
-
-      return created;
     });
+
+    // P3-SUB-001: when bind omitted, request SUBSCRIPTION_INITIAL DRAFT via composition.
+    if (shouldCreateInitialOrder && this.sideEffects.onRequestInitialOrder) {
+      const orderId = await this.sideEffects.onRequestInitialOrder({
+        subscriptionId: created.id,
+        patientUserId: created.patientUserId,
+        actorUserId: input.actorUserId ?? null,
+        source,
+        customer: {
+          firstName: created.customerFirstName,
+          lastName: created.customerLastName,
+          email: created.customerEmail,
+          phone: created.customerPhone,
+        },
+        lines: created.items.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: item.productName,
+          sku: item.sku,
+          productType: item.productType,
+          isRxEligible: item.isRxEligible,
+          catalogMetadata: item.catalogMetadata,
+          quantity: item.quantity,
+          unitPriceCents: item.unitPriceCents,
+          salePriceCents: item.salePriceCents,
+          currency: item.currency,
+        })),
+      });
+      if (orderId) {
+        return this.prisma.subscription.update({
+          where: { id: created.id },
+          data: {
+            initialOrderId: orderId,
+            latestOrderId: orderId,
+            activities: {
+              create: {
+                actorUserId: input.actorUserId ?? null,
+                kind: 'initial_order_bound',
+                summary: `Initial order ${orderId} created and bound`,
+                metadata: { orderId, source },
+              },
+            },
+          },
+          include: { items: true, plan: true },
+        });
+      }
+    }
+
+    return created;
   }
 
   async pause(input: PauseSubscriptionInput) {
@@ -455,6 +514,14 @@ export class SubscriptionsService {
         result.id,
         prior.providerSubscriptionRef,
       );
+    }
+    // P3-SUB-002: cancel open INITIAL/RENEWAL DRAFT|PAYMENT_PENDING orders (composition).
+    if (this.sideEffects.onSubscriptionCancelled) {
+      await this.sideEffects.onSubscriptionCancelled({
+        subscriptionId: result.id,
+        actorUserId: input.actorUserId ?? null,
+        source: input.source,
+      });
     }
     await this.emitNotify('subscription.cancelled', result.id);
     return result;

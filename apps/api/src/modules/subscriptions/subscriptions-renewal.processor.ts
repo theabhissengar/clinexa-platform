@@ -59,6 +59,8 @@ export type DueBatchResult = {
   succeeded: number;
   failed: number;
   skipped: number;
+  /** P3-REN-001: ACTIVE subscriptions expired because endsAt <= now. */
+  expired: number;
 };
 
 function extractErrorCode(error: unknown): string | undefined {
@@ -516,6 +518,9 @@ export class SubscriptionsRenewalProcessor {
     const now = input?.now ?? new Date();
     const limit = Math.min(input?.limit ?? 25, 100);
 
+    // P3-REN-001: expire ACTIVE with endsAt <= now before due/retry processing.
+    const expired = await this.expireEndedSubscriptions(now, limit);
+
     const dueIds = await this.lockDueSubscriptionIds(now, limit);
     const result: DueBatchResult = {
       scanned: dueIds.length,
@@ -523,6 +528,7 @@ export class SubscriptionsRenewalProcessor {
       succeeded: 0,
       failed: 0,
       skipped: 0,
+      expired,
     };
 
     for (const subscriptionId of dueIds) {
@@ -566,6 +572,56 @@ export class SubscriptionsRenewalProcessor {
     }
 
     return result;
+  }
+
+  /**
+   * P3-REN-001: lock ACTIVE rows with endsAt <= now and call expire().
+   * Does not expire PAUSED / PAST_DUE / PENDING_SETUP.
+   */
+  private async expireEndedSubscriptions(
+    now: Date,
+    limit: number,
+  ): Promise<number> {
+    const ids = await this.lockExpiredSubscriptionIds(now, limit);
+    let expired = 0;
+    for (const subscriptionId of ids) {
+      try {
+        await this.subscriptions.expire({
+          subscriptionId,
+          toStatus: SubscriptionStatus.EXPIRED,
+          source: 'system',
+          reason: 'ends_at_reached',
+        });
+        expired += 1;
+      } catch (error) {
+        this.logger.warn(
+          `Expire failed for ${subscriptionId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+    return expired;
+  }
+
+  private async lockExpiredSubscriptionIds(
+    now: Date,
+    limit: number,
+  ): Promise<string[]> {
+    type Row = { id: string };
+    const rows = await this.prisma.$queryRaw<Row[]>`
+      SELECT s.id
+      FROM subscriptions s
+      WHERE s.deleted_at IS NULL
+        AND s.archived_at IS NULL
+        AND s.status = 'ACTIVE'
+        AND s.ends_at IS NOT NULL
+        AND s.ends_at <= ${now}
+      ORDER BY s.ends_at ASC
+      FOR UPDATE OF s SKIP LOCKED
+      LIMIT ${limit}
+    `;
+    return rows.map((r) => r.id);
   }
 
   /**

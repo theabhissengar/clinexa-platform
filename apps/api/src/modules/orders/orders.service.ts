@@ -1,8 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
+  forwardRef,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import {
@@ -26,6 +29,8 @@ import {
 } from './order-side-effects';
 import { OrderSnapshotService } from './order-snapshot.service';
 import { OrderTotalsService } from './order-totals.service';
+import { PaymentsService } from '../payments/payments.service';
+import { PricingEngineService } from '../promotions/pricing-engine.service';
 import type {
   AddOrderAdjustmentInput,
   AddOrderNoteInput,
@@ -52,6 +57,12 @@ export class OrdersService {
     private readonly snapshots: OrderSnapshotService,
     private readonly editPolicy: OrderEditPolicyService,
     private readonly inventory: OrderInventoryOrchestrator,
+    @Optional()
+    @Inject(forwardRef(() => PricingEngineService))
+    private readonly pricing?: PricingEngineService,
+    @Optional()
+    @Inject(forwardRef(() => PaymentsService))
+    private readonly payments?: PaymentsService,
   ) {}
 
   /**
@@ -316,7 +327,7 @@ export class OrdersService {
 
         const variant = await tx.productVariant.findUnique({
           where: { id: line.variantId },
-          include: { product: true },
+          include: { product: { include: { categoryLinks: true } } },
         });
         if (
           !variant ||
@@ -346,15 +357,74 @@ export class OrdersService {
           isRxOrder = true;
         }
 
-        preparedLines.push({ catalog, lineTotals });
+        preparedLines.push({ catalog, lineTotals, variant, inputLine: line });
       }
 
-      const orderTotals = this.totals.computeOrder({
+      let orderTotals = this.totals.computeOrder({
         lines: preparedLines.map((p) => p.lineTotals),
         shippingTotalCents: input.shippingTotalCents ?? 0,
         discountTotalCents: input.discountTotalCents ?? 0,
         taxTotalCents: input.taxTotalCents ?? 0,
       });
+      let appliedCouponId: string | null = null;
+      let pricingSnapshotJson: Prisma.InputJsonValue | undefined;
+
+      if (input.couponCode && !this.pricing) {
+        throw new BadRequestException({
+          code: ErrorCodes.SYS_UNEXPECTED,
+          message: 'Promotions pricing is not available',
+        });
+      }
+      if (this.pricing) {
+        const priced = await this.pricing.evaluatePricing({
+          couponCode: input.couponCode,
+          patientUserId: user.id,
+          shippingTotalCents: input.shippingTotalCents ?? 0,
+          taxTotalCents: input.taxTotalCents ?? 0,
+          lines: preparedLines.map((p) => ({
+            variantId: p.catalog.variantId,
+            productId: p.catalog.productId,
+            categoryIds: (p.variant.product.categoryLinks ?? []).map(
+              (link: { categoryId: string }) => link.categoryId,
+            ),
+            quantity: p.lineTotals.quantity,
+            unitPriceCents: p.lineTotals.unitPriceCents,
+            salePriceCents: p.lineTotals.salePriceCents,
+            taxCents: p.lineTotals.taxCents,
+            discountCents: input.couponCode
+              ? 0
+              : (p.inputLine.discountCents ?? 0),
+          })),
+        });
+        appliedCouponId = priced.appliedCouponId;
+        pricingSnapshotJson =
+          priced.pricingSnapshot as unknown as Prisma.InputJsonValue;
+        orderTotals = this.totals.computeOrder({
+          lines: preparedLines.map((p, index) => {
+            const discountCents = priced.lineDiscounts[index]?.discountCents ?? 0;
+            return this.totals.computeLine({
+              unitPriceCents: p.lineTotals.unitPriceCents,
+              salePriceCents: p.lineTotals.salePriceCents,
+              quantity: p.lineTotals.quantity,
+              discountCents,
+              taxCents: p.lineTotals.taxCents,
+            });
+          }),
+          shippingTotalCents: priced.orderTotals.shippingTotalCents,
+          discountTotalCents: priced.orderTotals.discountTotalCents,
+          taxTotalCents: priced.orderTotals.taxTotalCents,
+        });
+        preparedLines.forEach((p, index) => {
+          const discountCents = priced.lineDiscounts[index]?.discountCents ?? 0;
+          p.lineTotals = this.totals.computeLine({
+            unitPriceCents: p.lineTotals.unitPriceCents,
+            salePriceCents: p.lineTotals.salePriceCents,
+            quantity: p.lineTotals.quantity,
+            discountCents,
+            taxCents: p.lineTotals.taxCents,
+          });
+        });
+      }
 
       const customer = this.snapshots.snapshotCustomer(user, input.customer);
       const shipping = this.snapshots.snapshotAddress(
@@ -394,6 +464,8 @@ export class OrdersService {
           ...customer,
           currency: input.currency ?? 'USD',
           ...orderTotals,
+          appliedCouponId,
+          pricingSnapshotJson,
           requiresClinicalReview: isRxOrder,
           isRxOrder,
           items: {
@@ -706,6 +778,52 @@ export class OrdersService {
     });
   }
 
+  async recordRefundedTotal(input: {
+    orderId: string;
+    refundedTotalCents: number;
+    paymentId: string;
+    refundId: string;
+  }) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: input.orderId },
+        data: { refundedTotalCents: input.refundedTotalCents },
+      });
+      await tx.orderActivity.create({
+        data: {
+          orderId: input.orderId,
+          kind: 'payment_refunded',
+          summary: 'Payment refund recorded',
+          metadata: {
+            paymentId: input.paymentId,
+            refundId: input.refundId,
+            refundedTotalCents: input.refundedTotalCents,
+          },
+        },
+      });
+    });
+  }
+
+  async recordCouponRedemptionFailure(input: {
+    orderId: string;
+    couponId: string;
+    paymentId: string;
+    errorCode: string;
+  }) {
+    await this.prisma.orderActivity.create({
+      data: {
+        orderId: input.orderId,
+        kind: 'coupon_redemption_failed',
+        summary: 'Coupon redemption could not be recorded after capture',
+        metadata: {
+          couponId: input.couponId,
+          paymentId: input.paymentId,
+          errorCode: input.errorCode,
+        },
+      },
+    });
+  }
+
   /**
    * Resolve SHIPPING+BILLING from the latest order for a subscription (read-only).
    */
@@ -866,14 +984,10 @@ export class OrdersService {
           input.toStatus === OrderStatus.FULFILLED &&
           order.orderType === OrderType.SUBSCRIPTION_RENEWAL
         ) {
-          const payment = await tx.payment.findFirst({
-            where: { orderId: order.id },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (
-            !payment ||
-            payment.lifecycleState !== PaymentLifecycleState.CAPTURED
-          ) {
+          const lifecycle = this.payments
+            ? await this.payments.getLatestPaymentLifecycleForOrder(order.id)
+            : null;
+          if (lifecycle !== PaymentLifecycleState.CAPTURED) {
             throw new BadRequestException({
               code: ErrorCodes.ORD_INVALID_TRANSITION,
               message:

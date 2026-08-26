@@ -21,7 +21,10 @@ export type OrderAddressInput = {
 export type CreateOrderLineInput = {
   variantId: string;
   quantity: number;
-  /** Optional explicit line discount allocation (cents). Default 0. */
+  /**
+   * Optional staff/manual line discount (cents). Not a coupon promotion input.
+   * Ignored when `couponCode` is supplied — Promotions owns coupon discounts.
+   */
   discountCents?: number;
   /** Optional explicit line tax allocation (cents). Default 0. */
   taxCents?: number;
@@ -43,6 +46,10 @@ export type CreateOrderInput = {
   subscriptionId?: string | null;
   /** Order-level amounts in cents (server validates; never trusted as grand total). */
   shippingTotalCents?: number;
+  /**
+   * Optional staff/manual order discount (cents). Pre-existing P13 pricing field,
+   * not coupon promotion input. When `couponCode` is set, Promotions totals win.
+   */
   discountTotalCents?: number;
   taxTotalCents?: number;
   currency?: string;
@@ -53,6 +60,8 @@ export type CreateOrderInput = {
   initialStatus?: Extract<OrderStatus, 'DRAFT' | 'PAYMENT_PENDING'>;
   actorUserId?: string | null;
   source?: string;
+  /** Optional opaque coupon code — Promotions evaluates; Orders never inspects coupon rules. */
+  couponCode?: string | null;
   /** Optional idempotency key (unique). Replay returns the existing order. */
   idempotencyKey?: string | null;
 };

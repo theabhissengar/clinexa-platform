@@ -202,6 +202,7 @@ export function GuardianOrderCreatePage() {
   const [shippingTotalCents, setShippingTotalCents] = useState("");
   const [taxTotalCents, setTaxTotalCents] = useState("");
   const [discountTotalCents, setDiscountTotalCents] = useState("");
+  const [couponCode, setCouponCode] = useState("");
   const [initialStatus, setInitialStatus] = useState<
     "DRAFT" | "PAYMENT_PENDING"
   >("DRAFT");
@@ -321,8 +322,11 @@ export function GuardianOrderCreatePage() {
     if (taxTotalCents.trim()) {
       payload.taxTotalCents = Number(taxTotalCents);
     }
-    if (discountTotalCents.trim()) {
+    if (discountTotalCents.trim() && !couponCode.trim()) {
       payload.discountTotalCents = Number(discountTotalCents);
+    }
+    if (couponCode.trim()) {
+      payload.couponCode = couponCode.trim();
     }
 
     setSaving(true);
@@ -560,6 +564,16 @@ export function GuardianOrderCreatePage() {
                 type="number"
                 value={discountTotalCents}
                 onChange={(event) => setDiscountTotalCents(event.target.value)}
+                disabled={Boolean(couponCode.trim())}
+              />
+            </div>
+            <div className="space-y-1 sm:col-span-3">
+              <Label htmlFor="couponCode">Coupon code</Label>
+              <Input
+                id="couponCode"
+                value={couponCode}
+                onChange={(event) => setCouponCode(event.target.value)}
+                placeholder="Optional — Promotions calculates discounts"
               />
             </div>
             <div className="space-y-1">

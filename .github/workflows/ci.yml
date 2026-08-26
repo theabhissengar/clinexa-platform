@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     # Placeholder only — prisma generate does not open a DB connection.
     # Not a secret; runtime still requires a real DATABASE_URL via app config.
+    # Postgres concurrency specs skip here unless RUN_POSTGRES_INTEGRATION=1
+    # and a reachable database is provided.
     env:
       DATABASE_URL: postgresql://clinexa:clinexa@127.0.0.1:5432/clinexa_ci?schema=public
       NEXT_PUBLIC_API_BASE_URL: http://localhost:3001

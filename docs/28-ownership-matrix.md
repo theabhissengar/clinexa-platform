@@ -108,7 +108,7 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Category** | View, Create, Edit, Publish, Delete, Archive, Restore | View | View published | — | Index | Public API: View published |
 | **Cart** | — | — | Create own, Edit own, Delete own | View own | Merge on sign-in, Expire | Mobile: Create own, Edit own |
 | **Order** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (**operational fields only** — see [35](35-orders-module.md) §7), Transition (fulfill/cancel), Assist (policy refund and cancel), Notes, History/Activity, Export — **no Create; no Class D** | Create (checkout finalize) | View own, Assist request (cancel or support path) | Create (renewal), Transition | Mobile: View own; Admin mobile: View |
-| **Payment** | View, Correct, Configure providers, Rotate credentials | View, Assist (policy-scoped refund) | Initiate intent | Update own payment method | Capture, Reconcile from webhooks | Mobile: Update own method |
+| **Payment** | View list/detail, Initiate refund (`API-067`), Correct, Configure providers (read-only metadata in P15) | View, Assist (policy-scoped refund via same Payments API) | Initiate intent | Update own payment method | Capture, Reconcile from webhooks | Mobile: Update own method |
 | **Subscription** | View, Create (administrative path), Edit (administrative fields), Delete, Archive, Restore, Correct, Override | View, Edit (**operational fields only** — see [36](36-subscriptions-module.md) §7), Transition (pause, resume), Assist (policy cancel, renewal/retry) — **no Create; no Class D** | Create (plan purchase / checkout, later) | View own, Edit own, Cancel own | Renew (due processing), Expire, Complete | Mobile: View own, Cancel own |
 | **Subscription plan** | View, Create, Edit, Publish, Delete, Archive | View | View published | View own plan | — | — |
 | **Subscription renewal attempt** | View (on the subscription) | View; Assist retry/manual renewal | — | View own (later) | Create/advance attempt (idempotent) | — |
@@ -116,7 +116,7 @@ It spans the Internal Platform contexts (Guardian and CRM), the Store, the Patie
 | **Warehouse** | View, Create, Edit, Archive (Class D as designed) | — | — | — | Seed default warehouse | — |
 | **Stock reservation** | View | View (order context); Reserve/Release/Commit via services | — | — | Expire pending reservations | — |
 | **Stock movement** | View ledger | View order-relevant movements | — | — | Append via Inventory services only | — |
-| **Coupon** | View, Create, Edit, Delete, Archive | View | Apply code | — | Validate | — |
+| **Coupon** | View, Create, Edit, Deactivate, Delete (Class D; blocked if redemptions), Redemption list | View | Apply code (later Store) | — | Validate (advisory); record redemption on capture | — |
 | **Pricing, tax, shipping configuration** | View, Create, Edit, Delete | View | Consume | Consume | Consume | — |
 
 ---
@@ -225,6 +225,7 @@ If a new application cannot be expressed by adding a column and permissions — 
 | 1.6 | 2026-08-20 | Platform Engineering | Order row: CRM no Create/Class D; operational edit allowlist; pointer to [35](35-orders-module.md) |
 | 1.7 | 2026-08-24 | Platform Engineering | Subscription row: CRM no Create/Class D; pause/resume/assist; `PERM-SUB-014`; pointer to [36](36-subscriptions-module.md) |
 | 1.8 | 2026-08-24 | Platform Engineering | P14d Guardian Subscriptions implemented; ownership split unchanged (CRM no Create/Class D; Guardian admin + Class D + plans) |
+| 1.9 | 2026-08-26 | Platform Engineering | P15: Promotions owns coupon validation/pricing/redemption; Payments owns refunds; Guardian/CRM are API clients only; [37](37-promotions-module.md) |
 
 ---
 

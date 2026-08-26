@@ -124,6 +124,7 @@ export class AdminOrdersController {
       taxTotalCents: dto.taxTotalCents,
       currency: dto.currency,
       initialStatus: dto.initialStatus,
+      couponCode: dto.couponCode,
       actorUserId: user.id,
       source: 'guardian',
     });

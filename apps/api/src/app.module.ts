@@ -17,6 +17,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { ClinicalModule } from './modules/clinical/clinical.module';
 import { CommerceIntegrationModule } from './modules/subscriptions/commerce-integration.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     InventoryModule,
     OrdersModule,
     PaymentsModule,
+    PromotionsModule,
     ClinicalModule,
     SubscriptionsModule,
     CommerceIntegrationModule,

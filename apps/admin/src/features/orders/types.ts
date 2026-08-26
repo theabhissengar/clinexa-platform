@@ -192,5 +192,6 @@ export type CreateAdminOrderPayload = {
   shippingTotalCents?: number;
   discountTotalCents?: number;
   taxTotalCents?: number;
+  couponCode?: string;
   initialStatus?: "DRAFT" | "PAYMENT_PENDING";
 };

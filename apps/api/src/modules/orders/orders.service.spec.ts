@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import {
   OrderStatus,
+  OrderType,
+  PaymentLifecycleState,
   ProductType,
   UserStatus,
 } from '../../../generated/prisma';
@@ -35,6 +37,11 @@ type TxMock = {
   orderNote: { create: jest.Mock };
   orderAdjustment: { create: jest.Mock; findMany: jest.Mock };
 };
+
+function firstMockCallArg<T>(mock: jest.Mock): T {
+  const calls = mock.mock.calls as Array<[T]>;
+  return calls[0][0];
+}
 
 describe('OrdersService', () => {
   const patient = {
@@ -157,7 +164,10 @@ describe('OrdersService', () => {
     return { prisma, tx, createdOrder };
   }
 
-  function buildService(prisma: unknown) {
+  function buildService(
+    prisma: unknown,
+    extras?: { pricing?: unknown; payments?: unknown },
+  ) {
     const inventory = {
       applyTransitionIntent: jest.fn().mockResolvedValue(undefined),
       applyOverrideInventory: jest.fn().mockResolvedValue(undefined),
@@ -169,6 +179,8 @@ describe('OrdersService', () => {
       new OrderSnapshotService(),
       new OrderEditPolicyService(),
       inventory as unknown as OrderInventoryOrchestrator,
+      extras?.pricing as never,
+      extras?.payments as never,
     );
     return Object.assign(service, { _inventory: inventory });
   }
@@ -201,22 +213,17 @@ describe('OrdersService', () => {
 
     expect(order.id).toBe('ord-1');
     expect(tx.order.create).toHaveBeenCalled();
-    const createCalls = tx.order.create.mock.calls as Array<
-      [
-        {
-          data: {
-            items: { create: Array<Record<string, unknown>> };
-            subtotalCents: number;
-            totalCents: number;
-            customerEmail: string;
-            addresses: { create: unknown[] };
-            statusHistory: { create: { toStatus: OrderStatus } };
-            activities: { create: { kind: string } };
-          };
-        },
-      ]
-    >;
-    const createArg = createCalls[0][0];
+    const createArg = firstMockCallArg<{
+      data: {
+        items: { create: Array<Record<string, unknown>> };
+        subtotalCents: number;
+        totalCents: number;
+        customerEmail: string;
+        addresses: { create: unknown[] };
+        statusHistory: { create: { toStatus: OrderStatus } };
+        activities: { create: { kind: string } };
+      };
+    }>(tx.order.create);
     const firstItem = createArg.data.items.create[0];
     expect(firstItem.productName).toBe('Widget');
     expect(firstItem.sku).toBe('W-1');
@@ -230,6 +237,84 @@ describe('OrdersService', () => {
       OrderStatus.DRAFT,
     );
     expect(createArg.data.activities.create.kind).toBe('order_created');
+  });
+
+  it('persists Promotions totals and snapshot when couponCode is passed', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.order.findUnique = jest.fn().mockResolvedValue(null);
+    const pricing = {
+      evaluatePricing: jest.fn().mockResolvedValue({
+        appliedCouponId: 'cpn-1',
+        orderTotals: {
+          subtotalCents: 1800,
+          discountTotalCents: 180,
+          shippingTotalCents: 0,
+          taxTotalCents: 0,
+          totalCents: 1620,
+        },
+        pricingSnapshot: { engineVersion: 'p2-mvp-1', couponCode: 'SAVE10' },
+        lineDiscounts: [{ discountCents: 180 }],
+      }),
+    };
+    const service = buildService(prisma, { pricing });
+    await service.createOrder({ ...baseCreateInput, couponCode: 'SAVE10' });
+    expect(pricing.evaluatePricing).toHaveBeenCalledWith(
+      expect.objectContaining({ couponCode: 'SAVE10' }),
+    );
+    const createArg = firstMockCallArg<{
+      data: {
+        appliedCouponId: string;
+        totalCents: number;
+        discountTotalCents: number;
+        pricingSnapshotJson: { couponCode: string };
+      };
+    }>(tx.order.create);
+    expect(createArg.data.appliedCouponId).toBe('cpn-1');
+    expect(createArg.data.totalCents).toBe(1620);
+    expect(createArg.data.discountTotalCents).toBe(180);
+    expect(createArg.data.pricingSnapshotJson.couponCode).toBe('SAVE10');
+  });
+
+  it('treats Promotions totals as authoritative when couponCode and client discounts are both sent', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    tx.order.findUnique = jest.fn().mockResolvedValue(null);
+    const pricing = {
+      evaluatePricing: jest.fn().mockResolvedValue({
+        appliedCouponId: 'cpn-1',
+        orderTotals: {
+          subtotalCents: 1800,
+          discountTotalCents: 180,
+          shippingTotalCents: 0,
+          taxTotalCents: 0,
+          totalCents: 1620,
+        },
+        pricingSnapshot: { engineVersion: 'p2-mvp-1', couponCode: 'SAVE10' },
+        lineDiscounts: [{ discountCents: 180 }],
+      }),
+    };
+    const service = buildService(prisma, { pricing });
+    await service.createOrder({
+      ...baseCreateInput,
+      couponCode: 'SAVE10',
+      discountTotalCents: 50,
+      lines: [{ variantId: variant.id, quantity: 2, discountCents: 50 }],
+    });
+    expect(pricing.evaluatePricing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        couponCode: 'SAVE10',
+        lines: [expect.objectContaining({ discountCents: 0 })],
+      }),
+    );
+    const createArg = firstMockCallArg<{
+      data: {
+        discountTotalCents: number;
+        totalCents: number;
+        items: { create: Array<{ discountCents: number }> };
+      };
+    }>(tx.order.create);
+    expect(createArg.data.discountTotalCents).toBe(180);
+    expect(createArg.data.totalCents).toBe(1620);
+    expect(createArg.data.items.create.at(0)?.discountCents).toBe(180);
   });
 
   it('rejects invalid variant and quantity', async () => {
@@ -701,5 +786,49 @@ describe('OrdersService', () => {
         }) as Record<string, unknown>,
       }),
     );
+  });
+
+  it('blocks renewal fulfill unless Payments reports CAPTURED', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.AWAITING_FULFILLMENT;
+    createdOrder.orderType = OrderType.SUBSCRIPTION_RENEWAL;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    tx.order.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+
+    const payments = {
+      getLatestPaymentLifecycleForOrder: jest
+        .fn()
+        .mockResolvedValueOnce(PaymentLifecycleState.AUTHORIZED)
+        .mockResolvedValueOnce(PaymentLifecycleState.CAPTURED),
+    };
+    const inventory = {
+      applyTransitionIntent: jest.fn().mockResolvedValue(undefined),
+      applyOverrideInventory: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new OrdersService(
+      prisma as PrismaService,
+      new OrderLifecycleService(),
+      new OrderTotalsService(),
+      new OrderSnapshotService(),
+      new OrderEditPolicyService(),
+      inventory as unknown as OrderInventoryOrchestrator,
+      undefined,
+      payments as never,
+    );
+
+    await expect(
+      service.transitionOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.FULFILLED,
+        source: 'ops',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    await service.transitionOrder({
+      orderId: 'ord-1',
+      toStatus: OrderStatus.FULFILLED,
+      source: 'ops',
+    });
+    expect(payments.getLatestPaymentLifecycleForOrder).toHaveBeenCalledTimes(2);
   });
 });

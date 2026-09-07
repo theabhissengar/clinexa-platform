@@ -5,7 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PaymentMethodSelect } from "@/features/payments/components/payment-method-select";
 import {
   getCrmSubscription,
   updateCrmSubscription,
@@ -16,6 +18,20 @@ import {
   statusLabel,
 } from "@/features/subscriptions/lib/format";
 import type { SubscriptionDetail } from "@/features/subscriptions/types";
+import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
+
+function toLocalInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 16);
+}
+
+function fromLocalInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return new Date(trimmed).toISOString();
+}
 
 export function CrmSubscriptionEditPage() {
   const params = useParams<{ id: string }>();
@@ -25,6 +41,14 @@ export function CrmSubscriptionEditPage() {
   const [row, setRow] = useState<SubscriptionDetail | null>(null);
   const [shippingNotes, setShippingNotes] = useState("");
   const [opsFlagsText, setOpsFlagsText] = useState("");
+  const [adminTags, setAdminTags] = useState<
+    Record<string, unknown> | string[] | null
+  >(null);
+  const [nextRenewalAt, setNextRenewalAt] = useState("");
+  const [currentPeriodStart, setCurrentPeriodStart] = useState("");
+  const [currentPeriodEnd, setCurrentPeriodEnd] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [paymentMethodId, setPaymentMethodId] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +61,15 @@ export function CrmSubscriptionEditPage() {
         setOpsFlagsText(
           detail.opsFlags ? JSON.stringify(detail.opsFlags, null, 2) : "",
         );
+        setAdminTags(
+          (detail.adminTags as Record<string, unknown> | string[] | null) ??
+            null,
+        );
+        setNextRenewalAt(toLocalInput(detail.nextRenewalAt));
+        setCurrentPeriodStart(toLocalInput(detail.currentPeriodStart));
+        setCurrentPeriodEnd(toLocalInput(detail.currentPeriodEnd));
+        setEndsAt(toLocalInput(detail.endsAt));
+        setPaymentMethodId(detail.paymentMethodId ?? "");
       })
       .catch((err) =>
         setError(getErrorMessage(err, "Unable to load subscription.")),
@@ -67,6 +100,12 @@ export function CrmSubscriptionEditPage() {
       await updateCrmSubscription(row.id, {
         shippingPreferenceNotes: shippingNotes || null,
         opsFlags,
+        adminTags,
+        nextRenewalAt: fromLocalInput(nextRenewalAt),
+        currentPeriodStart: fromLocalInput(currentPeriodStart),
+        currentPeriodEnd: fromLocalInput(currentPeriodEnd),
+        endsAt: fromLocalInput(endsAt),
+        paymentMethodId: paymentMethodId || null,
       });
       router.push(`/crm/subscriptions/${row.id}`);
     } catch (err) {
@@ -114,8 +153,7 @@ export function CrmSubscriptionEditPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Status {statusLabel(row.status)} · updated {formatDateTime(row.updatedAt)}.
-          Snapshots, payment, clinical records, and Class D fields are not
-          editable here.
+          Timeline edits update the subscription schedule source of truth.
         </p>
       </div>
 
@@ -141,6 +179,62 @@ export function CrmSubscriptionEditPage() {
             placeholder='{"holdShipment": true}'
           />
         </div>
+        <AdminTagsEditor
+          key={row.id}
+          value={adminTags}
+          onChange={setAdminTags}
+        />
+
+        <div className="rounded-md border border-border p-3">
+          <div className="mb-3 text-sm font-medium">Payment timeline</div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="currentPeriodStart">Current period start</Label>
+              <Input
+                id="currentPeriodStart"
+                type="datetime-local"
+                value={currentPeriodStart}
+                onChange={(e) => setCurrentPeriodStart(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="currentPeriodEnd">Current period end</Label>
+              <Input
+                id="currentPeriodEnd"
+                type="datetime-local"
+                value={currentPeriodEnd}
+                onChange={(e) => setCurrentPeriodEnd(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="nextRenewalAt">Next renewal</Label>
+              <Input
+                id="nextRenewalAt"
+                type="datetime-local"
+                value={nextRenewalAt}
+                onChange={(e) => setNextRenewalAt(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="endsAt">Ends at</Label>
+              <Input
+                id="endsAt"
+                type="datetime-local"
+                value={endsAt}
+                onChange={(e) => setEndsAt(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="mt-3">
+            <PaymentMethodSelect
+              userId={row.patientUserId}
+              value={paymentMethodId}
+              onChange={setPaymentMethodId}
+              context="crm"
+            />
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : "Save"}

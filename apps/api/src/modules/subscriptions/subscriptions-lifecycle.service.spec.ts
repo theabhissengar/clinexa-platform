@@ -29,7 +29,10 @@ describe('SubscriptionsLifecycleService', () => {
           ? { failedRenewalAttempt: true }
           : from === SubscriptionStatus.PAUSED
             ? { statusBeforePause: to }
-            : undefined;
+            : from === SubscriptionStatus.PENDING_SETUP &&
+                to === SubscriptionStatus.ACTIVE
+              ? { parentHook: true }
+              : undefined;
       expect(() => service.assertTransition(from, to, extras)).not.toThrow();
     }
     expect(() =>
@@ -43,11 +46,11 @@ describe('SubscriptionsLifecycleService', () => {
 
   it('rejects illegal and terminal reopen transitions', () => {
     const illegal: Array<[SubscriptionStatus, SubscriptionStatus]> = [
-      [SubscriptionStatus.PENDING_SETUP, SubscriptionStatus.PAUSED],
       [SubscriptionStatus.PENDING_SETUP, SubscriptionStatus.PAST_DUE],
       [SubscriptionStatus.CANCELLED, SubscriptionStatus.ACTIVE],
       [SubscriptionStatus.EXPIRED, SubscriptionStatus.ACTIVE],
       [SubscriptionStatus.COMPLETED, SubscriptionStatus.ACTIVE],
+      [SubscriptionStatus.MIGRATED, SubscriptionStatus.ACTIVE],
       [SubscriptionStatus.PAUSED, SubscriptionStatus.PENDING_SETUP],
       [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING_SETUP],
     ];
@@ -62,6 +65,22 @@ describe('SubscriptionsLifecycleService', () => {
         });
       }
     }
+  });
+
+  it('allows PENDING_SETUP → PAUSED only via parentHook', () => {
+    expect(() =>
+      service.assertTransition(
+        SubscriptionStatus.PENDING_SETUP,
+        SubscriptionStatus.PAUSED,
+      ),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      service.assertTransition(
+        SubscriptionStatus.PENDING_SETUP,
+        SubscriptionStatus.PAUSED,
+        { parentHook: true },
+      ),
+    ).not.toThrow();
   });
 
   it('rejects ACTIVE → PAST_DUE without a failed renewal attempt', () => {
@@ -93,10 +112,11 @@ describe('SubscriptionsLifecycleService', () => {
     }
   });
 
-  it('marks cancelled/expired/completed as terminal and protects cancel', () => {
+  it('marks cancelled/expired/completed/migrated as terminal and protects cancel', () => {
     expect(service.isTerminal(SubscriptionStatus.CANCELLED)).toBe(true);
     expect(service.isTerminal(SubscriptionStatus.EXPIRED)).toBe(true);
     expect(service.isTerminal(SubscriptionStatus.COMPLETED)).toBe(true);
+    expect(service.isTerminal(SubscriptionStatus.MIGRATED)).toBe(true);
     expect(service.isTerminal(SubscriptionStatus.ACTIVE)).toBe(false);
     expect(service.isCancellable(SubscriptionStatus.ACTIVE)).toBe(true);
     expect(service.isCancellable(SubscriptionStatus.CANCELLED)).toBe(false);

@@ -14,6 +14,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { AddNoteDto } from '../../../common/dto/note.dto';
 import {
   OrderAdjustmentKind,
   OrderStatus,
@@ -246,13 +247,7 @@ export class AdminOverrideDto {
   reason!: string;
 }
 
-export class AdminAddNoteDto {
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(5000)
-  body!: string;
-}
+export class AdminAddNoteDto extends AddNoteDto {}
 
 export class AdminTransitionDto {
   @ApiProperty({ enum: OrderStatus })
@@ -264,6 +259,12 @@ export class AdminTransitionDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+export class RetryOrderPaymentDto {
+  @ApiProperty()
+  @IsUUID()
+  paymentMethodId!: string;
 }
 
 export { OrderAdjustmentKind, OrderStatus, OrderType };

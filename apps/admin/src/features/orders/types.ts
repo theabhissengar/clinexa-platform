@@ -117,11 +117,14 @@ export type OrderDetail = OrderListItem & {
   canFulfill: boolean;
 };
 
+export type NoteVisibility = "PRIVATE" | "USER_VISIBLE";
+
 export type OrderNote = {
   id: string;
   orderId: string;
   authorUserId: string;
   body: string;
+  visibility: NoteVisibility;
   createdAt: string;
   updatedAt: string;
 };
@@ -153,10 +156,24 @@ export type UpdateCrmOrderPayload = {
   carrier?: string | null;
   shippedAt?: string | null;
   shippingPhone?: string | null;
+  patientUserId?: string;
+  shippingAddress?: OrderAddressInput | null;
+  billingAddress?: OrderAddressInput | null;
+  adminTags?: Record<string, unknown> | string[] | null;
+};
+
+export type OrderAddressInput = {
+  fullName?: string | null;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  region?: string | null;
+  postalCode?: string | null;
+  country: string;
+  phone?: string | null;
 };
 
 export type UpdateAdminOrderPayload = UpdateCrmOrderPayload & {
-  adminTags?: Record<string, unknown> | null;
   reconciliationFlags?: Record<string, unknown> | null;
 };
 

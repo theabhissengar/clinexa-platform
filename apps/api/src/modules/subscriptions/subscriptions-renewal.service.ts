@@ -203,12 +203,11 @@ export class SubscriptionsRenewalService {
 
       if (
         input.mode === 'manual' &&
-        (this.lifecycle.isTerminal(subscription.status) ||
-          subscription.status === SubscriptionStatus.PENDING_SETUP)
+        subscription.status !== SubscriptionStatus.ACTIVE
       ) {
         throw new BadRequestException({
           code: ErrorCodes.SUB_INVALID_TRANSITION,
-          message: `Manual renewal is not allowed from ${subscription.status}`,
+          message: `Manual renewal is only allowed from ACTIVE (got ${subscription.status})`,
         });
       }
 

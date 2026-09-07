@@ -99,7 +99,7 @@ describe('CrmOrdersController', () => {
     );
   });
 
-  it('strips admin metadata from CRM detail responses', async () => {
+  it('exposes adminTags on CRM detail responses', async () => {
     orders.getOrderById.mockResolvedValue({
       id: 'ord-1',
       orderNumber: 'ORD-1',
@@ -115,7 +115,8 @@ describe('CrmOrdersController', () => {
     });
 
     const result = await controller.get('ord-1');
-    expect(result).not.toHaveProperty('adminTags');
+    expect(result).toHaveProperty('adminTags', { secret: true });
+    expect(result).toHaveProperty('tags', { secret: true });
     expect(result).not.toHaveProperty('reconciliationFlags');
     expect(result).toHaveProperty('orderNumber', 'ORD-1');
   });

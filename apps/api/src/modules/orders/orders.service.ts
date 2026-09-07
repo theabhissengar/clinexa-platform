@@ -14,11 +14,15 @@ import {
   OrderStatus,
   OrderType,
   PaymentLifecycleState,
+  PaymentPurpose,
+  PaymentStatus,
   Prisma,
+  NoteVisibility,
   UserStatus,
 } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { isUuid } from '../../common/utils/search-query.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { OrderEditPolicyService } from './order-edit-policy.service';
 import { OrderInventoryOrchestrator } from './order-inventory.orchestrator';
@@ -40,6 +44,7 @@ import type {
   CreateOrderInput,
   OrderAddressInput,
   OverrideOrderInput,
+  RetryOrderPaymentInput,
   TransitionOrderInput,
   UpdateOrderFieldsInput,
 } from './order.types';
@@ -243,6 +248,8 @@ export class OrdersService {
       ...(params.q
         ? {
             OR: [
+              ...(isUuid(params.q) ? [{ id: params.q }] : []),
+              ...(isUuid(params.q) ? [{ subscriptionId: params.q }] : []),
               { orderNumber: { contains: params.q, mode: 'insensitive' } },
               { customerEmail: { contains: params.q, mode: 'insensitive' } },
               {
@@ -397,11 +404,11 @@ export class OrdersService {
           })),
         });
         appliedCouponId = priced.appliedCouponId;
-        pricingSnapshotJson =
-          priced.pricingSnapshot as unknown as Prisma.InputJsonValue;
+        pricingSnapshotJson = priced.pricingSnapshot;
         orderTotals = this.totals.computeOrder({
           lines: preparedLines.map((p, index) => {
-            const discountCents = priced.lineDiscounts[index]?.discountCents ?? 0;
+            const discountCents =
+              priced.lineDiscounts[index]?.discountCents ?? 0;
             return this.totals.computeLine({
               unitPriceCents: p.lineTotals.unitPriceCents,
               salePriceCents: p.lineTotals.salePriceCents,
@@ -825,6 +832,89 @@ export class OrdersService {
   }
 
   /**
+   * Re-authorize a PAYMENT_PENDING order with a new payment method.
+   * Uses a fresh idempotency key per attempt; advances order on success.
+   */
+  async retryOrderAuthorization(input: RetryOrderPaymentInput) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: input.orderId },
+    });
+    if (!order || order.deletedAt != null) {
+      throw new NotFoundException({
+        code: ErrorCodes.ORD_NOT_FOUND,
+        message: 'Order not found',
+      });
+    }
+    if (order.status !== OrderStatus.PAYMENT_PENDING) {
+      throw new BadRequestException({
+        code: ErrorCodes.ORD_INVALID_TRANSITION,
+        message: 'Payment retry is only allowed for PAYMENT_PENDING orders',
+      });
+    }
+    if (!this.payments) {
+      throw new BadRequestException({
+        code: ErrorCodes.SYS_UNEXPECTED,
+        message: 'Payments is not available',
+      });
+    }
+
+    const idempotencyKey = `retry:${input.orderId}:${randomBytes(8).toString('hex')}`;
+    const purpose =
+      order.orderType === OrderType.SUBSCRIPTION_RENEWAL
+        ? PaymentPurpose.RENEWAL
+        : PaymentPurpose.CHECKOUT;
+
+    const auth = await this.payments.authorizeForOrder({
+      orderId: order.id,
+      subscriptionId: order.subscriptionId,
+      paymentMethodId: input.paymentMethodId,
+      amountCents: order.totalCents,
+      currency: order.currency,
+      purpose,
+      idempotencyKey,
+    });
+
+    if (
+      auth.status === PaymentStatus.FAILED ||
+      auth.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED
+    ) {
+      return { order, auth, transitioned: false as const };
+    }
+
+    if (order.isRxOrder || order.totalCents === 0) {
+      const transitioned = await this.transitionOrder({
+        orderId: order.id,
+        toStatus: order.isRxOrder
+          ? OrderStatus.AWAITING_CLINICAL_REVIEW
+          : OrderStatus.AWAITING_FULFILLMENT,
+        actorUserId: input.actorUserId ?? null,
+        source: input.source,
+        reason: 'payment_retry_authorized',
+        expectedStatus: OrderStatus.PAYMENT_PENDING,
+      });
+      return { order: transitioned, auth, transitioned: true as const };
+    }
+
+    const capture = await this.payments.capturePayment({
+      paymentId: auth.paymentId,
+      idempotencyKey: `capture:${order.id}:${auth.paymentId}`,
+    });
+    if (capture.lifecycleState !== PaymentLifecycleState.CAPTURED) {
+      return { order, auth, capture, transitioned: false as const };
+    }
+
+    const transitioned = await this.transitionOrder({
+      orderId: order.id,
+      toStatus: OrderStatus.AWAITING_FULFILLMENT,
+      actorUserId: input.actorUserId ?? null,
+      source: input.source,
+      reason: 'payment_retry_captured',
+      expectedStatus: OrderStatus.PAYMENT_PENDING,
+    });
+    return { order: transitioned, auth, capture, transitioned: true as const };
+  }
+
+  /**
    * Resolve SHIPPING+BILLING from the latest order for a subscription (read-only).
    */
   async getLatestSubscriptionOrderAddresses(subscriptionId: string): Promise<{
@@ -1088,6 +1178,15 @@ export class OrdersService {
       ) {
         await this.sideEffects.onEnteredClinicalReview(result.id);
       }
+      if (this.sideEffects.onStatusTransition) {
+        await this.sideEffects.onStatusTransition({
+          orderId: result.id,
+          fromStatus,
+          toStatus,
+          orderType: result.orderType,
+          subscriptionId: result.subscriptionId,
+        });
+      }
     }
 
     return result;
@@ -1140,6 +1239,69 @@ export class OrdersService {
           input.reconciliationFlags as Prisma.InputJsonValue;
       }
 
+      if (input.patientUserId !== undefined) {
+        this.editPolicy.assertFieldAllowed(
+          input.context,
+          order.status,
+          'patientUserId',
+        );
+        const patient = await tx.user.findUnique({
+          where: { id: input.patientUserId },
+          select: { id: true, deletedAt: true },
+        });
+        if (!patient || patient.deletedAt != null) {
+          throw new BadRequestException({
+            code: ErrorCodes.RES_NOT_FOUND,
+            message: 'Patient user not found',
+          });
+        }
+        data.patient = { connect: { id: input.patientUserId } };
+      }
+
+      if (input.shippingAddress !== undefined) {
+        this.editPolicy.assertFieldAllowed(
+          input.context,
+          order.status,
+          'shippingAddress',
+        );
+        const snapshot = this.snapshots.snapshotAddress(
+          OrderAddressKind.SHIPPING,
+          input.shippingAddress,
+        );
+        await tx.orderAddress.upsert({
+          where: {
+            orderId_kind: {
+              orderId: order.id,
+              kind: OrderAddressKind.SHIPPING,
+            },
+          },
+          create: { orderId: order.id, ...snapshot },
+          update: snapshot,
+        });
+      }
+
+      if (input.billingAddress !== undefined) {
+        this.editPolicy.assertFieldAllowed(
+          input.context,
+          order.status,
+          'billingAddress',
+        );
+        const snapshot = this.snapshots.snapshotAddress(
+          OrderAddressKind.BILLING,
+          input.billingAddress,
+        );
+        await tx.orderAddress.upsert({
+          where: {
+            orderId_kind: {
+              orderId: order.id,
+              kind: OrderAddressKind.BILLING,
+            },
+          },
+          create: { orderId: order.id, ...snapshot },
+          update: snapshot,
+        });
+      }
+
       if (input.shippingPhone !== undefined) {
         this.editPolicy.assertFieldAllowed(
           input.context,
@@ -1157,7 +1319,12 @@ export class OrdersService {
         });
       }
 
-      if (Object.keys(data).length === 0 && input.shippingPhone === undefined) {
+      if (
+        Object.keys(data).length === 0 &&
+        input.shippingPhone === undefined &&
+        input.shippingAddress === undefined &&
+        input.billingAddress === undefined
+      ) {
         throw new BadRequestException({
           code: ErrorCodes.VAL_MISSING_FIELD,
           message: 'No editable fields provided',
@@ -1214,6 +1381,7 @@ export class OrdersService {
           orderId: input.orderId,
           authorUserId: input.authorUserId,
           body,
+          visibility: input.visibility ?? NoteVisibility.PRIVATE,
         },
       });
       await tx.orderActivity.create({
@@ -1327,6 +1495,12 @@ export class OrdersService {
     return this.prisma.$transaction(async (tx) => {
       const order = await this.requireActiveOrder(tx, input.orderId);
       const fromStatus = order.status;
+      if (fromStatus === OrderStatus.FULFILLED) {
+        throw new BadRequestException({
+          code: ErrorCodes.ORD_INVALID_TRANSITION,
+          message: 'Shipped (FULFILLED) orders cannot change status',
+        });
+      }
       if (fromStatus === input.toStatus) {
         throw new BadRequestException({
           code: ErrorCodes.ORD_INVALID_TRANSITION,

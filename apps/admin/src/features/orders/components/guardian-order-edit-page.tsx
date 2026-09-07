@@ -13,6 +13,7 @@ import {
 } from "@/features/orders/api/admin-orders-api";
 import { formatDateTime, statusLabel } from "@/features/orders/lib/format";
 import type { OrderDetail } from "@/features/orders/types";
+import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (
@@ -71,7 +72,9 @@ export function GuardianOrderEditPage() {
   const [carrier, setCarrier] = useState("");
   const [shippedAt, setShippedAt] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
-  const [adminTagsText, setAdminTagsText] = useState("");
+  const [adminTags, setAdminTags] = useState<
+    Record<string, unknown> | string[] | null
+  >(null);
   const [reconciliationFlagsText, setReconciliationFlagsText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,7 +92,10 @@ export function GuardianOrderEditPage() {
         setShippedAt(detail.shippedAt ? detail.shippedAt.slice(0, 16) : "");
         const shipping = detail.addresses.find((a) => a.kind === "SHIPPING");
         setShippingPhone(shipping?.phone ?? "");
-        setAdminTagsText(jsonToTextarea(detail.adminTags));
+        setAdminTags(
+          (detail.adminTags as Record<string, unknown> | string[] | null) ??
+            null,
+        );
         setReconciliationFlagsText(jsonToTextarea(detail.reconciliationFlags));
         setError(null);
       } catch (err) {
@@ -112,7 +118,7 @@ export function GuardianOrderEditPage() {
     setSaving(true);
     setError(null);
     try {
-      const adminTags = parseJsonObject(adminTagsText, "Admin tags");
+      const adminTagsValue = adminTags;
       const reconciliationFlags = parseJsonObject(
         reconciliationFlagsText,
         "Reconciliation flags",
@@ -122,7 +128,7 @@ export function GuardianOrderEditPage() {
         carrier: carrier || null,
         shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
         shippingPhone: shippingPhone || null,
-        adminTags,
+        adminTags: adminTagsValue,
         reconciliationFlags,
       });
       router.push(`/guardian/orders/${order.id}`);
@@ -215,16 +221,11 @@ export function GuardianOrderEditPage() {
             onChange={(event) => setShippingPhone(event.target.value)}
           />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="adminTags">Admin tags (JSON object)</Label>
-          <textarea
-            id="adminTags"
-            className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
-            value={adminTagsText}
-            onChange={(event) => setAdminTagsText(event.target.value)}
-            placeholder='{"priority":"high"}'
-          />
-        </div>
+        <AdminTagsEditor
+          key={order.id}
+          value={adminTags}
+          onChange={setAdminTags}
+        />
         <div className="space-y-1">
           <Label htmlFor="reconciliationFlags">
             Reconciliation flags (JSON object)

@@ -17,12 +17,19 @@ describe('OrderEditPolicyService', () => {
     ).not.toThrow();
   });
 
-  it('forbids CRM from editing Guardian admin fields', () => {
-    try {
+  it('allows CRM adminTags and forbids Guardian reconciliation fields', () => {
+    expect(() =>
       service.assertFieldAllowed(
         'crm',
         OrderStatus.AWAITING_FULFILLMENT,
         'adminTags',
+      ),
+    ).not.toThrow();
+    try {
+      service.assertFieldAllowed(
+        'crm',
+        OrderStatus.AWAITING_FULFILLMENT,
+        'reconciliationFlags',
       );
       fail('expected throw');
     } catch (error) {

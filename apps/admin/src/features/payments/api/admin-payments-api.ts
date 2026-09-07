@@ -5,6 +5,7 @@ import type {
   PaymentListResponse,
   ProviderConfig,
 } from "../types";
+import type { SavedPaymentMethod } from "@/features/users/types";
 
 type ApiEnvelope<T> = {
   data: T;
@@ -48,6 +49,65 @@ export async function initiateAdminRefund(
 export async function getAdminPaymentProviders(): Promise<ProviderConfig> {
   const { data } = await apiClient.get<ApiEnvelope<ProviderConfig>>(
     "/v1/admin/payment-providers",
+  );
+  return data.data;
+}
+
+export async function listAdminPaymentMethods(
+  userId: string,
+): Promise<SavedPaymentMethod[]> {
+  const { data } = await apiClient.get<ApiEnvelope<SavedPaymentMethod[]>>(
+    `/v1/admin/users/${userId}/payment-methods`,
+  );
+  return data.data;
+}
+
+export async function addAdminPaymentMethod(
+  userId: string,
+  payload: {
+    brand?: string;
+    last4?: string;
+    expMonth?: number;
+    expYear?: number;
+    isDefault?: boolean;
+  },
+): Promise<SavedPaymentMethod> {
+  const { data } = await apiClient.post<ApiEnvelope<SavedPaymentMethod>>(
+    `/v1/admin/users/${userId}/payment-methods`,
+    payload,
+  );
+  return data.data;
+}
+
+export async function updateAdminPaymentMethod(
+  userId: string,
+  methodId: string,
+  payload: { brand?: string; expMonth?: number; expYear?: number },
+): Promise<SavedPaymentMethod> {
+  const { data } = await apiClient.patch<ApiEnvelope<SavedPaymentMethod>>(
+    `/v1/admin/users/${userId}/payment-methods/${methodId}`,
+    payload,
+  );
+  return data.data;
+}
+
+export async function makeAdminPaymentMethodDefault(
+  userId: string,
+  methodId: string,
+): Promise<SavedPaymentMethod> {
+  const { data } = await apiClient.post<ApiEnvelope<SavedPaymentMethod>>(
+    `/v1/admin/users/${userId}/payment-methods/${methodId}/default`,
+    {},
+  );
+  return data.data;
+}
+
+export async function deleteAdminPaymentMethod(
+  userId: string,
+  methodId: string,
+): Promise<SavedPaymentMethod> {
+  const { data } = await apiClient.delete<ApiEnvelope<SavedPaymentMethod>>(
+    `/v1/admin/users/${userId}/payment-methods/${methodId}`,
   );
   return data.data;
 }

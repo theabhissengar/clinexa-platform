@@ -75,6 +75,22 @@ describe('OrderLifecycleService', () => {
     expect(service.isTerminal(OrderStatus.CANCELLED)).toBe(true);
     expect(service.isTerminal(OrderStatus.REFUNDED)).toBe(true);
     expect(service.isTerminal(OrderStatus.DRAFT)).toBe(false);
+    expect(service.allowedNext(OrderStatus.FULFILLED)).toEqual([]);
+  });
+
+  it('requires capture for any transition into AWAITING_FULFILLMENT except from PAYMENT_PENDING', () => {
+    expect(
+      service.paymentHookForTransition(
+        OrderStatus.CLINICAL_APPROVED,
+        OrderStatus.AWAITING_FULFILLMENT,
+      ),
+    ).toBe('capture_required');
+    expect(
+      service.paymentHookForTransition(
+        OrderStatus.PAYMENT_PENDING,
+        OrderStatus.AWAITING_FULFILLMENT,
+      ),
+    ).toBe('authorization_recorded');
   });
 
   it('maps inventory hooks for reserve-at-auth policy', () => {

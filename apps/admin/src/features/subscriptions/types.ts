@@ -1,8 +1,11 @@
+export type NoteVisibility = "PRIVATE" | "USER_VISIBLE";
+
 export type SubscriptionStatus =
   | "PENDING_SETUP"
   | "ACTIVE"
   | "PAUSED"
   | "PAST_DUE"
+  | "MIGRATED"
   | "CANCELLED"
   | "EXPIRED"
   | "COMPLETED";
@@ -121,6 +124,7 @@ export type SubscriptionNote = {
   subscriptionId: string;
   authorUserId: string;
   body: string;
+  visibility: NoteVisibility;
   createdAt: string;
   updatedAt: string;
 };
@@ -178,10 +182,17 @@ export type SubscriptionRenewalAttempt = {
 export type UpdateCrmSubscriptionPayload = {
   shippingPreferenceNotes?: string | null;
   opsFlags?: Record<string, unknown> | null;
+  adminTags?: Record<string, unknown> | string[] | null;
+  paymentMethodId?: string | null;
+  patientUserId?: string;
+  nextRenewalAt?: string | null;
+  currentPeriodStart?: string | null;
+  currentPeriodEnd?: string | null;
+  endsAt?: string | null;
 };
 
 export type UpdateAdminSubscriptionPayload = UpdateCrmSubscriptionPayload & {
-  adminTags?: Record<string, unknown> | null;
+  adminTags?: Record<string, unknown> | string[] | null;
   reconciliationFlags?: Record<string, unknown> | null;
 };
 

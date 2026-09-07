@@ -35,7 +35,7 @@ const ALLOWED: Record<OrderStatus, OrderStatus[]> = {
     OrderStatus.CANCELLED,
     OrderStatus.REFUNDED,
   ],
-  [OrderStatus.FULFILLED]: [OrderStatus.REFUNDED],
+  [OrderStatus.FULFILLED]: [],
   [OrderStatus.CANCELLED]: [],
   [OrderStatus.REFUNDED]: [],
 };
@@ -120,8 +120,9 @@ export class OrderLifecycleService {
       return 'authorization_recorded';
     }
     if (
-      from === OrderStatus.CLINICAL_APPROVED &&
-      to === OrderStatus.AWAITING_FULFILLMENT
+      to === OrderStatus.AWAITING_FULFILLMENT &&
+      from !== OrderStatus.AWAITING_FULFILLMENT &&
+      from !== OrderStatus.PAYMENT_PENDING
     ) {
       return 'capture_required';
     }

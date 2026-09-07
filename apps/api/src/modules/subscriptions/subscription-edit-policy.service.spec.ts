@@ -18,8 +18,15 @@ describe('SubscriptionEditPolicyService', () => {
         'shippingPreferenceNotes',
       ),
     ).not.toThrow();
+    expect(() =>
+      service.assertFieldAllowed('crm', SubscriptionStatus.ACTIVE, 'adminTags'),
+    ).not.toThrow();
     try {
-      service.assertFieldAllowed('crm', SubscriptionStatus.ACTIVE, 'adminTags');
+      service.assertFieldAllowed(
+        'crm',
+        SubscriptionStatus.ACTIVE,
+        'reconciliationFlags',
+      );
       fail('expected throw');
     } catch (error) {
       expect((error as BadRequestException).getResponse()).toMatchObject({

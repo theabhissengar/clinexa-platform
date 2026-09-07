@@ -243,6 +243,14 @@ export class CrmUpdateUserDto {
   @IsString()
   internalNotes?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Structured medical profile: allergies, conditions, medications, additionalNotes as { id, text }[]',
+  })
+  @IsOptional()
+  @IsObject()
+  medicalProfile?: Record<string, unknown> | null;
+
   @ApiPropertyOptional()
   @IsOptional()
   @ValidateNested()

@@ -1,12 +1,14 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsDateString,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
-  MinLength,
 } from 'class-validator';
 import { SubscriptionStatus } from '../../../../generated/prisma';
+import { AddNoteDto } from '../../../common/dto/note.dto';
 
 export class CrmUpdateSubscriptionDto {
   @ApiPropertyOptional()
@@ -16,11 +18,47 @@ export class CrmUpdateSubscriptionDto {
   shippingPreferenceNotes?: string | null;
 
   @ApiPropertyOptional({
-    description: 'CRM-operational flags JSON (not Guardian admin tags).',
+    description: 'CRM-operational flags JSON.',
   })
   @IsOptional()
   @IsObject()
   opsFlags?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  adminTags?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  paymentMethodId?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  patientUserId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  nextRenewalAt?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  currentPeriodStart?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  currentPeriodEnd?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  endsAt?: string | null;
 }
 
 export class CrmLifecycleReasonDto {
@@ -31,13 +69,14 @@ export class CrmLifecycleReasonDto {
   reason?: string;
 }
 
-export class CrmAddSubscriptionNoteDto {
-  @ApiProperty()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(5000)
-  body!: string;
+export class CrmMigrateSubscriptionDto extends CrmLifecycleReasonDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  migratedToSubscriptionId?: string;
 }
+
+export class CrmAddSubscriptionNoteDto extends AddNoteDto {}
 
 export function parseSubscriptionStatusFilter(
   value?: string,

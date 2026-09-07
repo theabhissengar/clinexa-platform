@@ -159,9 +159,11 @@ describe('InventoryLedgerService', () => {
       },
       client as never,
     );
-    const upsertOrder = client.inventoryBalance.upsert.mock.invocationCallOrder[0];
+    const upsertOrder =
+      client.inventoryBalance.upsert.mock.invocationCallOrder[0];
     const lockOrder = client.$queryRaw.mock.invocationCallOrder[0];
-    const findOrder = client.inventoryBalance.findUnique.mock.invocationCallOrder[0];
+    const findOrder =
+      client.inventoryBalance.findUnique.mock.invocationCallOrder[0];
     expect(upsertOrder).toBeLessThan(lockOrder);
     expect(lockOrder).toBeLessThan(findOrder);
   });

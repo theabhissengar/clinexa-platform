@@ -108,3 +108,17 @@ export type ProviderConfig = {
   capabilities: string[];
   webhookEndpointUrl: string;
 };
+
+export type SavedPaymentMethod = {
+  id: string;
+  userId: string;
+  provider: string;
+  providerMethodRef: string;
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+};

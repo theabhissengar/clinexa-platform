@@ -1,5 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import { CouponApplicability, CouponDiscountType, CouponScopeType } from '../../../generated/prisma';
+import {
+  CouponApplicability,
+  CouponDiscountType,
+  CouponScopeType,
+} from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { CouponValidationService } from './coupon-validation.service';
@@ -75,10 +79,10 @@ describe('CouponValidationService', () => {
     ).rejects.toMatchObject({ response: { code: ErrorCodes.CPN_INVALID } });
 
     await expect(
-      service.assertEligible(
-        coupon({ minOrderCents: 5000 }) as never,
-        { patientUserId: 'user-1', lines },
-      ),
+      service.assertEligible(coupon({ minOrderCents: 5000 }) as never, {
+        patientUserId: 'user-1',
+        lines,
+      }),
     ).rejects.toMatchObject({
       response: { code: ErrorCodes.CPN_INELIGIBLE },
     });
@@ -110,10 +114,10 @@ describe('CouponValidationService', () => {
     prisma.couponRedemption.create.mockClear();
     prisma.couponRedemption.count.mockResolvedValue(2);
     await expect(
-      service.assertEligible(
-        coupon({ perUserUsageLimit: 2 }) as never,
-        { patientUserId: 'user-1', lines },
-      ),
+      service.assertEligible(coupon({ perUserUsageLimit: 2 }) as never, {
+        patientUserId: 'user-1',
+        lines,
+      }),
     ).rejects.toMatchObject({
       response: { code: ErrorCodes.CPN_INELIGIBLE },
     });

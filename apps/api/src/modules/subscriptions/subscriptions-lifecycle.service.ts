@@ -10,7 +10,9 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 const ALLOWED: Record<SubscriptionStatus, SubscriptionStatus[]> = {
   [SubscriptionStatus.PENDING_SETUP]: [
     SubscriptionStatus.ACTIVE,
+    SubscriptionStatus.PAUSED,
     SubscriptionStatus.CANCELLED,
+    SubscriptionStatus.MIGRATED,
   ],
   [SubscriptionStatus.ACTIVE]: [
     SubscriptionStatus.PAUSED,
@@ -18,26 +20,31 @@ const ALLOWED: Record<SubscriptionStatus, SubscriptionStatus[]> = {
     SubscriptionStatus.CANCELLED,
     SubscriptionStatus.EXPIRED,
     SubscriptionStatus.COMPLETED,
+    SubscriptionStatus.MIGRATED,
   ],
   [SubscriptionStatus.PAST_DUE]: [
     SubscriptionStatus.PAUSED,
     SubscriptionStatus.ACTIVE,
     SubscriptionStatus.CANCELLED,
+    SubscriptionStatus.MIGRATED,
   ],
   [SubscriptionStatus.PAUSED]: [
     SubscriptionStatus.ACTIVE,
     SubscriptionStatus.PAST_DUE,
     SubscriptionStatus.CANCELLED,
+    SubscriptionStatus.MIGRATED,
   ],
   [SubscriptionStatus.CANCELLED]: [],
   [SubscriptionStatus.EXPIRED]: [],
   [SubscriptionStatus.COMPLETED]: [],
+  [SubscriptionStatus.MIGRATED]: [],
 };
 
 const TERMINAL: ReadonlySet<SubscriptionStatus> = new Set([
   SubscriptionStatus.CANCELLED,
   SubscriptionStatus.EXPIRED,
   SubscriptionStatus.COMPLETED,
+  SubscriptionStatus.MIGRATED,
 ]);
 
 const CANCELLABLE: ReadonlySet<SubscriptionStatus> = new Set([
@@ -57,6 +64,8 @@ export type LifecycleAssertExtras = {
   failedRenewalAttempt?: boolean;
   /** Resume must restore statusBeforePause. */
   statusBeforePause?: SubscriptionStatus | null;
+  /** PENDING_SETUP → PAUSED is allowed only via parent INITIAL-order hook (Phase 4). */
+  parentHook?: boolean;
 };
 
 @Injectable()
@@ -77,6 +86,18 @@ export class SubscriptionsLifecycleService {
     }
 
     if (
+      from === SubscriptionStatus.PENDING_SETUP &&
+      to === SubscriptionStatus.PAUSED &&
+      extras?.parentHook !== true
+    ) {
+      throw new BadRequestException({
+        code: ErrorCodes.SUB_INVALID_TRANSITION,
+        message:
+          'PENDING_SETUP → PAUSED is allowed only via parent INITIAL-order hook',
+      });
+    }
+
+    if (
       from === SubscriptionStatus.ACTIVE &&
       to === SubscriptionStatus.PAST_DUE &&
       extras?.failedRenewalAttempt !== true
@@ -85,6 +106,27 @@ export class SubscriptionsLifecycleService {
         code: ErrorCodes.SUB_INVALID_TRANSITION,
         message: 'ACTIVE → PAST_DUE requires a failed renewal payment attempt',
       });
+    }
+
+    if (
+      from === SubscriptionStatus.PENDING_SETUP &&
+      to === SubscriptionStatus.ACTIVE &&
+      extras?.parentHook !== true
+    ) {
+      throw new BadRequestException({
+        code: ErrorCodes.SUB_INVALID_TRANSITION,
+        message:
+          'PENDING_SETUP → ACTIVE via manual activate requires paid/zero-total parent qualification',
+      });
+    }
+
+    if (
+      from === SubscriptionStatus.PAUSED &&
+      (to === SubscriptionStatus.ACTIVE ||
+        to === SubscriptionStatus.PAST_DUE) &&
+      extras?.parentHook === true
+    ) {
+      return;
     }
 
     if (

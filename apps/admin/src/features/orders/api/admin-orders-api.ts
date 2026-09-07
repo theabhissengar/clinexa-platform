@@ -141,10 +141,11 @@ export async function listAdminOrderNotes(id: string): Promise<OrderNote[]> {
 export async function addAdminOrderNote(
   id: string,
   body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
 ): Promise<OrderNote> {
   const { data } = await apiClient.post<ApiEnvelope<OrderNote>>(
     `/v1/admin/orders/${id}/notes`,
-    { body },
+    { body, visibility },
   );
   return data.data;
 }
@@ -163,6 +164,17 @@ export async function listAdminOrderActivity(
 ): Promise<OrderActivity[]> {
   const { data } = await apiClient.get<ApiEnvelope<OrderActivity[]>>(
     `/v1/admin/orders/${id}/activity`,
+  );
+  return data.data;
+}
+
+export async function retryAdminOrderPayment(
+  id: string,
+  paymentMethodId: string,
+): Promise<unknown> {
+  const { data } = await apiClient.post<ApiEnvelope<unknown>>(
+    `/v1/admin/orders/${id}/retry-payment`,
+    { paymentMethodId },
   );
   return data.data;
 }

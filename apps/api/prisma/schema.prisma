@@ -58,8 +58,11 @@ model User {
   /// Account preferences (notification prefs remain Notifications-owned).
   preferences Json?
 
-  /// Internal support/ops notes (CRM-heavy).
+  /// Internal support/ops notes (CRM-heavy) — legacy blob; new notes use UserNote.
   internalNotes String? @map("internal_notes")
+
+  /// CRM structured medical profile (Phase 4 — allergies, conditions, medications).
+  medicalProfile Json? @map("medical_profile")
 
   emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
   lastActiveAt    DateTime? @map("last_active_at") @db.Timestamptz(3)
@@ -76,6 +79,7 @@ model User {
   staffProfile         StaffProfile?
   changeHistory        UserChangeHistory[]
   activities           UserActivity[]
+  notes                UserNote[]
   orders               Order[]
   subscriptions        Subscription[]
   savedPaymentMethods  SavedPaymentMethod[]
@@ -248,6 +252,23 @@ model UserActivity {
 
   @@index([userId, createdAt])
   @@map("user_activities")
+}
+
+/// Human-authored notes on a user (shared Guardian/CRM).
+model UserNote {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String         @map("user_id") @db.Uuid
+  authorUserId String         @map("author_user_id") @db.Uuid
+  body         String
+  visibility   NoteVisibility @default(PRIVATE)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([authorUserId])
+  @@map("user_notes")
 }
 
 // ---------------------------------------------------------------------------
@@ -775,6 +796,12 @@ enum OrderAdjustmentKind {
   OTHER
 }
 
+/// Staff note visibility (Order/Subscription/User notes).
+enum NoteVisibility {
+  PRIVATE
+  USER_VISIBLE
+}
+
 /// Canonical commerce order aggregate (DB-026).
 model Order {
   id             String      @id @default(uuid()) @db.Uuid
@@ -967,12 +994,13 @@ model OrderActivity {
 
 /// Human-authored internal notes.
 model OrderNote {
-  id           String   @id @default(uuid()) @db.Uuid
-  orderId      String   @map("order_id") @db.Uuid
-  authorUserId String   @map("author_user_id") @db.Uuid
+  id           String         @id @default(uuid()) @db.Uuid
+  orderId      String         @map("order_id") @db.Uuid
+  authorUserId String         @map("author_user_id") @db.Uuid
   body         String
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  visibility   NoteVisibility @default(PRIVATE)
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
@@ -1033,6 +1061,7 @@ enum SubscriptionStatus {
   CANCELLED
   EXPIRED
   COMPLETED
+  MIGRATED
 }
 
 /// Clinical requirement flag on the subscription (not a lifecycle status).
@@ -1282,12 +1311,13 @@ model SubscriptionActivity {
 
 /// Human-authored internal notes.
 model SubscriptionNote {
-  id             String   @id @default(uuid()) @db.Uuid
-  subscriptionId String   @map("subscription_id") @db.Uuid
-  authorUserId   String   @map("author_user_id") @db.Uuid
+  id             String         @id @default(uuid()) @db.Uuid
+  subscriptionId String         @map("subscription_id") @db.Uuid
+  authorUserId   String         @map("author_user_id") @db.Uuid
   body           String
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  visibility     NoteVisibility @default(PRIVATE)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 

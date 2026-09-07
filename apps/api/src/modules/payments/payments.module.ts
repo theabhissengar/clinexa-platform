@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 
 import { AdminPaymentProvidersController } from './admin-payment-providers.controller';
 import { AdminPaymentsController } from './admin-payments.controller';
+import {
+  AdminPaymentMethodsController,
+  CrmPaymentMethodsController,
+} from './payment-methods.controller';
 import { CrmPaymentsController } from './crm-payments.controller';
 import { PAYMENT_GATEWAY } from './payment.types';
 import { PaymentProviderRegistry } from './payment-provider.registry';
@@ -15,7 +19,9 @@ import { WorkerSecretGuard } from './worker-secret.guard';
     PaymentsWebhookController,
     AdminPaymentsController,
     AdminPaymentProvidersController,
+    AdminPaymentMethodsController,
     CrmPaymentsController,
+    CrmPaymentMethodsController,
   ],
   providers: [
     SimulatedPaymentAdapter,

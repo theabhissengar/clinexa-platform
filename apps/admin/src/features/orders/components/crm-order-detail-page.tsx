@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -17,18 +17,27 @@ import {
   listCrmOrderActivity,
   listCrmOrderHistory,
   listCrmOrderNotes,
+  listCrmOrders,
+  retryCrmOrderPayment,
+  transitionCrmOrder,
   updateCrmOrder,
 } from "@/features/orders/api/orders-api";
+import { OrderPaymentRetryPanel } from "@/features/orders/components/order-payment-retry-panel";
 import {
   customerLabel,
   formatDateTime,
   formatMoneyCents,
+  productStatusLabel,
   statusLabel,
 } from "@/features/orders/lib/format";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
+import { ModuleDetailSearch } from "@/features/shared/components/module-detail-search";
+import { RelatedEntityTree } from "@/features/shared/components/related-entity-tree";
 import type {
   OrderActivity,
   OrderDetail,
   OrderNote,
+  OrderStatus,
   OrderStatusHistory,
 } from "@/features/orders/types";
 import { initiateCrmRefund } from "@/features/payments/api/crm-payments-api";
@@ -74,6 +83,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 export function CrmOrderDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = params.id;
   const { can } = usePermissions();
@@ -93,7 +103,8 @@ export function CrmOrderDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [noteBody, setNoteBody] = useState("");
+  const [transitionTo, setTransitionTo] = useState<OrderStatus | "">("");
+  const [transitionReason, setTransitionReason] = useState("");
   const [trackingNumber, setTrackingNumber] = useState("");
   const [carrier, setCarrier] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
@@ -126,6 +137,7 @@ export function CrmOrderDetailPage() {
       setCarrier(detail.carrier ?? "");
       const shipping = detail.addresses.find((a) => a.kind === "SHIPPING");
       setShippingPhone(shipping?.phone ?? "");
+      setTransitionTo("");
     } catch (err) {
       setOrder(null);
       setError(getErrorMessage(err, "Unable to load order."));
@@ -133,6 +145,25 @@ export function CrmOrderDetailPage() {
       setLoading(false);
     }
   }, [orderId]);
+
+  async function runAction(
+    action: () => Promise<unknown>,
+    successMessage: string,
+    fallbackError: string,
+  ) {
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await action();
+      setMessage(successMessage);
+      await load({ quiet: true });
+    } catch (err) {
+      setError(getErrorMessage(err, fallbackError));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -239,22 +270,28 @@ export function CrmOrderDetailPage() {
     }
   }
 
-  async function onAddNote(event: React.FormEvent) {
+  async function onTransition(event: React.FormEvent) {
     event.preventDefault();
-    if (!order || !canEdit || !noteBody.trim()) return;
-    setBusy(true);
-    setMessage(null);
-    setError(null);
-    try {
-      await addCrmOrderNote(order.id, noteBody.trim());
-      setNoteBody("");
-      setMessage("Note added.");
-      await load({ quiet: true });
-    } catch (err) {
-      setError(getErrorMessage(err, "Unable to add note."));
-    } finally {
-      setBusy(false);
-    }
+    if (!order || !canEdit || !transitionTo) return;
+    await runAction(
+      () =>
+        transitionCrmOrder(order.id, {
+          toStatus: transitionTo,
+          reason: transitionReason.trim() || undefined,
+        }),
+      "Status transition applied.",
+      "Unable to transition order.",
+    );
+    setTransitionReason("");
+  }
+
+  async function handleAddNote(body: string, visibility: "PRIVATE" | "USER_VISIBLE") {
+    if (!order || !canEdit) return;
+    await runAction(
+      () => addCrmOrderNote(order.id, body, visibility),
+      "Note added.",
+      "Unable to add note.",
+    );
   }
 
   if (loading) {
@@ -298,11 +335,24 @@ export function CrmOrderDetailPage() {
             {order.orderNumber}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {statusLabel(order.status)} · {statusLabel(order.orderType)} ·{" "}
+            {productStatusLabel(order.status)} · {statusLabel(order.orderType)} ·{" "}
             {formatDateTime(order.createdAt)}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            render={
+              <a
+                href={`/guardian/orders/${order.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
+          >
+            Open in Guardian
+          </Button>
           {canEdit ? (
             <Button
               size="sm"
@@ -336,6 +386,21 @@ export function CrmOrderDetailPage() {
         </p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      <Section title="Search orders">
+        <ModuleDetailSearch
+          placeholder="Order number, customer, id…"
+          searchFn={async (q) => {
+            const result = await listCrmOrders({ q, take: 8 });
+            return result.items.map((item) => ({
+              id: item.id,
+              label: item.orderNumber,
+              sublabel: customerLabel(item),
+            }));
+          }}
+          onSelect={(id) => router.push(`/crm/orders/${id}`)}
+        />
+      </Section>
 
       <Section title="Order header">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -580,6 +645,17 @@ export function CrmOrderDetailPage() {
             </Button>
           </form>
         ) : null}
+        {order.status === "PAYMENT_PENDING" ? (
+          <OrderPaymentRetryPanel
+            orderId={order.id}
+            patientUserId={order.patientUserId}
+            context="crm"
+            onRetry={async (paymentMethodId) => {
+              await retryCrmOrderPayment(order.id, paymentMethodId);
+              await load({ quiet: true });
+            }}
+          />
+        ) : null}
       </Section>
 
       <Section title="Clinical references">
@@ -677,6 +753,45 @@ export function CrmOrderDetailPage() {
         </dl>
       </Section>
 
+      {canEdit && order.allowedNextStatuses.length > 0 ? (
+        <Section title="Status transition">
+          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onTransition}>
+            <div className="space-y-1">
+              <Label htmlFor="transitionTo">Next status</Label>
+              <select
+                id="transitionTo"
+                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={transitionTo}
+                onChange={(event) =>
+                  setTransitionTo(event.target.value as OrderStatus | "")
+                }
+                required
+              >
+                <option value="">Select…</option>
+                {order.allowedNextStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="transitionReason">Reason (optional)</Label>
+              <Input
+                id="transitionReason"
+                value={transitionReason}
+                onChange={(event) => setTransitionReason(event.target.value)}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Button type="submit" size="sm" disabled={busy || !transitionTo}>
+                Apply transition
+              </Button>
+            </div>
+          </form>
+        </Section>
+      ) : null}
+
       {canEdit ? (
         <Section title="Operational fulfillment fields">
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveOps}>
@@ -717,35 +832,46 @@ export function CrmOrderDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Notes" id="notes">
-        {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
-        ) : (
-          <ul className="space-y-3 text-sm">
-            {notes.map((note) => (
-              <li key={note.id} className="border-b border-border pb-2">
-                <p className="whitespace-pre-wrap">{note.body}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Author {note.authorUserId} · {formatDateTime(note.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-        {canEdit ? (
-          <form className="mt-4 space-y-2" onSubmit={onAddNote}>
-            <Label htmlFor="note">Add note</Label>
-            <textarea
-              id="note"
-              className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
-            />
-            <Button type="submit" size="sm" disabled={busy || !noteBody.trim()}>
-              Add note
-            </Button>
-          </form>
-        ) : null}
+      <Section title="Notes & activity" id="notes">
+        <NotesTimeline
+          notes={notes}
+          activities={activity}
+          composerDisabled={!canEdit}
+          addingNote={busy}
+          onAddNote={canEdit ? handleAddNote : undefined}
+        />
+      </Section>
+
+      <Section title="Hardcopy documents">
+        <p className="text-sm text-muted-foreground">
+          Hardcopy document management is not available in this phase.
+        </p>
+      </Section>
+
+      <Section title="Scanned documents">
+        <p className="text-sm text-muted-foreground">
+          Scanned document upload and viewing is not available in this phase.
+        </p>
+      </Section>
+
+      <Section title="Related entities">
+        <RelatedEntityTree
+          context="crm"
+          user={{
+            id: order.patientUserId,
+            label: customerLabel(order),
+          }}
+          parentOrder={
+            order.orderType === "SUBSCRIPTION_INITIAL"
+              ? { id: order.id, label: order.orderNumber }
+              : undefined
+          }
+          subscription={
+            order.subscriptionId
+              ? { id: order.subscriptionId, label: order.subscriptionId }
+              : undefined
+          }
+        />
       </Section>
 
       <Section title="History" id="history">

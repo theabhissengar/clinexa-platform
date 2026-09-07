@@ -5,9 +5,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserGender, UserStatus } from '../../../generated/prisma';
+import {
+  Prisma,
+  UserGender,
+  UserStatus,
+  NoteVisibility,
+} from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { isUuid } from '../../common/utils/search-query.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { PasswordHasher } from '../auth/password.hasher';
 import { Permissions } from '../rbac/constants/permissions';
@@ -113,6 +119,7 @@ export class UsersService {
       ...(params.q
         ? {
             OR: [
+              ...(isUuid(params.q) ? [{ id: params.q }] : []),
               { email: { contains: params.q, mode: 'insensitive' } },
               { displayName: { contains: params.q, mode: 'insensitive' } },
               { firstName: { contains: params.q, mode: 'insensitive' } },
@@ -358,6 +365,14 @@ export class UsersService {
         ...(dto.internalNotes !== undefined
           ? { internalNotes: dto.internalNotes }
           : {}),
+        ...(dto.medicalProfile !== undefined
+          ? {
+              medicalProfile:
+                dto.medicalProfile === null
+                  ? Prisma.JsonNull
+                  : (dto.medicalProfile as Prisma.InputJsonValue),
+            }
+          : {}),
         ...(dto.billingAddress !== undefined
           ? {
               billingAddress:
@@ -392,6 +407,39 @@ export class UsersService {
     );
 
     return this.toCrmDto(updated);
+  }
+
+  async listNotes(userId: string) {
+    await this.getRawById(userId);
+    return this.prisma.userNote.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+  }
+
+  async addNote(input: {
+    userId: string;
+    authorUserId: string;
+    body: string;
+    visibility: NoteVisibility;
+  }) {
+    const body = input.body?.trim();
+    if (!body) {
+      throw new BadRequestException({
+        code: ErrorCodes.VAL_MISSING_FIELD,
+        message: 'Note body is required',
+      });
+    }
+    await this.getRawById(input.userId);
+    return this.prisma.userNote.create({
+      data: {
+        userId: input.userId,
+        authorUserId: input.authorUserId,
+        body,
+        visibility: input.visibility ?? NoteVisibility.PRIVATE,
+      },
+    });
   }
 
   async getOwnProfile(userId: string) {
@@ -850,10 +898,12 @@ export class UsersService {
       ...(params.q
         ? {
             OR: [
+              ...(isUuid(params.q) ? [{ id: params.q }] : []),
               { email: { contains: params.q, mode: 'insensitive' } },
               { displayName: { contains: params.q, mode: 'insensitive' } },
               { firstName: { contains: params.q, mode: 'insensitive' } },
               { lastName: { contains: params.q, mode: 'insensitive' } },
+              { phone: { contains: params.q, mode: 'insensitive' } },
             ],
           }
         : {}),
@@ -926,6 +976,7 @@ export class UsersService {
       stripeCustomerIdTest: string | null;
       preferences: Prisma.JsonValue;
       internalNotes: string | null;
+      medicalProfile: Prisma.JsonValue;
       emailVerifiedAt: Date | null;
       lastActiveAt: Date | null;
       archivedAt: Date | null;
@@ -955,6 +1006,7 @@ export class UsersService {
       stripeCustomerIdTest: user.stripeCustomerIdTest,
       preferences: user.preferences,
       internalNotes: user.internalNotes,
+      medicalProfile: user.medicalProfile,
       emailVerifiedAt: user.emailVerifiedAt,
       lastActiveAt: user.lastActiveAt,
       archivedAt: user.archivedAt,
@@ -992,6 +1044,7 @@ export class UsersService {
       billingAddress: full.billingAddress,
       shippingAddress: full.shippingAddress,
       internalNotes: full.internalNotes,
+      medicalProfile: full.medicalProfile,
       roles: full.roles,
       createdAt: full.createdAt,
       updatedAt: full.updatedAt,

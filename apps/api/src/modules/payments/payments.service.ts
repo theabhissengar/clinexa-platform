@@ -128,16 +128,130 @@ export class PaymentsService {
     expYear?: number | null;
     isDefault?: boolean;
   }) {
-    return this.prisma.savedPaymentMethod.create({
+    return this.prisma.$transaction(async (tx) => {
+      if (input.isDefault !== false) {
+        await tx.savedPaymentMethod.updateMany({
+          where: { userId: input.userId, deletedAt: null },
+          data: { isDefault: false },
+        });
+      }
+      return tx.savedPaymentMethod.create({
+        data: {
+          userId: input.userId,
+          provider: this.getProviderName(),
+          providerMethodRef: input.providerMethodRef,
+          brand: input.brand ?? 'sim',
+          last4: input.last4 ?? '4242',
+          expMonth: input.expMonth ?? 12,
+          expYear: input.expYear ?? 2030,
+          isDefault: input.isDefault ?? true,
+        },
+      });
+    });
+  }
+
+  async listSavedMethodsForUser(userId: string) {
+    return this.prisma.savedPaymentMethod.findMany({
+      where: { userId, deletedAt: null },
+      orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  async addSavedMethodForUser(input: {
+    userId: string;
+    brand?: string | null;
+    last4?: string | null;
+    expMonth?: number | null;
+    expYear?: number | null;
+    isDefault?: boolean;
+  }) {
+    const providerMethodRef = `sim_${createHash('sha256')
+      .update(`${input.userId}:${Date.now()}:${Math.random()}`)
+      .digest('hex')
+      .slice(0, 24)}`;
+    const existing = await this.prisma.savedPaymentMethod.count({
+      where: { userId: input.userId, deletedAt: null },
+    });
+    return this.createSavedPaymentMethod({
+      userId: input.userId,
+      providerMethodRef,
+      brand: input.brand,
+      last4: input.last4,
+      expMonth: input.expMonth,
+      expYear: input.expYear,
+      isDefault: input.isDefault ?? existing === 0,
+    });
+  }
+
+  async setDefaultSavedMethod(userId: string, methodId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const method = await tx.savedPaymentMethod.findFirst({
+        where: { id: methodId, userId, deletedAt: null },
+      });
+      if (!method) {
+        throw new NotFoundException({
+          code: ErrorCodes.PAY_METHOD_INVALID,
+          message: 'Saved payment method not found',
+        });
+      }
+      await tx.savedPaymentMethod.updateMany({
+        where: { userId, deletedAt: null },
+        data: { isDefault: false },
+      });
+      return tx.savedPaymentMethod.update({
+        where: { id: methodId },
+        data: { isDefault: true },
+      });
+    });
+  }
+
+  async deleteSavedMethod(userId: string, methodId: string) {
+    const method = await this.prisma.savedPaymentMethod.findFirst({
+      where: { id: methodId, userId, deletedAt: null },
+    });
+    if (!method) {
+      throw new NotFoundException({
+        code: ErrorCodes.PAY_METHOD_INVALID,
+        message: 'Saved payment method not found',
+      });
+    }
+    if (method.isDefault) {
+      throw new BadRequestException({
+        code: ErrorCodes.PAY_METHOD_INVALID,
+        message:
+          'Cannot delete the default payment method; set another method as default first',
+      });
+    }
+    return this.prisma.savedPaymentMethod.update({
+      where: { id: methodId },
+      data: { deletedAt: new Date(), isDefault: false },
+    });
+  }
+
+  async updateSavedMethodMetadata(
+    userId: string,
+    methodId: string,
+    input: {
+      brand?: string | null;
+      expMonth?: number | null;
+      expYear?: number | null;
+    },
+  ) {
+    const method = await this.prisma.savedPaymentMethod.findFirst({
+      where: { id: methodId, userId, deletedAt: null },
+    });
+    if (!method) {
+      throw new NotFoundException({
+        code: ErrorCodes.PAY_METHOD_INVALID,
+        message: 'Saved payment method not found',
+      });
+    }
+    return this.prisma.savedPaymentMethod.update({
+      where: { id: methodId },
       data: {
-        userId: input.userId,
-        provider: this.getProviderName(),
-        providerMethodRef: input.providerMethodRef,
-        brand: input.brand ?? 'sim',
-        last4: input.last4 ?? '4242',
-        expMonth: input.expMonth ?? 12,
-        expYear: input.expYear ?? 2030,
-        isDefault: input.isDefault ?? true,
+        ...(input.brand !== undefined ? { brand: input.brand } : {}),
+        ...(input.expMonth !== undefined ? { expMonth: input.expMonth } : {}),
+        ...(input.expYear !== undefined ? { expYear: input.expYear } : {}),
       },
     });
   }
@@ -158,6 +272,15 @@ export class PaymentsService {
   async authorizeForOrder(
     input: AuthorizeForOrderInput,
   ): Promise<PaymentOutcomeSummary> {
+    if (input.amountCents === 0) {
+      return {
+        paymentId: 'zero-total-noop',
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+        paymentStatusSummary: 'authorized_or_captured',
+      };
+    }
+
     const existing = await this.prisma.payment.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
     });
@@ -570,6 +693,13 @@ export class PaymentsService {
       return;
     }
     if (event === 'capture_required') {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        select: { totalCents: true },
+      });
+      if (!order || order.totalCents === 0) {
+        return;
+      }
       const payment = await this.findLatestForOrder(orderId);
       if (!payment) {
         return;

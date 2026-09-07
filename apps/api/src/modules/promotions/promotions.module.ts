@@ -10,11 +10,7 @@ import { PricingEngineService } from './pricing-engine.service';
 @Module({
   imports: [forwardRef(() => OrdersModule)],
   controllers: [AdminCouponsController, CouponsController],
-  providers: [
-    CouponValidationService,
-    PricingEngineService,
-    CouponsService,
-  ],
+  providers: [CouponValidationService, PricingEngineService, CouponsService],
   exports: [CouponValidationService, PricingEngineService, CouponsService],
 })
 export class PromotionsModule {}

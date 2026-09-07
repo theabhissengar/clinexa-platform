@@ -249,9 +249,7 @@ export class OrdersService {
         ? {
             OR: [
               ...(isUuid(params.q) ? [{ id: params.q }] : []),
-              ...(isUuid(params.q)
-                ? [{ subscriptionId: params.q }]
-                : []),
+              ...(isUuid(params.q) ? [{ subscriptionId: params.q }] : []),
               { orderNumber: { contains: params.q, mode: 'insensitive' } },
               { customerEmail: { contains: params.q, mode: 'insensitive' } },
               {
@@ -406,11 +404,11 @@ export class OrdersService {
           })),
         });
         appliedCouponId = priced.appliedCouponId;
-        pricingSnapshotJson =
-          priced.pricingSnapshot as unknown as Prisma.InputJsonValue;
+        pricingSnapshotJson = priced.pricingSnapshot;
         orderTotals = this.totals.computeOrder({
           lines: preparedLines.map((p, index) => {
-            const discountCents = priced.lineDiscounts[index]?.discountCents ?? 0;
+            const discountCents =
+              priced.lineDiscounts[index]?.discountCents ?? 0;
             return this.totals.computeLine({
               unitPriceCents: p.lineTotals.unitPriceCents,
               salePriceCents: p.lineTotals.salePriceCents,

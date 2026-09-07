@@ -39,11 +39,7 @@ export class InventoryReservationService {
    * HTTP / explicit Reserve (API-198). Rejects untracked lines.
    * When `tx` is provided, joins the caller's transaction (no nested $transaction).
    */
-  async reserve(
-    dto: ReserveStockDto,
-    actorUserId?: string,
-    tx?: Tx,
-  ) {
+  async reserve(dto: ReserveStockDto, actorUserId?: string, tx?: Tx) {
     for (const line of dto.lines) {
       const variant = await this.prisma.productVariant.findFirst({
         where: { id: line.productVariantId, deletedAt: null },

@@ -13,9 +13,7 @@ export type OrderInventoryHookEvent =
   | 'restock_on_post_fulfill_refund';
 
 export type OrderPaymentHookEvent =
-  | 'authorization_recorded'
-  | 'capture_required'
-  | 'void_or_refund_required';
+  'authorization_recorded' | 'capture_required' | 'void_or_refund_required';
 
 export type OrderStatusTransitionContext = {
   orderId: string;

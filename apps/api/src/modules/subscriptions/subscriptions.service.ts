@@ -539,7 +539,9 @@ export class SubscriptionsService {
           initialOrder: true,
         });
         const initialOrder = (
-          sub as Subscription & { initialOrder: { status: OrderStatus; totalCents: number } | null }
+          sub as Subscription & {
+            initialOrder: { status: OrderStatus; totalCents: number } | null;
+          }
         ).initialOrder;
         if (
           initialOrder &&
@@ -553,11 +555,9 @@ export class SubscriptionsService {
               'Cannot activate while parent initial order is unpaid (DRAFT/PAYMENT_PENDING)',
           });
         }
-        this.lifecycle.assertTransition(
-          sub.status,
-          SubscriptionStatus.ACTIVE,
-          { parentHook: true },
-        );
+        this.lifecycle.assertTransition(sub.status, SubscriptionStatus.ACTIVE, {
+          parentHook: true,
+        });
         if (sub.status !== SubscriptionStatus.PENDING_SETUP) {
           throw new BadRequestException({
             code: ErrorCodes.SUB_INVALID_TRANSITION,
@@ -596,11 +596,9 @@ export class SubscriptionsService {
       if (sub.status !== SubscriptionStatus.PENDING_SETUP) {
         return sub;
       }
-      this.lifecycle.assertTransition(
-        sub.status,
-        SubscriptionStatus.PAUSED,
-        { parentHook: true },
-      );
+      this.lifecycle.assertTransition(sub.status, SubscriptionStatus.PAUSED, {
+        parentHook: true,
+      });
       return this.applyLifecycle(tx, sub, SubscriptionStatus.PAUSED, {
         actorUserId: input.actorUserId,
         source: input.source,
@@ -651,10 +649,14 @@ export class SubscriptionsService {
           return { updated };
         }
         if (sub.status === SubscriptionStatus.PAUSED) {
-          this.lifecycle.assertTransition(sub.status, SubscriptionStatus.ACTIVE, {
-            parentHook: true,
-            statusBeforePause: SubscriptionStatus.ACTIVE,
-          });
+          this.lifecycle.assertTransition(
+            sub.status,
+            SubscriptionStatus.ACTIVE,
+            {
+              parentHook: true,
+              statusBeforePause: SubscriptionStatus.ACTIVE,
+            },
+          );
           const updated = await this.applyLifecycle(
             tx,
             sub,
@@ -706,7 +708,10 @@ export class SubscriptionsService {
       sub.id,
       sub.currentPeriodEnd ?? new Date(),
     );
-    const orderRequest = this.renewal.buildRenewalOrderRequest(sub, billingPeriodKey);
+    const orderRequest = this.renewal.buildRenewalOrderRequest(
+      sub,
+      billingPeriodKey,
+    );
     const orderId =
       (await this.sideEffects.onRequestRenewalOrder?.(orderRequest)) ?? null;
     if (!orderId) {
@@ -1529,9 +1534,7 @@ export class SubscriptionsService {
         ? {
             OR: [
               ...(isUuid(params.q) ? [{ id: params.q }] : []),
-              ...(isUuid(params.q)
-                ? [{ initialOrderId: params.q }]
-                : []),
+              ...(isUuid(params.q) ? [{ initialOrderId: params.q }] : []),
               {
                 subscriptionNumber: {
                   contains: params.q,

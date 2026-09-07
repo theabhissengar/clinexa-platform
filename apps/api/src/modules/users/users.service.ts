@@ -5,7 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserGender, UserStatus, NoteVisibility } from '../../../generated/prisma';
+import {
+  Prisma,
+  UserGender,
+  UserStatus,
+  NoteVisibility,
+} from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { isUuid } from '../../common/utils/search-query.util';

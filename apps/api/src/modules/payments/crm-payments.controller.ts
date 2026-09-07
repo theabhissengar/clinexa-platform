@@ -40,9 +40,7 @@ export class CrmPaymentsController {
   @Get('users/:userId/payment-methods')
   @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
   @ApiOperation({ summary: 'List saved payment methods for a patient (CRM)' })
-  listUserPaymentMethods(
-    @Param('userId', ParseUUIDPipe) userId: string,
-  ) {
+  listUserPaymentMethods(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.payments.listSavedMethodsForUser(userId);
   }
 

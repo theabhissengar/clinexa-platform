@@ -122,7 +122,8 @@ export class SubscriptionsLifecycleService {
 
     if (
       from === SubscriptionStatus.PAUSED &&
-      (to === SubscriptionStatus.ACTIVE || to === SubscriptionStatus.PAST_DUE) &&
+      (to === SubscriptionStatus.ACTIVE ||
+        to === SubscriptionStatus.PAST_DUE) &&
       extras?.parentHook === true
     ) {
       return;

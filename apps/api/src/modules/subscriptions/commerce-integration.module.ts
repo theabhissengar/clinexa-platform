@@ -1,6 +1,10 @@
 import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 
-import { OrderStatus, OrderType, SubscriptionStatus } from '../../../generated/prisma';
+import {
+  OrderStatus,
+  OrderType,
+  SubscriptionStatus,
+} from '../../../generated/prisma';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ClinicalModule } from '../clinical/clinical.module';
 import { ClinicalOutcomesService } from '../clinical/clinical-outcomes.service';
@@ -117,7 +121,10 @@ export class CommerceIntegrationModule implements OnModuleInit {
         await this.clinical.ensureOpaqueConsultationRef(orderId);
       },
       onStatusTransition: async (ctx) => {
-        if (ctx.orderType !== OrderType.SUBSCRIPTION_INITIAL || !ctx.subscriptionId) {
+        if (
+          ctx.orderType !== OrderType.SUBSCRIPTION_INITIAL ||
+          !ctx.subscriptionId
+        ) {
           return;
         }
         if (ctx.toStatus === OrderStatus.AWAITING_CLINICAL_REVIEW) {

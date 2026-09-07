@@ -228,7 +228,10 @@ export class CrmOrdersController {
       actorUserId: user.id,
       source: 'crm',
     });
-    return { ...this.toCrmSummary(result.order), transitioned: result.transitioned };
+    return {
+      ...this.toCrmSummary(result.order),
+      transitioned: result.transitioned,
+    };
   }
 
   @Post(':id/fulfill')

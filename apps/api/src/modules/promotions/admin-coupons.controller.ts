@@ -90,10 +90,7 @@ export class AdminCouponsController {
   @Patch(':id')
   @RequirePermissions(Permissions.CPN_CONFIGURE)
   @ApiOperation({ summary: 'Update coupon (API-145)' })
-  update(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateCouponDto,
-  ) {
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCouponDto) {
     return this.coupons.updateCoupon(id, {
       ...dto,
       startsAt:

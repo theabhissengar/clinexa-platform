@@ -162,11 +162,7 @@ function createPrismaMock(): PrismaMock {
     },
     refund: {
       findUnique: jest.fn(
-        ({
-          where,
-        }: {
-          where: { idempotencyKey?: string; id?: string };
-        }) => {
+        ({ where }: { where: { idempotencyKey?: string; id?: string } }) => {
           if (where.idempotencyKey) {
             return Promise.resolve(
               store.refunds.find(
@@ -230,9 +226,7 @@ function createPrismaMock(): PrismaMock {
       update: jest.fn(({ data }: { data: StoreRow }) => Promise.resolve(data)),
     },
     order: {
-      findUnique: jest.fn(() =>
-        Promise.resolve({ patientUserId: 'user-1' }),
-      ),
+      findUnique: jest.fn(() => Promise.resolve({ patientUserId: 'user-1' })),
     },
     $transaction: jest.fn((fn: (tx: PrismaMock) => Promise<unknown>) =>
       fn(prisma),
@@ -267,12 +261,7 @@ describe('PaymentsService (simulated gateway)', () => {
 
     adapter = new SimulatedPaymentAdapter(config);
     const registry = new PaymentProviderRegistry(config);
-    service = new PaymentsService(
-      prisma as never,
-      config,
-      adapter,
-      registry,
-    );
+    service = new PaymentsService(prisma as never, config, adapter, registry);
 
     await prisma.savedPaymentMethod.create({
       data: {

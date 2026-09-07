@@ -231,7 +231,9 @@ export class CrmSubscriptionsController {
   @Post(':id/renewals/pending')
   @RequirePermissions(Permissions.SUB_RENEW)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Create pending renewal order (ACTIVE only) → PAUSED' })
+  @ApiOperation({
+    summary: 'Create pending renewal order (ACTIVE only) → PAUSED',
+  })
   createPendingRenewal(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: CrmLifecycleReasonDto,

@@ -33,9 +33,7 @@ import {
 } from './dto/saved-payment-method.dto';
 import { PaymentsService } from './payments.service';
 
-function parsePaymentStatus(
-  raw?: string,
-): PaymentStatus | 'ALL' | undefined {
+function parsePaymentStatus(raw?: string): PaymentStatus | 'ALL' | undefined {
   if (!raw || raw === 'ALL') {
     return 'ALL';
   }
@@ -84,9 +82,7 @@ export class AdminPaymentsController {
   @Get('users/:userId/payment-methods')
   @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
   @ApiOperation({ summary: 'List saved payment methods for a user' })
-  listUserPaymentMethods(
-    @Param('userId', ParseUUIDPipe) userId: string,
-  ) {
+  listUserPaymentMethods(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.payments.listSavedMethodsForUser(userId);
   }
 
@@ -149,7 +145,9 @@ export class AdminPaymentsController {
   @Post(':id/refunds')
   @RequirePermissions(Permissions.PAY_INITIATE_REFUND)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Staff refund (API-067) — Idempotency-Key required' })
+  @ApiOperation({
+    summary: 'Staff refund (API-067) — Idempotency-Key required',
+  })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: true,

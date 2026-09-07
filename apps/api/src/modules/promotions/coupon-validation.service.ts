@@ -1,8 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import {
-  CouponApplicability,
-  type Coupon,
-} from '../../../generated/prisma';
+import { CouponApplicability, type Coupon } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';

@@ -65,7 +65,7 @@ describe('CrmSubscriptionsController', () => {
     );
   });
 
-  it('strips Guardian admin metadata from CRM detail', async () => {
+  it('exposes adminTags on CRM subscription detail', async () => {
     subscriptions.getById.mockResolvedValue({
       id: 'sub-1',
       subscriptionNumber: 'SUB-1',
@@ -75,7 +75,8 @@ describe('CrmSubscriptionsController', () => {
       shippingPreferenceNotes: 'leave at door',
     });
     const result = await controller.get('sub-1');
-    expect(result).not.toHaveProperty('adminTags');
+    expect(result).toHaveProperty('adminTags', { secret: true });
+    expect(result).toHaveProperty('tags', { secret: true });
     expect(result).not.toHaveProperty('reconciliationFlags');
     expect(result).toHaveProperty('shippingPreferenceNotes', 'leave at door');
   });

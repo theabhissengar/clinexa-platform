@@ -10,13 +10,20 @@ export type OrderEditableField =
   | 'shippedAt'
   | 'adminTags'
   | 'reconciliationFlags'
-  | 'shippingPhone';
+  | 'shippingPhone'
+  | 'patientUserId'
+  | 'shippingAddress'
+  | 'billingAddress';
 
 const CRM_OPS: ReadonlySet<OrderEditableField> = new Set([
   'trackingNumber',
   'carrier',
   'shippedAt',
   'shippingPhone',
+  'patientUserId',
+  'shippingAddress',
+  'billingAddress',
+  'adminTags',
 ]);
 
 const GUARDIAN_ADMIN: ReadonlySet<OrderEditableField> = new Set([

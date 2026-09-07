@@ -1,6 +1,10 @@
 import { Module, OnModuleInit, forwardRef } from '@nestjs/common';
 
-import { OrderStatus, OrderType } from '../../../generated/prisma';
+import {
+  OrderStatus,
+  OrderType,
+  SubscriptionStatus,
+} from '../../../generated/prisma';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { ClinicalModule } from '../clinical/clinical.module';
 import { ClinicalOutcomesService } from '../clinical/clinical-outcomes.service';
@@ -115,6 +119,51 @@ export class CommerceIntegrationModule implements OnModuleInit {
       },
       onEnteredClinicalReview: async (orderId) => {
         await this.clinical.ensureOpaqueConsultationRef(orderId);
+      },
+      onStatusTransition: async (ctx) => {
+        if (
+          ctx.orderType !== OrderType.SUBSCRIPTION_INITIAL ||
+          !ctx.subscriptionId
+        ) {
+          return;
+        }
+        if (ctx.toStatus === OrderStatus.AWAITING_CLINICAL_REVIEW) {
+          const sub = await this.prisma.subscription.findUnique({
+            where: { id: ctx.subscriptionId },
+          });
+          if (sub?.status === SubscriptionStatus.PENDING_SETUP) {
+            await this.subscriptions.pauseFromParentOrder({
+              subscriptionId: ctx.subscriptionId,
+              source: 'system',
+              reason: 'Parent order entered medical review',
+            });
+          }
+          return;
+        }
+        if (ctx.toStatus === OrderStatus.AWAITING_FULFILLMENT) {
+          await this.subscriptions.activateFromParentOrder({
+            subscriptionId: ctx.subscriptionId,
+            source: 'system',
+            reason: 'Parent order entered processing',
+          });
+          return;
+        }
+        if (ctx.toStatus === OrderStatus.CANCELLED) {
+          const sub = await this.prisma.subscription.findUnique({
+            where: { id: ctx.subscriptionId },
+          });
+          if (
+            sub &&
+            sub.status !== SubscriptionStatus.CANCELLED &&
+            sub.status !== SubscriptionStatus.MIGRATED
+          ) {
+            await this.subscriptions.cancel({
+              subscriptionId: ctx.subscriptionId,
+              source: 'system',
+              reason: 'Parent initial order cancelled',
+            });
+          }
+        }
       },
       // Inventory mutations are in-txn via OrderInventoryOrchestrator (P13e).
     });

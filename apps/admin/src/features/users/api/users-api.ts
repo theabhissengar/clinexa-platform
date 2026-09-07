@@ -12,6 +12,7 @@ import type {
   UpdateUserOperationalPayload,
   UserActivityEntry,
   UserHistoryEntry,
+  UserNote,
   UserRoleRef,
   UserStatus,
 } from "../types";
@@ -209,6 +210,44 @@ export async function updateCrmUser(
   const { data } = await apiClient.patch<ApiEnvelope<OperationalUser>>(
     `/v1/crm/users/${id}`,
     payload,
+  );
+  return data.data;
+}
+
+export async function listCrmUserNotes(userId: string): Promise<UserNote[]> {
+  const { data } = await apiClient.get<ApiEnvelope<UserNote[]>>(
+    `/v1/crm/users/${userId}/notes`,
+  );
+  return data.data;
+}
+
+export async function addCrmUserNote(
+  userId: string,
+  body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
+): Promise<UserNote> {
+  const { data } = await apiClient.post<ApiEnvelope<UserNote>>(
+    `/v1/crm/users/${userId}/notes`,
+    { body, visibility },
+  );
+  return data.data;
+}
+
+export async function listAdminUserNotes(userId: string): Promise<UserNote[]> {
+  const { data } = await apiClient.get<ApiEnvelope<UserNote[]>>(
+    `/v1/admin/users/${userId}/notes`,
+  );
+  return data.data;
+}
+
+export async function addAdminUserNote(
+  userId: string,
+  body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
+): Promise<UserNote> {
+  const { data } = await apiClient.post<ApiEnvelope<UserNote>>(
+    `/v1/admin/users/${userId}/notes`,
+    { body, visibility },
   );
   return data.data;
 }

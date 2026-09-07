@@ -1,3 +1,18 @@
+import type { SubscriptionStatus } from "../types";
+
+const SUBSCRIPTION_PRODUCT_STATUS_LABELS: Partial<
+  Record<SubscriptionStatus, string>
+> = {
+  PENDING_SETUP: "Pending Setup",
+  PAUSED: "On Hold",
+  ACTIVE: "Active",
+  PAST_DUE: "Past Due",
+  MIGRATED: "Subscription Migrated",
+  CANCELLED: "Cancelled",
+  EXPIRED: "Expired",
+  COMPLETED: "Completed",
+};
+
 export function formatMoneyCents(cents: number, currency = "USD"): string {
   const amount = (cents / 100).toFixed(2);
   return currency === "USD" ? `$${amount}` : `${amount} ${currency}`;
@@ -27,6 +42,12 @@ export function customerLabel(row: {
 
 export function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
+}
+
+export function productStatusLabel(status: SubscriptionStatus | string): string {
+  const mapped =
+    SUBSCRIPTION_PRODUCT_STATUS_LABELS[status as SubscriptionStatus];
+  return mapped ?? statusLabel(status);
 }
 
 export function intervalLabel(

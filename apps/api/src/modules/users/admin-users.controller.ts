@@ -13,7 +13,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserStatus } from '../../../generated/prisma';
+import { UserStatus, NoteVisibility } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -28,6 +28,7 @@ import {
   TransitionUserDto,
   UpdateUserDto,
 } from './dto/user.dto';
+import { AddNoteDto } from '../../common/dto/note.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('admin-users')
@@ -228,5 +229,28 @@ export class AdminUsersController {
   @ApiOperation({ summary: 'User activity trail' })
   activity(@Param('id') id: string) {
     return this.users.listActivity(id);
+  }
+
+  @Get(':id/notes')
+  @RequirePermissions(Permissions.ADM_MANAGE_USERS)
+  @ApiOperation({ summary: 'List user notes (Guardian)' })
+  notes(@Param('id') id: string) {
+    return this.users.listNotes(id);
+  }
+
+  @Post(':id/notes')
+  @RequirePermissions(Permissions.ADM_MANAGE_USERS)
+  @ApiOperation({ summary: 'Add user note (Guardian)' })
+  addNote(
+    @Param('id') id: string,
+    @Body() dto: AddNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.users.addNote({
+      userId: id,
+      authorUserId: user.id,
+      body: dto.body,
+      visibility: dto.visibility ?? NoteVisibility.PRIVATE,
+    });
   }
 }

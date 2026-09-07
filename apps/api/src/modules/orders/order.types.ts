@@ -143,6 +143,9 @@ export type UpdateOrderFieldsInput = {
   shippedAt?: Date | null;
   adminTags?: unknown;
   reconciliationFlags?: unknown;
+  patientUserId?: string;
+  shippingAddress?: OrderAddressInput;
+  billingAddress?: OrderAddressInput;
   /** Limited shipping contact assist (phone on shipping address) when policy allows. */
   shippingPhone?: string | null;
 };
@@ -151,6 +154,7 @@ export type AddOrderNoteInput = {
   orderId: string;
   authorUserId: string;
   body: string;
+  visibility?: import('../../../generated/prisma').NoteVisibility;
 };
 
 export type AddOrderAdjustmentInput = {
@@ -178,6 +182,13 @@ export type ClassDOrderInput = {
  * Forces a status change that may bypass the normal transition graph.
  * Requires an explicit non-empty reason. Never silent.
  */
+export type RetryOrderPaymentInput = {
+  orderId: string;
+  paymentMethodId: string;
+  actorUserId?: string | null;
+  source: string;
+};
+
 export type OverrideOrderInput = {
   orderId: string;
   toStatus: OrderStatus;

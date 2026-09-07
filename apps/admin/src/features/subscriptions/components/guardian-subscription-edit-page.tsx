@@ -17,6 +17,7 @@ import {
   statusLabel,
 } from "@/features/subscriptions/lib/format";
 import type { SubscriptionDetail } from "@/features/subscriptions/types";
+import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
 
 export function GuardianSubscriptionEditPage() {
   const params = useParams<{ id: string }>();
@@ -26,7 +27,9 @@ export function GuardianSubscriptionEditPage() {
   const [row, setRow] = useState<SubscriptionDetail | null>(null);
   const [shippingNotes, setShippingNotes] = useState("");
   const [opsFlagsText, setOpsFlagsText] = useState("");
-  const [adminTagsText, setAdminTagsText] = useState("");
+  const [adminTags, setAdminTags] = useState<
+    Record<string, unknown> | string[] | null
+  >(null);
   const [reconciliationText, setReconciliationText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -40,8 +43,9 @@ export function GuardianSubscriptionEditPage() {
         setOpsFlagsText(
           detail.opsFlags ? JSON.stringify(detail.opsFlags, null, 2) : "",
         );
-        setAdminTagsText(
-          detail.adminTags ? JSON.stringify(detail.adminTags, null, 2) : "",
+        setAdminTags(
+          (detail.adminTags as Record<string, unknown> | string[] | null) ??
+            null,
         );
         setReconciliationText(
           detail.reconciliationFlags
@@ -59,17 +63,12 @@ export function GuardianSubscriptionEditPage() {
     event.preventDefault();
     if (!row) return;
     const opsFlags = parseJsonObject(opsFlagsText, "Ops flags");
-    const adminTags = parseJsonObject(adminTagsText, "Admin tags");
     const reconciliationFlags = parseJsonObject(
       reconciliationText,
       "Reconciliation flags",
     );
     if (!opsFlags.ok) {
       setError(opsFlags.error);
-      return;
-    }
-    if (!adminTags.ok) {
-      setError(adminTags.error);
       return;
     }
     if (!reconciliationFlags.ok) {
@@ -82,7 +81,7 @@ export function GuardianSubscriptionEditPage() {
       await updateAdminSubscription(row.id, {
         shippingPreferenceNotes: shippingNotes || null,
         opsFlags: opsFlags.value,
-        adminTags: adminTags.value,
+        adminTags,
         reconciliationFlags: reconciliationFlags.value,
       });
       router.push(`/guardian/subscriptions/${row.id}`);
@@ -157,15 +156,11 @@ export function GuardianSubscriptionEditPage() {
             onChange={(event) => setOpsFlagsText(event.target.value)}
           />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="adminTags">Admin tags (JSON object)</Label>
-          <textarea
-            id="adminTags"
-            className="min-h-24 w-full rounded-md border border-input bg-background p-2 font-mono text-sm"
-            value={adminTagsText}
-            onChange={(event) => setAdminTagsText(event.target.value)}
-          />
-        </div>
+        <AdminTagsEditor
+          key={row.id}
+          value={adminTags}
+          onChange={setAdminTags}
+        />
         <div className="space-y-1">
           <Label htmlFor="reconciliationFlags">
             Reconciliation flags (JSON object)

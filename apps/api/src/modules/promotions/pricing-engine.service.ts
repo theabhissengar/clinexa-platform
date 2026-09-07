@@ -136,7 +136,10 @@ export class PricingEngineService {
     };
   }
 
-  computeCouponDiscountCents(coupon: Coupon, eligibleSubtotalCents: number): number {
+  computeCouponDiscountCents(
+    coupon: Coupon,
+    eligibleSubtotalCents: number,
+  ): number {
     let discount = 0;
     if (coupon.discountType === 'PERCENT') {
       discount = Math.floor(

@@ -2,12 +2,14 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -25,11 +27,13 @@ import { ErrorCodes } from '../../common/constants/error-codes';
 import { Permissions } from '../rbac/constants/permissions';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
 import { InitiateRefundDto } from './dto/payment.dto';
+import {
+  AddSavedPaymentMethodDto,
+  UpdateSavedPaymentMethodDto,
+} from './dto/saved-payment-method.dto';
 import { PaymentsService } from './payments.service';
 
-function parsePaymentStatus(
-  raw?: string,
-): PaymentStatus | 'ALL' | undefined {
+function parsePaymentStatus(raw?: string): PaymentStatus | 'ALL' | undefined {
   if (!raw || raw === 'ALL') {
     return 'ALL';
   }
@@ -75,6 +79,62 @@ export class AdminPaymentsController {
     });
   }
 
+  @Get('users/:userId/payment-methods')
+  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
+  @ApiOperation({ summary: 'List saved payment methods for a user' })
+  listUserPaymentMethods(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.payments.listSavedMethodsForUser(userId);
+  }
+
+  @Post('users/:userId/payment-methods')
+  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
+  @ApiOperation({ summary: 'Add simulated saved payment method' })
+  addUserPaymentMethod(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: AddSavedPaymentMethodDto,
+  ) {
+    return this.payments.addSavedMethodForUser({
+      userId,
+      brand: dto.brand,
+      last4: dto.last4,
+      expMonth: dto.expMonth,
+      expYear: dto.expYear,
+      isDefault: dto.isDefault,
+    });
+  }
+
+  @Patch('users/:userId/payment-methods/:methodId')
+  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
+  @ApiOperation({ summary: 'Update saved payment method metadata' })
+  updateUserPaymentMethod(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('methodId', ParseUUIDPipe) methodId: string,
+    @Body() dto: UpdateSavedPaymentMethodDto,
+  ) {
+    return this.payments.updateSavedMethodMetadata(userId, methodId, dto);
+  }
+
+  @Post('users/:userId/payment-methods/:methodId/make-default')
+  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set default saved payment method' })
+  makeDefaultUserPaymentMethod(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('methodId', ParseUUIDPipe) methodId: string,
+  ) {
+    return this.payments.setDefaultSavedMethod(userId, methodId);
+  }
+
+  @Delete('users/:userId/payment-methods/:methodId')
+  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
+  @ApiOperation({ summary: 'Delete saved payment method (not if default)' })
+  deleteUserPaymentMethod(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Param('methodId', ParseUUIDPipe) methodId: string,
+  ) {
+    return this.payments.deleteSavedMethod(userId, methodId);
+  }
+
   @Get(':id')
   @RequirePermissions(Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'Guardian operational payment detail' })
@@ -85,7 +145,9 @@ export class AdminPaymentsController {
   @Post(':id/refunds')
   @RequirePermissions(Permissions.PAY_INITIATE_REFUND)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Staff refund (API-067) — Idempotency-Key required' })
+  @ApiOperation({
+    summary: 'Staff refund (API-067) — Idempotency-Key required',
+  })
   @ApiHeader({
     name: 'Idempotency-Key',
     required: true,

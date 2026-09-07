@@ -6,11 +6,27 @@ import type { SubscriptionEditContext } from './subscription.types';
 import { SubscriptionsLifecycleService } from './subscriptions-lifecycle.service';
 
 export type SubscriptionEditableField =
-  'shippingPreferenceNotes' | 'opsFlags' | 'adminTags' | 'reconciliationFlags';
+  | 'shippingPreferenceNotes'
+  | 'opsFlags'
+  | 'adminTags'
+  | 'reconciliationFlags'
+  | 'paymentMethodId'
+  | 'patientUserId'
+  | 'nextRenewalAt'
+  | 'currentPeriodStart'
+  | 'currentPeriodEnd'
+  | 'endsAt';
 
 const CRM_OPS: ReadonlySet<SubscriptionEditableField> = new Set([
   'shippingPreferenceNotes',
   'opsFlags',
+  'adminTags',
+  'paymentMethodId',
+  'patientUserId',
+  'nextRenewalAt',
+  'currentPeriodStart',
+  'currentPeriodEnd',
+  'endsAt',
 ]);
 
 const GUARDIAN_ADMIN: ReadonlySet<SubscriptionEditableField> = new Set([

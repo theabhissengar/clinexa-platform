@@ -44,6 +44,7 @@ describe('Subscriptions Prisma foundation (P14a)', () => {
       'CANCELLED',
       'EXPIRED',
       'COMPLETED',
+      'MIGRATED',
     ]);
     expect(Object.values(SubscriptionStatus)).not.toContain('RENEWING');
     expect(Object.values(SubscriptionStatus)).not.toContain(

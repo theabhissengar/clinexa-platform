@@ -11,11 +11,13 @@ import { RequirePermission } from "@/components/auth/require-permission";
 import { Permissions } from "@/features/auth/permissions";
 import {
   archiveUser,
+  addAdminUserNote,
   deactivateUser,
   deleteUser,
   getAdminUser,
   getUserActivity,
   getUserHistory,
+  listAdminUserNotes,
   listRoles,
   reactivateUser,
   replaceUserRoles,
@@ -25,6 +27,7 @@ import {
   suspendUser,
   updateAdminUser,
 } from "@/features/users/api/users-api";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
 import type {
   AddressSnapshot,
   AdminUser,
@@ -32,6 +35,7 @@ import type {
   UserActivityEntry,
   UserGender,
   UserHistoryEntry,
+  UserNote,
 } from "@/features/users/types";
 
 export type UserTab =
@@ -157,6 +161,8 @@ export function UserEditorPage({ userId, initialTab }: Props) {
 
   const [historyRows, setHistoryRows] = useState<UserHistoryEntry[]>([]);
   const [activityRows, setActivityRows] = useState<UserActivityEntry[]>([]);
+  const [userNotes, setUserNotes] = useState<UserNote[]>([]);
+  const [notesBusy, setNotesBusy] = useState(false);
 
   const hydrate = useCallback((next: AdminUser) => {
     setUser(next);
@@ -202,6 +208,13 @@ export function UserEditorPage({ userId, initialTab }: Props) {
       .then(setActivityRows)
       .catch(() => undefined);
   }, [tab, userId, activityRows.length]);
+
+  useEffect(() => {
+    if (tab !== "notes" || userNotes.length) return;
+    void listAdminUserNotes(userId)
+      .then(setUserNotes)
+      .catch(() => undefined);
+  }, [tab, userId, userNotes.length]);
 
   async function onSave(event: React.FormEvent) {
     event.preventDefault();
@@ -662,20 +675,43 @@ export function UserEditorPage({ userId, initialTab }: Props) {
               ) : null}
 
               {tab === "notes" ? (
-                <div className="space-y-1">
-                  <Label htmlFor="internalNotes">Internal notes</Label>
-                  <textarea
-                    id="internalNotes"
-                    value={internalNotes}
-                    onChange={(e) => setInternalNotes(e.target.value)}
-                    rows={8}
-                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Class D field — visible to staff with appropriate access.
-                    CRM users can edit the same field from the operational
-                    detail page.
-                  </p>
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="internalNotes">Internal notes (legacy blob)</Label>
+                    <textarea
+                      id="internalNotes"
+                      value={internalNotes}
+                      onChange={(e) => setInternalNotes(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Class D field — visible to staff with appropriate access.
+                      Structured UserNote timeline is below.
+                    </p>
+                  </div>
+                  <div className="border-t border-border pt-4">
+                    <div className="mb-2 text-sm font-medium">User notes</div>
+                    <NotesTimeline
+                      notes={userNotes}
+                      activities={[]}
+                      addingNote={notesBusy}
+                      onAddNote={async (body, visibility) => {
+                        setNotesBusy(true);
+                        setError(null);
+                        try {
+                          await addAdminUserNote(userId, body, visibility);
+                          const rows = await listAdminUserNotes(userId);
+                          setUserNotes(rows);
+                          setMessage("Note added.");
+                        } catch {
+                          setError("Unable to add note.");
+                        } finally {
+                          setNotesBusy(false);
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               ) : null}
 

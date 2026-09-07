@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,11 +32,7 @@ import {
   productStatusLabel,
   statusLabel,
 } from "@/features/orders/lib/format";
-import {
-  getAdminSubscription,
-  listAdminSubscriptionRenewals,
-} from "@/features/subscriptions/api/admin-subscriptions-api";
-import { ModuleDetailSearch, type ModuleSearchResult } from "@/features/shared/components/module-detail-search";
+import { ModuleDetailSearch } from "@/features/shared/components/module-detail-search";
 import { NotesTimeline } from "@/features/shared/components/notes-timeline";
 import { RelatedEntityTree } from "@/features/shared/components/related-entity-tree";
 import { AdminTagsList } from "@/features/shared/components/admin-tags-editor";
@@ -48,10 +44,6 @@ import type {
   OrderStatus,
   OrderStatusHistory,
 } from "@/features/orders/types";
-import type {
-  SubscriptionDetail,
-  SubscriptionRenewalAttempt,
-} from "@/features/subscriptions/types";
 
 const ALL_STATUSES: OrderStatus[] = [
   "DRAFT",
@@ -141,11 +133,6 @@ export function GuardianOrderDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
-  const [linkedSubscription, setLinkedSubscription] =
-    useState<SubscriptionDetail | null>(null);
-  const [linkedRenewals, setLinkedRenewals] = useState<
-    SubscriptionRenewalAttempt[]
-  >([]);
 
   const [transitionTo, setTransitionTo] = useState<OrderStatus | "">("");
   const [transitionReason, setTransitionReason] = useState("");
@@ -207,52 +194,6 @@ export function GuardianOrderDetailPage() {
       cancelled = true;
     };
   }, [orderId]);
-
-  useEffect(() => {
-    if (!order?.subscriptionId) {
-      setLinkedSubscription(null);
-      setLinkedRenewals([]);
-      return;
-    }
-    let cancelled = false;
-    void Promise.all([
-      getAdminSubscription(order.subscriptionId, true),
-      listAdminSubscriptionRenewals(order.subscriptionId),
-    ])
-      .then(([subscription, renewals]) => {
-        if (cancelled) return;
-        setLinkedSubscription(subscription);
-        setLinkedRenewals(renewals);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLinkedSubscription(null);
-        setLinkedRenewals([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [order?.subscriptionId]);
-
-  const searchOrders = useCallback(async (q: string): Promise<ModuleSearchResult[]> => {
-    const result = await listAdminOrders({ q, take: 10 });
-    return result.items.map((row) => ({
-      id: row.id,
-      label: row.orderNumber,
-      sublabel: customerLabel(row),
-    }));
-  }, []);
-
-  const treeRenewals = useMemo(
-    () =>
-      linkedRenewals
-        .filter((attempt) => attempt.orderId)
-        .map((attempt) => ({
-          id: attempt.orderId as string,
-          label: attempt.billingPeriodKey,
-        })),
-    [linkedRenewals],
-  );
 
   async function handleAddNote(body: string, visibility: NoteVisibility) {
     if (!order || !canEdit) return;

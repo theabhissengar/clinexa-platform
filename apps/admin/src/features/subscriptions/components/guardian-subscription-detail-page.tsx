@@ -126,7 +126,6 @@ export function GuardianSubscriptionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [renewalMode, setRenewalMode] = useState<"pending" | "process">("process");
   const [reason, setReason] = useState("");
   const [overrideTo, setOverrideTo] = useState<SubscriptionStatus | "">("");
   const [overrideReason, setOverrideReason] = useState("");

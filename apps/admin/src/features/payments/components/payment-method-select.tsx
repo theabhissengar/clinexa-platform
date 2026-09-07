@@ -16,6 +16,12 @@ type Props = {
   disabled?: boolean;
 };
 
+type LoadedMethods = {
+  userId: string;
+  context: "crm" | "admin";
+  methods: SavedPaymentMethod[];
+};
+
 function optionLabel(method: SavedPaymentMethod): string {
   const brand = method.brand ?? "Card";
   const last4 = method.last4 ? ` •••• ${method.last4}` : "";
@@ -31,25 +37,25 @@ export function PaymentMethodSelect({
   label = "Payment method",
   disabled = false,
 }: Props) {
-  const [methods, setMethods] = useState<SavedPaymentMethod[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState<LoadedMethods | null>(null);
+
+  const loading =
+    !loaded || loaded.userId !== userId || loaded.context !== context;
+  const methods = loading ? [] : loaded.methods;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     void (context === "crm"
       ? listCrmPaymentMethods(userId)
       : listAdminPaymentMethods(userId)
     )
       .then((rows) => {
         if (cancelled) return;
-        setMethods(rows);
+        setLoaded({ userId, context, methods: rows });
       })
       .catch(() => {
-        if (!cancelled) setMethods([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        setLoaded({ userId, context, methods: [] });
       });
     return () => {
       cancelled = true;

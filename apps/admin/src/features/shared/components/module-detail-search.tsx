@@ -30,14 +30,14 @@ export function ModuleDetailSearch({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const trimmed = query.trim();
+  const canSearch = trimmed.length >= minQueryLength;
+  const visibleResults = canSearch ? results : [];
+  const visibleError = canSearch ? error : null;
+  const showLoading = canSearch && loading;
+
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < minQueryLength) {
-      setResults([]);
-      setError(null);
-      setLoading(false);
-      return;
-    }
+    if (!canSearch) return;
 
     let cancelled = false;
     const handle = window.setTimeout(() => {
@@ -62,7 +62,7 @@ export function ModuleDetailSearch({
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [query, minQueryLength, searchFn]);
+  }, [trimmed, canSearch, searchFn]);
 
   return (
     <div className={className}>
@@ -73,20 +73,21 @@ export function ModuleDetailSearch({
           setQuery("");
           setResults([]);
           setError(null);
+          setLoading(false);
         }}
         placeholder={placeholder}
         aria-label={placeholder}
         className="w-full max-w-md"
       />
-      {loading ? (
+      {showLoading ? (
         <p className="mt-2 text-xs text-muted-foreground">Searching…</p>
       ) : null}
-      {error ? (
-        <p className="mt-2 text-xs text-destructive">{error}</p>
+      {visibleError ? (
+        <p className="mt-2 text-xs text-destructive">{visibleError}</p>
       ) : null}
-      {results.length > 0 ? (
+      {visibleResults.length > 0 ? (
         <ul className="mt-2 max-w-md rounded-md border border-border bg-popover text-sm shadow-sm">
-          {results.map((row) => (
+          {visibleResults.map((row) => (
             <li key={row.id}>
               <button
                 type="button"
@@ -95,6 +96,8 @@ export function ModuleDetailSearch({
                   onSelect(row.id);
                   setQuery("");
                   setResults([]);
+                  setError(null);
+                  setLoading(false);
                 }}
               >
                 <span className="font-medium">{row.label}</span>

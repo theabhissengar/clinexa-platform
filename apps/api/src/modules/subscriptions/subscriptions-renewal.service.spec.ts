@@ -4,6 +4,7 @@ import {
   SubscriptionStatus,
 } from '../../../generated/prisma';
 
+import { ErrorCodes } from '../../common/constants/error-codes';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SubscriptionsLifecycleService } from './subscriptions-lifecycle.service';
 import { SubscriptionsRenewalService } from './subscriptions-renewal.service';
@@ -164,6 +165,24 @@ describe('SubscriptionsRenewalService', () => {
         now,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('allows manual renewal only from ACTIVE', async () => {
+    const { service, tx } = build();
+    tx.subscription.findUnique.mockResolvedValue({
+      ...subscription,
+      status: SubscriptionStatus.PAST_DUE,
+    });
+    await expect(
+      service.openRenewalAttempt({
+        subscriptionId: 'sub-1',
+        mode: 'manual',
+        source: 'crm',
+        now,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.SUB_INVALID_TRANSITION },
+    });
   });
 
   it('records order refs on the attempt without mutating Order rows', async () => {

@@ -30,6 +30,7 @@ import {
   AdminOverrideDto,
   AdminTransitionDto,
   AdminUpdateOrderDto,
+  RetryOrderPaymentDto,
 } from './dto/admin-order.dto';
 import { OrdersService } from './orders.service';
 
@@ -271,6 +272,25 @@ export class AdminOrdersController {
     });
   }
 
+  @Post(':id/retry-payment')
+  @RequirePermissions(Permissions.ORD_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retry payment authorization for a PAYMENT_PENDING order',
+  })
+  retryPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetryOrderPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.retryOrderAuthorization({
+      orderId: id,
+      paymentMethodId: dto.paymentMethodId,
+      actorUserId: user.id,
+      source: 'guardian',
+    });
+  }
+
   @Get(':id/notes')
   @RequirePermissions(Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'List order notes' })
@@ -290,6 +310,7 @@ export class AdminOrdersController {
       orderId: id,
       authorUserId: user.id,
       body: dto.body,
+      visibility: dto.visibility,
     });
   }
 

@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
+  NoteVisibility,
+  OrderStatus,
   OrderType,
   ProductType,
   SubscriptionBillingInterval,
@@ -464,8 +466,33 @@ describe('SubscriptionsService', () => {
       ...created,
       status: SubscriptionStatus.PENDING_SETUP,
       plan,
+      initialOrder: {
+        id: 'ord-initial',
+        status: OrderStatus.PAYMENT_PENDING,
+        totalCents: 5000,
+      },
     });
     const service = buildService(prisma);
+    await expect(
+      service.activateInitial({
+        subscriptionId: 'sub-1',
+        toStatus: SubscriptionStatus.ACTIVE,
+        source: 'system',
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.SUB_INVALID_TRANSITION },
+    });
+
+    tx.subscription.findUnique.mockResolvedValue({
+      ...created,
+      status: SubscriptionStatus.PENDING_SETUP,
+      plan,
+      initialOrder: {
+        id: 'ord-initial',
+        status: OrderStatus.PAYMENT_PENDING,
+        totalCents: 0,
+      },
+    });
     const activated = await service.activateInitial({
       subscriptionId: 'sub-1',
       toStatus: SubscriptionStatus.ACTIVE,
@@ -498,6 +525,7 @@ describe('SubscriptionsService', () => {
       subscriptionId: 'sub-1',
       authorUserId: 'staff-1',
       body: 'secret note text',
+      visibility: NoteVisibility.PRIVATE,
     });
     const activityCalls = tx.subscriptionActivity.create.mock.calls as Array<
       [

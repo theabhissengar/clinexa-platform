@@ -8,6 +8,8 @@ import { randomBytes } from 'crypto';
 import {
   OrderType,
   Prisma,
+  NoteVisibility,
+  OrderStatus,
   SubscriptionPlanStatus,
   SubscriptionStatus,
   UserStatus,
@@ -16,6 +18,7 @@ import {
 } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { isUuid } from '../../common/utils/search-query.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import type {
   AddSubscriptionNoteInput,
@@ -27,6 +30,7 @@ import type {
   OpenRenewalAttemptInput,
   AttachRenewalOrderInput,
   OverrideSubscriptionInput,
+  ParentOrderHookInput,
   PauseSubscriptionInput,
   RecordPaymentSnapshotInput,
   ResumeSubscriptionInput,
@@ -532,11 +536,27 @@ export class SubscriptionsService {
       async (tx) => {
         const sub = await this.requireActive(tx, input.subscriptionId, {
           plan: true,
+          initialOrder: true,
         });
+        const initialOrder = (
+          sub as Subscription & { initialOrder: { status: OrderStatus; totalCents: number } | null }
+        ).initialOrder;
+        if (
+          initialOrder &&
+          (initialOrder.status === OrderStatus.DRAFT ||
+            initialOrder.status === OrderStatus.PAYMENT_PENDING) &&
+          initialOrder.totalCents !== 0
+        ) {
+          throw new BadRequestException({
+            code: ErrorCodes.SUB_INVALID_TRANSITION,
+            message:
+              'Cannot activate while parent initial order is unpaid (DRAFT/PAYMENT_PENDING)',
+          });
+        }
         this.lifecycle.assertTransition(
           sub.status,
           SubscriptionStatus.ACTIVE,
-          input,
+          { parentHook: true },
         );
         if (sub.status !== SubscriptionStatus.PENDING_SETUP) {
           throw new BadRequestException({
@@ -567,6 +587,177 @@ export class SubscriptionsService {
     );
     await this.emitNotify('subscription.started', result.id);
     return result;
+  }
+
+  /** Parent INITIAL order hook: PENDING_SETUP → PAUSED (On Hold). */
+  async pauseFromParentOrder(input: ParentOrderHookInput) {
+    return this.transitionWithSideEffects(async (tx) => {
+      const sub = await this.requireActive(tx, input.subscriptionId);
+      if (sub.status !== SubscriptionStatus.PENDING_SETUP) {
+        return sub;
+      }
+      this.lifecycle.assertTransition(
+        sub.status,
+        SubscriptionStatus.PAUSED,
+        { parentHook: true },
+      );
+      return this.applyLifecycle(tx, sub, SubscriptionStatus.PAUSED, {
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: input.reason ?? 'parent_order_medical_review',
+        extraData: {
+          pausedAt: new Date(),
+          statusBeforePause: SubscriptionStatus.PENDING_SETUP,
+        },
+        activityKind: 'subscription_paused',
+      });
+    });
+  }
+
+  /** Parent INITIAL order hook: activate subscription when parent enters Processing. */
+  async activateFromParentOrder(input: ParentOrderHookInput) {
+    const { updated: result } = await this.transitionWithSideEffects(
+      async (tx) => {
+        const sub = await this.requireActive(tx, input.subscriptionId, {
+          plan: true,
+        });
+        if (sub.status === SubscriptionStatus.ACTIVE) {
+          return { updated: sub };
+        }
+        const plan = (sub as Subscription & { plan: SubscriptionPlan }).plan;
+        const period = this.schedule.firstPeriod(new Date(), {
+          billingInterval: plan.billingInterval,
+          intervalCount: plan.intervalCount,
+          customIntervalDays: plan.customIntervalDays,
+        });
+        if (sub.status === SubscriptionStatus.PENDING_SETUP) {
+          this.lifecycle.assertTransition(
+            sub.status,
+            SubscriptionStatus.ACTIVE,
+            { parentHook: true },
+          );
+          const updated = await this.applyLifecycle(
+            tx,
+            sub,
+            SubscriptionStatus.ACTIVE,
+            {
+              actorUserId: input.actorUserId,
+              source: input.source,
+              reason: input.reason ?? 'parent_order_processing',
+              extraData: { ...period },
+              activityKind: 'subscription_activated',
+            },
+          );
+          return { updated };
+        }
+        if (sub.status === SubscriptionStatus.PAUSED) {
+          this.lifecycle.assertTransition(sub.status, SubscriptionStatus.ACTIVE, {
+            parentHook: true,
+            statusBeforePause: SubscriptionStatus.ACTIVE,
+          });
+          const updated = await this.applyLifecycle(
+            tx,
+            sub,
+            SubscriptionStatus.ACTIVE,
+            {
+              actorUserId: input.actorUserId,
+              source: input.source,
+              reason: input.reason ?? 'parent_order_processing',
+              extraData: {
+                pausedAt: null,
+                statusBeforePause: null,
+                ...period,
+              },
+              activityKind: 'subscription_activated',
+            },
+          );
+          return { updated };
+        }
+        return { updated: sub };
+      },
+    );
+    await this.emitNotify('subscription.started', result.id);
+    return result;
+  }
+
+  async createPendingRenewalOrder(input: {
+    subscriptionId: string;
+    actorUserId?: string | null;
+    source: string;
+    reason?: string | null;
+  }) {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: input.subscriptionId },
+      include: { plan: true, items: true },
+    });
+    if (!sub || sub.deletedAt != null) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Subscription not found',
+      });
+    }
+    if (sub.status !== SubscriptionStatus.ACTIVE) {
+      throw new BadRequestException({
+        code: ErrorCodes.SUB_INVALID_TRANSITION,
+        message: 'Create pending renewal requires ACTIVE subscription',
+      });
+    }
+    const billingPeriodKey = this.schedule.billingPeriodKey(
+      sub.id,
+      sub.currentPeriodEnd ?? new Date(),
+    );
+    const orderRequest = this.renewal.buildRenewalOrderRequest(sub, billingPeriodKey);
+    const orderId =
+      (await this.sideEffects.onRequestRenewalOrder?.(orderRequest)) ?? null;
+    if (!orderId) {
+      throw new BadRequestException({
+        code: ErrorCodes.SUB_INVALID_TRANSITION,
+        message: 'Failed to create pending renewal order',
+      });
+    }
+    await this.prisma.subscriptionActivity.create({
+      data: {
+        subscriptionId: sub.id,
+        actorUserId: input.actorUserId ?? null,
+        kind: 'pending_renewal_created',
+        summary: 'Pending renewal order created',
+        metadata: { orderId, billingPeriodKey, source: input.source },
+      },
+    });
+    await this.pause({
+      subscriptionId: sub.id,
+      actorUserId: input.actorUserId,
+      source: input.source,
+      reason: input.reason ?? 'Pending renewal created',
+    });
+    return { orderId, billingPeriodKey };
+  }
+
+  async migrate(input: {
+    subscriptionId: string;
+    actorUserId?: string | null;
+    source: string;
+    reason?: string | null;
+    migratedToSubscriptionId?: string;
+  }) {
+    return this.transitionWithSideEffects(async (tx) => {
+      const sub = await this.requireActive(tx, input.subscriptionId);
+      this.lifecycle.assertTransition(sub.status, SubscriptionStatus.MIGRATED);
+      const opsFlags =
+        typeof sub.opsFlags === 'object' && sub.opsFlags !== null
+          ? { ...(sub.opsFlags as Record<string, unknown>) }
+          : {};
+      if (input.migratedToSubscriptionId) {
+        opsFlags.migratedToSubscriptionId = input.migratedToSubscriptionId;
+      }
+      return this.applyLifecycle(tx, sub, SubscriptionStatus.MIGRATED, {
+        actorUserId: input.actorUserId,
+        source: input.source,
+        reason: input.reason ?? 'subscription_migrated',
+        extraData: { opsFlags: opsFlags as Prisma.InputJsonValue },
+        activityKind: 'subscription_migrated',
+      });
+    });
   }
 
   async markPastDue(input: TransitionSubscriptionInput) {
@@ -656,7 +847,13 @@ export class SubscriptionsService {
           | 'shippingPreferenceNotes'
           | 'opsFlags'
           | 'adminTags'
-          | 'reconciliationFlags',
+          | 'reconciliationFlags'
+          | 'paymentMethodId'
+          | 'patientUserId'
+          | 'nextRenewalAt'
+          | 'currentPeriodStart'
+          | 'currentPeriodEnd'
+          | 'endsAt',
         value: unknown,
       ) => {
         this.editPolicy.assertFieldAllowed(input.context, sub.status, field);
@@ -678,6 +875,35 @@ export class SubscriptionsService {
       }
       if (input.reconciliationFlags !== undefined) {
         apply('reconciliationFlags', input.reconciliationFlags);
+      }
+      if (input.paymentMethodId !== undefined) {
+        apply('paymentMethodId', input.paymentMethodId);
+      }
+      if (input.patientUserId !== undefined) {
+        const patient = await tx.user.findUnique({
+          where: { id: input.patientUserId },
+          select: { id: true, deletedAt: true },
+        });
+        if (!patient || patient.deletedAt != null) {
+          throw new BadRequestException({
+            code: ErrorCodes.RES_NOT_FOUND,
+            message: 'Patient user not found',
+          });
+        }
+        apply('patientUserId', input.patientUserId);
+        data.patient = { connect: { id: input.patientUserId } };
+      }
+      if (input.nextRenewalAt !== undefined) {
+        apply('nextRenewalAt', input.nextRenewalAt);
+      }
+      if (input.currentPeriodStart !== undefined) {
+        apply('currentPeriodStart', input.currentPeriodStart);
+      }
+      if (input.currentPeriodEnd !== undefined) {
+        apply('currentPeriodEnd', input.currentPeriodEnd);
+      }
+      if (input.endsAt !== undefined) {
+        apply('endsAt', input.endsAt);
       }
 
       if (Object.keys(data).length === 0) {
@@ -727,6 +953,7 @@ export class SubscriptionsService {
           subscriptionId: input.subscriptionId,
           authorUserId: input.authorUserId,
           body,
+          visibility: input.visibility ?? NoteVisibility.PRIVATE,
         },
       });
       await tx.subscriptionActivity.create({
@@ -1242,11 +1469,14 @@ export class SubscriptionsService {
   private async requireActive(
     tx: Tx | PrismaService,
     subscriptionId: string,
-    include?: { plan?: boolean },
+    include?: { plan?: boolean; initialOrder?: boolean },
   ) {
     const subscription = await tx.subscription.findUnique({
       where: { id: subscriptionId },
-      include: include?.plan ? { plan: true } : undefined,
+      include: {
+        ...(include?.plan ? { plan: true } : {}),
+        ...(include?.initialOrder ? { initialOrder: true } : {}),
+      },
     });
     if (!subscription || subscription.deletedAt != null) {
       throw new NotFoundException({
@@ -1298,6 +1528,10 @@ export class SubscriptionsService {
       ...(params.q
         ? {
             OR: [
+              ...(isUuid(params.q) ? [{ id: params.q }] : []),
+              ...(isUuid(params.q)
+                ? [{ initialOrderId: params.q }]
+                : []),
               {
                 subscriptionNumber: {
                   contains: params.q,
@@ -1318,6 +1552,14 @@ export class SubscriptionsService {
               },
               {
                 customerPhone: { contains: params.q, mode: 'insensitive' },
+              },
+              {
+                initialOrder: {
+                  orderNumber: {
+                    contains: params.q,
+                    mode: 'insensitive',
+                  },
+                },
               },
             ],
           }

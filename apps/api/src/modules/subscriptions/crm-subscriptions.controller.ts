@@ -29,6 +29,7 @@ import { Permissions } from '../rbac/constants/permissions';
 import {
   CrmAddSubscriptionNoteDto,
   CrmLifecycleReasonDto,
+  CrmMigrateSubscriptionDto,
   CrmUpdateSubscriptionDto,
   parseSubscriptionStatusFilter,
 } from './dto/crm-subscription.dto';
@@ -107,6 +108,33 @@ export class CrmSubscriptionsController {
       actorUserId: user.id,
       shippingPreferenceNotes: dto.shippingPreferenceNotes,
       opsFlags: dto.opsFlags,
+      adminTags: dto.adminTags,
+      paymentMethodId: dto.paymentMethodId,
+      patientUserId: dto.patientUserId,
+      nextRenewalAt:
+        dto.nextRenewalAt === undefined
+          ? undefined
+          : dto.nextRenewalAt === null
+            ? null
+            : new Date(dto.nextRenewalAt),
+      currentPeriodStart:
+        dto.currentPeriodStart === undefined
+          ? undefined
+          : dto.currentPeriodStart === null
+            ? null
+            : new Date(dto.currentPeriodStart),
+      currentPeriodEnd:
+        dto.currentPeriodEnd === undefined
+          ? undefined
+          : dto.currentPeriodEnd === null
+            ? null
+            : new Date(dto.currentPeriodEnd),
+      endsAt:
+        dto.endsAt === undefined
+          ? undefined
+          : dto.endsAt === null
+            ? null
+            : new Date(dto.endsAt),
     });
     return this.toCrmSummary(updated);
   }
@@ -200,6 +228,23 @@ export class CrmSubscriptionsController {
     });
   }
 
+  @Post(':id/renewals/pending')
+  @RequirePermissions(Permissions.SUB_RENEW)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Create pending renewal order (ACTIVE only) → PAUSED' })
+  createPendingRenewal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CrmLifecycleReasonDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.createPendingRenewalOrder({
+      subscriptionId: id,
+      actorUserId: user.id,
+      source: 'crm',
+      reason: dto.reason,
+    });
+  }
+
   @Post(':id/renewals/:attemptId/retry')
   @RequireAnyPermissions(Permissions.SUB_RENEW, Permissions.SUB_ASSIST_RENEWAL)
   @HttpCode(HttpStatus.OK)
@@ -228,6 +273,24 @@ export class CrmSubscriptionsController {
     });
   }
 
+  @Post(':id/migrate')
+  @RequirePermissions(Permissions.SUB_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark subscription as MIGRATED (terminal)' })
+  migrate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CrmMigrateSubscriptionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.migrate({
+      subscriptionId: id,
+      actorUserId: user.id,
+      source: 'crm',
+      reason: dto.reason,
+      migratedToSubscriptionId: dto.migratedToSubscriptionId,
+    });
+  }
+
   @Get(':id/notes')
   @RequirePermissions(Permissions.SUB_VIEW)
   @ApiOperation({ summary: 'List notes (API-221)' })
@@ -247,6 +310,7 @@ export class CrmSubscriptionsController {
       subscriptionId: id,
       authorUserId: user.id,
       body: dto.body,
+      visibility: dto.visibility,
     });
   }
 
@@ -271,10 +335,12 @@ export class CrmSubscriptionsController {
   private toCrmDetail(
     subscription: Awaited<ReturnType<SubscriptionsService['getById']>>,
   ) {
-    const { adminTags, reconciliationFlags, ...rest } = subscription;
-    void adminTags;
+    const { reconciliationFlags, ...rest } = subscription;
     void reconciliationFlags;
-    return rest;
+    return {
+      ...rest,
+      tags: subscription.adminTags ?? null,
+    };
   }
 
   private toCrmSummary(subscription: {

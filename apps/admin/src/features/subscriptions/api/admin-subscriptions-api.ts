@@ -166,6 +166,14 @@ export async function openAdminManualRenewal(id: string) {
   return data.data;
 }
 
+export async function openAdminPendingRenewal(id: string) {
+  const { data } = await apiClient.post(
+    `/v1/admin/subscriptions/${id}/renewals/pending`,
+    {},
+  );
+  return data.data;
+}
+
 export async function retryAdminRenewalAttempt(id: string, attemptId: string) {
   const { data } = await apiClient.post(
     `/v1/admin/subscriptions/${id}/renewals/${attemptId}/retry`,
@@ -186,11 +194,22 @@ export async function listAdminSubscriptionNotes(
 export async function addAdminSubscriptionNote(
   id: string,
   body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
 ): Promise<SubscriptionNote> {
   const { data } = await apiClient.post<ApiEnvelope<SubscriptionNote>>(
     `/v1/admin/subscriptions/${id}/notes`,
-    { body },
+    { body, visibility },
   );
+  return data.data;
+}
+
+export async function createPendingAdminRenewal(
+  id: string,
+  reason?: string,
+): Promise<{ orderId: string; billingPeriodKey: string }> {
+  const { data } = await apiClient.post<
+    ApiEnvelope<{ orderId: string; billingPeriodKey: string }>
+  >(`/v1/admin/subscriptions/${id}/renewals/pending`, { reason });
   return data.data;
 }
 

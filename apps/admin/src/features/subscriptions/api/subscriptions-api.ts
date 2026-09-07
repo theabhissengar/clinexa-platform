@@ -103,6 +103,14 @@ export async function openCrmManualRenewal(
   return data.data;
 }
 
+export async function openCrmPendingRenewal(id: string): Promise<unknown> {
+  const { data } = await apiClient.post<ApiEnvelope<unknown>>(
+    `/v1/crm/subscriptions/${id}/renewals/pending`,
+    {},
+  );
+  return data.data;
+}
+
 export async function retryCrmRenewalAttempt(
   id: string,
   attemptId: string,
@@ -126,11 +134,22 @@ export async function listCrmSubscriptionNotes(
 export async function addCrmSubscriptionNote(
   id: string,
   body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
 ): Promise<SubscriptionNote> {
   const { data } = await apiClient.post<ApiEnvelope<SubscriptionNote>>(
     `/v1/crm/subscriptions/${id}/notes`,
-    { body },
+    { body, visibility },
   );
+  return data.data;
+}
+
+export async function createPendingCrmRenewal(
+  id: string,
+  reason?: string,
+): Promise<{ orderId: string; billingPeriodKey: string }> {
+  const { data } = await apiClient.post<
+    ApiEnvelope<{ orderId: string; billingPeriodKey: string }>
+  >(`/v1/crm/subscriptions/${id}/renewals/pending`, { reason });
   return data.data;
 }
 

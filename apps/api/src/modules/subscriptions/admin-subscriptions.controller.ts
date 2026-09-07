@@ -33,6 +33,7 @@ import {
   AdminCorrectionSubscriptionDto,
   AdminCreateSubscriptionDto,
   AdminLifecycleReasonDto,
+  AdminMigrateSubscriptionDto,
   AdminOverrideSubscriptionDto,
   AdminUpdateSubscriptionDto,
 } from './dto/admin-subscription.dto';
@@ -339,6 +340,7 @@ export class AdminSubscriptionsController {
       subscriptionId: id,
       authorUserId: user.id,
       body: dto.body,
+      visibility: dto.visibility,
     });
   }
 
@@ -393,6 +395,41 @@ export class AdminSubscriptionsController {
       mode: 'manual',
       actorUserId: user.id,
       source: 'guardian',
+    });
+  }
+
+  @Post(':id/renewals/pending')
+  @RequirePermissions(Permissions.SUB_RENEW)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Create pending renewal order (ACTIVE only) → PAUSED' })
+  createPendingRenewal(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminLifecycleReasonDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.createPendingRenewalOrder({
+      subscriptionId: id,
+      actorUserId: user.id,
+      source: 'guardian',
+      reason: dto.reason,
+    });
+  }
+
+  @Post(':id/migrate')
+  @RequirePermissions(Permissions.SUB_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark subscription as MIGRATED (terminal)' })
+  migrate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AdminMigrateSubscriptionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.subscriptions.migrate({
+      subscriptionId: id,
+      actorUserId: user.id,
+      source: 'guardian',
+      reason: dto.reason,
+      migratedToSubscriptionId: dto.migratedToSubscriptionId,
     });
   }
 

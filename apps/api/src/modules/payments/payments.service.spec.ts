@@ -284,6 +284,18 @@ describe('PaymentsService (simulated gateway)', () => {
     prisma._store.methods[0].id = 'spm-1';
   });
 
+  it('skips gateway for zero-total authorize', async () => {
+    const result = await service.authorizeForOrder({
+      orderId: 'ord-zero',
+      paymentMethodId: 'spm-1',
+      amountCents: 0,
+      idempotencyKey: 'zero:authorize',
+    });
+    expect(result.paymentId).toBe('zero-total-noop');
+    expect(result.lifecycleState).toBe(PaymentLifecycleState.CAPTURED);
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
   it('authorizes and captures idempotently', async () => {
     const auth = await service.authorizeForOrder({
       orderId: 'ord-1',

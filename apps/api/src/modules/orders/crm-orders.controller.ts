@@ -23,6 +23,8 @@ import {
   CrmAddOrderNoteDto,
   CrmCancelOrderDto,
   CrmFulfillOrderDto,
+  CrmRetryOrderPaymentDto,
+  CrmTransitionOrderDto,
   CrmUpdateOrderDto,
   parseOrderStatusFilter,
   parseOrderTypeFilter,
@@ -88,6 +90,33 @@ export class CrmOrdersController {
     return this.toCrmDetail(order);
   }
 
+  @Get(':id/allowed-transitions')
+  @RequirePermissions(Permissions.ORD_VIEW)
+  @ApiOperation({ summary: 'CRM allowed lifecycle transitions (API-073b)' })
+  async allowedTransitions(@Param('id', ParseUUIDPipe) id: string) {
+    const order = await this.orders.getOrderById(id);
+    return { allowedNextStatuses: order.allowedNextStatuses };
+  }
+
+  @Post(':id/transitions')
+  @RequirePermissions(Permissions.ORD_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'CRM lifecycle transition (API-073c)' })
+  async transition(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CrmTransitionOrderDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const result = await this.orders.transitionOrder({
+      orderId: id,
+      toStatus: dto.toStatus,
+      actorUserId: user.id,
+      source: 'crm',
+      reason: dto.reason ?? null,
+    });
+    return this.toCrmSummary(result);
+  }
+
   @Get(':id/items')
   @RequirePermissions(Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'CRM order line items (API-076)' })
@@ -114,6 +143,7 @@ export class CrmOrdersController {
       orderId: id,
       authorUserId: user.id,
       body: dto.body,
+      visibility: dto.visibility,
     });
   }
 
@@ -154,6 +184,10 @@ export class CrmOrdersController {
             ? null
             : new Date(dto.shippedAt),
       shippingPhone: dto.shippingPhone,
+      patientUserId: dto.patientUserId,
+      shippingAddress: dto.shippingAddress,
+      billingAddress: dto.billingAddress,
+      adminTags: dto.adminTags,
     });
     return this.toCrmSummary(updated);
   }
@@ -175,6 +209,26 @@ export class CrmOrdersController {
       reason: dto.reason ?? null,
     });
     return this.toCrmSummary(result);
+  }
+
+  @Post(':id/retry-payment')
+  @RequirePermissions(Permissions.ORD_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Retry payment authorization for a PAYMENT_PENDING order',
+  })
+  async retryPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CrmRetryOrderPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    const result = await this.orders.retryOrderAuthorization({
+      orderId: id,
+      paymentMethodId: dto.paymentMethodId,
+      actorUserId: user.id,
+      source: 'crm',
+    });
+    return { ...this.toCrmSummary(result.order), transitioned: result.transitioned };
   }
 
   @Post(':id/fulfill')
@@ -214,14 +268,16 @@ export class CrmOrdersController {
     return this.toCrmSummary(result);
   }
 
-  /** Strip Guardian-only admin metadata from CRM payloads. */
+  /** Strip Guardian-only reconciliation metadata; expose adminTags for CRM ops. */
   private toCrmDetail(
     order: Awaited<ReturnType<OrdersService['getOrderById']>>,
   ) {
-    const { adminTags, reconciliationFlags, ...rest } = order;
-    void adminTags;
+    const { reconciliationFlags, ...rest } = order;
     void reconciliationFlags;
-    return rest;
+    return {
+      ...rest,
+      tags: order.adminTags ?? null,
+    };
   }
 
   private toCrmSummary(order: {

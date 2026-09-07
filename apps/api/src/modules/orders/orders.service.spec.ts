@@ -9,6 +9,7 @@ import {
   PaymentLifecycleState,
   ProductType,
   UserStatus,
+  NoteVisibility,
 } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
@@ -156,6 +157,11 @@ describe('OrdersService', () => {
       $transaction: jest.fn((fn: (client: TxMock) => Promise<unknown>) =>
         fn(tx),
       ),
+      order: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
       orderStatusHistory: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -460,6 +466,7 @@ describe('OrdersService', () => {
       orderId: 'ord-1',
       authorUserId: 'staff-1',
       body: 'Call patient',
+      visibility: NoteVisibility.PRIVATE,
     });
     expect(note.id).toBe('note-1');
     const activityCalls = tx.orderActivity.create.mock.calls as Array<
@@ -521,7 +528,7 @@ describe('OrdersService', () => {
       await service.updateOrderFields({
         orderId: 'ord-1',
         context: 'crm',
-        adminTags: { x: 1 },
+        reconciliationFlags: { x: 1 },
       });
       fail('expected throw');
     } catch (error) {
@@ -613,6 +620,55 @@ describe('OrdersService', () => {
     await expect(service.listActivity('ord-1')).resolves.toEqual([]);
   });
 
+  it('persists note visibility on addNote', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    tx.orderNote.create = jest.fn().mockResolvedValue({
+      id: 'note-1',
+      visibility: NoteVisibility.USER_VISIBLE,
+    });
+    const service = buildService(prisma);
+
+    await service.addNote({
+      orderId: 'ord-1',
+      authorUserId: 'staff-1',
+      body: 'visible to patient',
+      visibility: NoteVisibility.USER_VISIBLE,
+    });
+    expect(tx.orderNote.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          visibility: NoteVisibility.USER_VISIBLE,
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
+  it('includes UUID in order list search OR clauses', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      $transaction: jest.fn(),
+      order: {
+        findMany,
+        count: jest.fn().mockResolvedValue(0),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const service = buildService(prisma);
+    await service.listOrders({
+      q: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            { id: '11111111-1111-4111-8111-111111111111' },
+          ]),
+        }) as Record<string, unknown>,
+      }),
+    );
+  });
+
   it('rejects Class D soft-delete without authorization flag', async () => {
     const { prisma } = buildPrismaMock();
     const service = buildService(prisma);
@@ -622,6 +678,24 @@ describe('OrdersService', () => {
         classDAuthorized: false as unknown as true,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects override from FULFILLED (shipped lock)', async () => {
+    const { prisma, tx, createdOrder } = buildPrismaMock();
+    createdOrder.status = OrderStatus.FULFILLED;
+    tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
+    const service = buildService(prisma);
+
+    await expect(
+      service.overrideOrder({
+        orderId: 'ord-1',
+        toStatus: OrderStatus.CANCELLED,
+        reason: 'too late',
+        classDAuthorized: true,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: ErrorCodes.ORD_INVALID_TRANSITION },
+    });
   });
 
   it('override bypasses normal graph but requires reason and Class D', async () => {

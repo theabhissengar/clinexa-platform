@@ -81,6 +81,17 @@ export async function fulfillCrmOrder(
   return data.data;
 }
 
+export async function transitionCrmOrder(
+  id: string,
+  payload: { toStatus: OrderStatus; reason?: string },
+): Promise<Partial<OrderDetail>> {
+  const { data } = await apiClient.post<ApiEnvelope<Partial<OrderDetail>>>(
+    `/v1/crm/orders/${id}/transitions`,
+    payload,
+  );
+  return data.data;
+}
+
 export async function listCrmOrderNotes(id: string): Promise<OrderNote[]> {
   const { data } = await apiClient.get<ApiEnvelope<OrderNote[]>>(
     `/v1/crm/orders/${id}/notes`,
@@ -91,10 +102,11 @@ export async function listCrmOrderNotes(id: string): Promise<OrderNote[]> {
 export async function addCrmOrderNote(
   id: string,
   body: string,
+  visibility: "PRIVATE" | "USER_VISIBLE" = "PRIVATE",
 ): Promise<OrderNote> {
   const { data } = await apiClient.post<ApiEnvelope<OrderNote>>(
     `/v1/crm/orders/${id}/notes`,
-    { body },
+    { body, visibility },
   );
   return data.data;
 }
@@ -113,6 +125,17 @@ export async function listCrmOrderActivity(
 ): Promise<OrderActivity[]> {
   const { data } = await apiClient.get<ApiEnvelope<OrderActivity[]>>(
     `/v1/crm/orders/${id}/activity`,
+  );
+  return data.data;
+}
+
+export async function retryCrmOrderPayment(
+  id: string,
+  paymentMethodId: string,
+): Promise<unknown> {
+  const { data } = await apiClient.post<ApiEnvelope<unknown>>(
+    `/v1/crm/orders/${id}/retry-payment`,
+    { paymentMethodId },
   );
   return data.data;
 }

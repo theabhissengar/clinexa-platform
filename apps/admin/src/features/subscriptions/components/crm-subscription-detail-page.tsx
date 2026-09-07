@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,12 @@ import { Permissions } from "@/features/auth/permissions";
 import {
   addCrmSubscriptionNote,
   cancelCrmSubscription,
+  createPendingCrmRenewal,
   getCrmSubscription,
   listCrmSubscriptionActivity,
   listCrmSubscriptionNotes,
   listCrmSubscriptionRenewals,
+  listCrmSubscriptions,
   openCrmManualRenewal,
   pauseCrmSubscription,
   resumeCrmSubscription,
@@ -26,6 +28,9 @@ import {
   getErrorMessage,
   statusLabel,
 } from "@/features/subscriptions/lib/format";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
+import { ModuleDetailSearch } from "@/features/shared/components/module-detail-search";
+import { RelatedEntityTree } from "@/features/shared/components/related-entity-tree";
 import type {
   SubscriptionActivity,
   SubscriptionDetail,
@@ -64,6 +69,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 
 export function CrmSubscriptionDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const subscriptionId = params.id;
   const { can } = usePermissions();
@@ -82,7 +88,7 @@ export function CrmSubscriptionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [noteBody, setNoteBody] = useState("");
+  const [renewalMode, setRenewalMode] = useState<"pending" | "process">("process");
   const [reason, setReason] = useState("");
 
   const canEdit = can(Permissions.SUB_EDIT);
@@ -215,6 +221,19 @@ export function CrmSubscriptionDetailPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            render={
+              <a
+                href={`/guardian/subscriptions/${row.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
+          >
+            Open in Guardian
+          </Button>
           <Link
             href={`/crm/subscriptions/${row.id}/history`}
             className="text-sm text-primary underline-offset-4 hover:underline"
@@ -247,6 +266,21 @@ export function CrmSubscriptionDetailPage() {
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+
+      <Section title="Search subscriptions">
+        <ModuleDetailSearch
+          placeholder="Subscription number, customer, id…"
+          searchFn={async (q) => {
+            const result = await listCrmSubscriptions({ q, take: 8 });
+            return result.items.map((item) => ({
+              id: item.id,
+              label: item.subscriptionNumber ?? item.id,
+              sublabel: customerLabel(item),
+            }));
+          }}
+          onSelect={(id) => router.push(`/crm/subscriptions/${id}`)}
+        />
+      </Section>
 
       <Section title="Overview">
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -387,6 +421,40 @@ export function CrmSubscriptionDetailPage() {
         </div>
       </Section>
 
+      <Section title="Payment timeline">
+        {renewals.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No payment events yet.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {renewals.map((attempt) => (
+              <li key={attempt.id} className="border-b border-border pb-2">
+                <div>
+                  <span className="font-medium">{attempt.billingPeriodKey}</span>{" "}
+                  · {statusLabel(attempt.status)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Payment: {attempt.paymentStatusSummary ?? "—"}
+                  {attempt.orderId ? (
+                    <>
+                      {" "}
+                      · Order{" "}
+                      <Link
+                        href={`/crm/orders/${attempt.orderId}`}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {attempt.orderId.slice(0, 8)}…
+                      </Link>
+                    </>
+                  ) : null}
+                  {" · "}
+                  {formatDateTime(attempt.createdAt)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section title="Renewal">
         <p className="mb-3 text-sm text-muted-foreground">
           Opaque attempt status only. Payments are not executed from CRM.
@@ -464,20 +532,46 @@ export function CrmSubscriptionDetailPage() {
             (row.status === "ACTIVE" ||
               row.status === "PAUSED" ||
               row.status === "PAST_DUE") ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() =>
-                  void runAction(
-                    "Manual renewal started (order + payment).",
-                    () => openCrmManualRenewal(row.id),
-                    "Open a manual renewal for the current period? This creates a renewal order and attempts payment authorization via the Payments service.",
-                  )
-                }
-              >
-                Manual renewal
-              </Button>
+              <>
+                <div className="mb-2 space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    Renewal action
+                  </label>
+                  <select
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={renewalMode}
+                    onChange={(event) =>
+                      setRenewalMode(event.target.value as "pending" | "process")
+                    }
+                  >
+                    <option value="pending">Create pending renewal</option>
+                    <option value="process">Process renewal</option>
+                  </select>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() =>
+                    void runAction(
+                      renewalMode === "pending"
+                        ? "Pending renewal order created."
+                        : "Manual renewal started (order + payment).",
+                      () =>
+                        renewalMode === "pending"
+                          ? createPendingCrmRenewal(row.id, reason || undefined)
+                          : openCrmManualRenewal(row.id),
+                      renewalMode === "pending"
+                        ? "Create a pending renewal order for the current period? Subscription will move to On Hold."
+                        : "Open a manual renewal for the current period? This creates a renewal order and attempts payment authorization via the Payments service.",
+                    )
+                  }
+                >
+                  {renewalMode === "pending"
+                    ? "Create pending renewal"
+                    : "Process renewal"}
+                </Button>
+              </>
             ) : null}
             {canRenew && currentAttempt ? (
               <Button
@@ -497,61 +591,50 @@ export function CrmSubscriptionDetailPage() {
         </Section>
       )}
 
-      <Section title="Recent notes">
-        {canEdit ? (
-          <form
-            className="mb-3 flex flex-col gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!noteBody.trim()) return;
-              void runAction("Note added.", async () => {
-                await addCrmSubscriptionNote(row.id, noteBody.trim());
-                setNoteBody("");
-              });
-            }}
-          >
-            <textarea
-              className="min-h-20 rounded-md border border-input bg-background p-2 text-sm"
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
-              placeholder="Internal note"
-            />
-            <Button type="submit" size="sm" disabled={busy || !noteBody.trim()}>
-              Add note
-            </Button>
-          </form>
-        ) : null}
-        {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {notes.slice(0, 5).map((note) => (
-              <li key={note.id}>
-                <div className="text-xs text-muted-foreground">
-                  {formatDateTime(note.createdAt)}
-                </div>
-                {note.body}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Notes & activity" id="notes">
+        <NotesTimeline
+          notes={notes}
+          activities={activity}
+          composerDisabled={!canEdit}
+          addingNote={busy}
+          onAddNote={
+            canEdit
+              ? async (body, visibility) => {
+                  await runAction("Note added.", () =>
+                    addCrmSubscriptionNote(row.id, body, visibility),
+                  );
+                }
+              : undefined
+          }
+        />
       </Section>
 
-      <Section title="Recent activity">
-        {activity.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {activity.slice(0, 8).map((event) => (
-              <li key={event.id}>
-                <span className="text-muted-foreground">
-                  {formatDateTime(event.createdAt)}
-                </span>{" "}
-                {event.summary}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Related entities">
+        <RelatedEntityTree
+          context="crm"
+          user={{
+            id: row.patient.id,
+            label: customerLabel(row),
+          }}
+          parentOrder={
+            row.initialOrder
+              ? {
+                  id: row.initialOrder.id,
+                  label: row.initialOrder.orderNumber,
+                }
+              : undefined
+          }
+          subscription={{
+            id: row.id,
+            label: row.subscriptionNumber ?? row.id,
+          }}
+          renewals={renewals
+            .filter((attempt) => attempt.orderId)
+            .map((attempt) => ({
+              id: attempt.orderId!,
+              label: attempt.billingPeriodKey,
+            }))}
+        />
       </Section>
     </main>
   );

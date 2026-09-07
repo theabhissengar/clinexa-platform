@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,13 @@ import {
   archiveAdminSubscription,
   cancelAdminSubscription,
   correctAdminSubscription,
+  createPendingAdminRenewal,
   deleteAdminSubscription,
   getAdminSubscription,
   listAdminSubscriptionActivity,
   listAdminSubscriptionNotes,
   listAdminSubscriptionRenewals,
+  listAdminSubscriptions,
   openAdminManualRenewal,
   overrideAdminSubscription,
   pauseAdminSubscription,
@@ -33,8 +35,14 @@ import {
   formatMoneyCents,
   getErrorMessage,
   intervalLabel,
+  productStatusLabel,
   statusLabel,
 } from "@/features/subscriptions/lib/format";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
+import { ModuleDetailSearch } from "@/features/shared/components/module-detail-search";
+import { RelatedEntityTree } from "@/features/shared/components/related-entity-tree";
+import { AdminTagsList } from "@/features/shared/components/admin-tags-editor";
+import { RenewalActionsDropdown } from "@/features/shared/components/renewal-actions-dropdown";
 import type {
   SubscriptionActivity,
   SubscriptionDetail,
@@ -99,6 +107,7 @@ function promptReason(label: string): string | null {
 
 export function GuardianSubscriptionDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const subscriptionId = params.id;
   const { can } = usePermissions();
@@ -117,7 +126,7 @@ export function GuardianSubscriptionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [noteBody, setNoteBody] = useState("");
+  const [renewalMode, setRenewalMode] = useState<"pending" | "process">("process");
   const [reason, setReason] = useState("");
   const [overrideTo, setOverrideTo] = useState<SubscriptionStatus | "">("");
   const [overrideReason, setOverrideReason] = useState("");
@@ -255,7 +264,7 @@ export function GuardianSubscriptionDetailPage() {
             {row.subscriptionNumber ?? row.id}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {statusLabel(row.status)} · cycle {row.cycleNumber} · created{" "}
+            {productStatusLabel(row.status)} · cycle {row.cycleNumber} · created{" "}
             {formatDateTime(row.createdAt)}
             {row.archivedAt ? " · archived" : ""}
             {row.deletedAt ? " · deleted" : ""}
@@ -294,6 +303,21 @@ export function GuardianSubscriptionDetailPage() {
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+
+      <Section title="Search subscriptions">
+        <ModuleDetailSearch
+          placeholder="Subscription number, customer, id…"
+          searchFn={async (q) => {
+            const result = await listAdminSubscriptions({ q, take: 8 });
+            return result.items.map((item) => ({
+              id: item.id,
+              label: item.subscriptionNumber ?? item.id,
+              sublabel: customerLabel(item),
+            }));
+          }}
+          onSelect={(id) => router.push(`/guardian/subscriptions/${id}`)}
+        />
+      </Section>
 
       <Section title="Overview">
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
@@ -452,7 +476,7 @@ export function GuardianSubscriptionDetailPage() {
       <Section title="Operational / admin fields">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Ops flags" value={<pre className="whitespace-pre-wrap text-xs">{formatJson(row.opsFlags)}</pre>} />
-          <Field label="Admin tags" value={<pre className="whitespace-pre-wrap text-xs">{formatJson(row.adminTags)}</pre>} />
+          <Field label="Admin tags" value={<AdminTagsList value={row.adminTags} />} />
           <Field
             label="Reconciliation flags"
             value={<pre className="whitespace-pre-wrap text-xs">{formatJson(row.reconciliationFlags)}</pre>}
@@ -460,9 +484,43 @@ export function GuardianSubscriptionDetailPage() {
         </div>
       </Section>
 
+      <Section title="Payment timeline">
+        {renewals.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No payment events yet.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {renewals.map((attempt) => (
+              <li key={attempt.id} className="border-b border-border pb-2">
+                <div>
+                  <span className="font-medium">{attempt.billingPeriodKey}</span>{" "}
+                  · {statusLabel(attempt.status)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Payment: {attempt.paymentStatusSummary ?? "—"}
+                  {attempt.orderId ? (
+                    <>
+                      {" "}
+                      · Order{" "}
+                      <Link
+                        href={`/guardian/orders/${attempt.orderId}`}
+                        className="underline-offset-4 hover:underline"
+                      >
+                        {attempt.orderId.slice(0, 8)}…
+                      </Link>
+                    </>
+                  ) : null}
+                  {" · "}
+                  {formatDateTime(attempt.createdAt)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section title="Renewal attempts">
         <p className="mb-3 text-sm text-muted-foreground">
-          Attempt status only. Renewal orders are not created in this phase.
+          Renewal attempt history for this subscription.
         </p>
         {renewals.length === 0 ? (
           <p className="text-sm text-muted-foreground">No renewal attempts.</p>
@@ -562,20 +620,24 @@ export function GuardianSubscriptionDetailPage() {
               </Button>
             ) : null}
             {canRenew ? (
-              <Button
-                size="sm"
-                variant="outline"
+              <RenewalActionsDropdown
                 disabled={busy}
-                onClick={() =>
+                canCreatePending={row.status === "ACTIVE"}
+                onCreatePending={() =>
+                  void runAction(
+                    "Pending renewal order created.",
+                    () => createPendingAdminRenewal(row.id, reason || undefined),
+                    "Create a pending renewal order for the current period? Subscription will move to On Hold.",
+                  )
+                }
+                onProcessRenewal={() =>
                   void runAction(
                     "Manual renewal started (order + payment).",
                     () => openAdminManualRenewal(row.id),
                     "Start a manual renewal for the current period? This creates a renewal order and attempts payment via Payments.",
                   )
                 }
-              >
-                Manual renewal
-              </Button>
+              />
             ) : null}
           </div>
         </Section>
@@ -759,58 +821,50 @@ export function GuardianSubscriptionDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Notes" id="notes">
-        {canEdit ? (
-          <form
-            className="mb-3 space-y-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!noteBody.trim()) return;
-              void runAction("Note added.", async () => {
-                await addAdminSubscriptionNote(row.id, noteBody.trim());
-                setNoteBody("");
-              });
-            }}
-          >
-            <textarea
-              className="min-h-20 w-full rounded-md border border-input bg-background p-2 text-sm"
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
-              placeholder="Internal note"
-            />
-            <Button type="submit" size="sm" disabled={busy || !noteBody.trim()}>
-              Add note
-            </Button>
-          </form>
-        ) : null}
-        {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {notes.slice(0, 5).map((note) => (
-              <li key={note.id}>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(note.createdAt)}
-                </span>
-                <div>{note.body}</div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Notes & activity" id="notes">
+        <NotesTimeline
+          notes={notes}
+          activities={activity}
+          composerDisabled={!canEdit}
+          addingNote={busy}
+          onAddNote={
+            canEdit
+              ? async (body, visibility) => {
+                  await runAction("Note added.", () =>
+                    addAdminSubscriptionNote(row.id, body, visibility),
+                  );
+                }
+              : undefined
+          }
+        />
       </Section>
 
-      <Section title="Recent activity">
-        {activity.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {activity.slice(0, 8).map((entry) => (
-              <li key={entry.id}>
-                {formatDateTime(entry.createdAt)} · {entry.summary}
-              </li>
-            ))}
-          </ul>
-        )}
+      <Section title="Related entities">
+        <RelatedEntityTree
+          context="guardian"
+          user={{
+            id: row.patient.id,
+            label: customerLabel(row),
+          }}
+          parentOrder={
+            row.initialOrder
+              ? {
+                  id: row.initialOrder.id,
+                  label: row.initialOrder.orderNumber,
+                }
+              : undefined
+          }
+          subscription={{
+            id: row.id,
+            label: row.subscriptionNumber ?? row.id,
+          }}
+          renewals={renewals
+            .filter((attempt) => attempt.orderId)
+            .map((attempt) => ({
+              id: attempt.orderId!,
+              label: attempt.billingPeriodKey,
+            }))}
+        />
       </Section>
     </main>
   );

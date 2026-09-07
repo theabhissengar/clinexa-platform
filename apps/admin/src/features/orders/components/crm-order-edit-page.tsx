@@ -12,7 +12,13 @@ import {
   updateCrmOrder,
 } from "@/features/orders/api/orders-api";
 import { formatDateTime, statusLabel } from "@/features/orders/lib/format";
-import type { OrderDetail } from "@/features/orders/types";
+import type { OrderAddressInput, OrderDetail } from "@/features/orders/types";
+import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
+import {
+  ModuleDetailSearch,
+  type ModuleSearchResult,
+} from "@/features/shared/components/module-detail-search";
+import { listCrmUsers } from "@/features/users/api/users-api";
 
 function getErrorMessage(error: unknown, fallback: string): string {
   if (
@@ -33,6 +39,66 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const EMPTY_ADDRESS: OrderAddressInput = {
+  line1: "",
+  line2: "",
+  city: "",
+  region: "",
+  postalCode: "",
+  country: "",
+  phone: "",
+  fullName: "",
+};
+
+function addressFromOrder(
+  addresses: OrderDetail["addresses"],
+  kind: "SHIPPING" | "BILLING",
+): OrderAddressInput {
+  const row = addresses.find((a) => a.kind === kind);
+  if (!row) return { ...EMPTY_ADDRESS };
+  return {
+    fullName: row.fullName ?? "",
+    line1: row.line1,
+    line2: row.line2 ?? "",
+    city: row.city,
+    region: row.region ?? "",
+    postalCode: row.postalCode ?? "",
+    country: row.country,
+    phone: row.phone ?? "",
+  };
+}
+
+function addressToPayload(
+  address: OrderAddressInput,
+): OrderAddressInput | null {
+  if (!address.line1.trim() || !address.city.trim() || !address.country.trim()) {
+    return null;
+  }
+  return {
+    fullName: address.fullName?.trim() || null,
+    line1: address.line1.trim(),
+    line2: address.line2?.trim() || null,
+    city: address.city.trim(),
+    region: address.region?.trim() || null,
+    postalCode: address.postalCode?.trim() || null,
+    country: address.country.trim(),
+    phone: address.phone?.trim() || null,
+  };
+}
+
+function userLabel(user: {
+  displayName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+}): string {
+  return (
+    user.displayName ||
+    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+    user.email
+  );
+}
+
 export function CrmOrderEditPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -43,6 +109,15 @@ export function CrmOrderEditPage() {
   const [carrier, setCarrier] = useState("");
   const [shippedAt, setShippedAt] = useState("");
   const [shippingPhone, setShippingPhone] = useState("");
+  const [patientUserId, setPatientUserId] = useState("");
+  const [patientLabel, setPatientLabel] = useState("");
+  const [shippingAddress, setShippingAddress] =
+    useState<OrderAddressInput>(EMPTY_ADDRESS);
+  const [billingAddress, setBillingAddress] =
+    useState<OrderAddressInput>(EMPTY_ADDRESS);
+  const [adminTags, setAdminTags] = useState<
+    Record<string, unknown> | string[] | null
+  >(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +133,27 @@ export function CrmOrderEditPage() {
         );
         const shipping = detail.addresses.find((a) => a.kind === "SHIPPING");
         setShippingPhone(shipping?.phone ?? "");
+        setPatientUserId(detail.patientUserId);
+        setPatientLabel(userLabel(detail.patient));
+        setShippingAddress(addressFromOrder(detail.addresses, "SHIPPING"));
+        setBillingAddress(addressFromOrder(detail.addresses, "BILLING"));
+        setAdminTags(
+          (detail.adminTags as Record<string, unknown> | string[] | null) ??
+            null,
+        );
       })
       .catch((err) => setError(getErrorMessage(err, "Unable to load order.")))
       .finally(() => setLoading(false));
   }, [orderId]);
+
+  async function searchUsers(q: string): Promise<ModuleSearchResult[]> {
+    const result = await listCrmUsers({ q, take: 8 });
+    return result.items.map((item) => ({
+      id: item.id,
+      label: userLabel(item),
+      sublabel: item.email,
+    }));
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -74,6 +166,10 @@ export function CrmOrderEditPage() {
         carrier: carrier || null,
         shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
         shippingPhone: shippingPhone || null,
+        patientUserId: patientUserId || order.patientUserId,
+        shippingAddress: addressToPayload(shippingAddress),
+        billingAddress: addressToPayload(billingAddress),
+        adminTags,
       });
       router.push(`/crm/orders/${order.id}`);
     } catch (err) {
@@ -116,14 +212,32 @@ export function CrmOrderEditPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Status {statusLabel(order.status)} · updated{" "}
-          {formatDateTime(order.updatedAt)}. Snapshots, totals, and Class D
-          fields are not editable here.
+          {formatDateTime(order.updatedAt)}. Includes patient reassignment,
+          addresses, and admin tags where policy allows.
         </p>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
       <form className="space-y-4" onSubmit={onSubmit}>
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <div className="text-sm font-medium">Patient user</div>
+          <p className="text-xs text-muted-foreground">
+            Current: {patientLabel} ({patientUserId})
+          </p>
+          <ModuleDetailSearch
+            placeholder="Search patient by name, email, phone, id…"
+            searchFn={searchUsers}
+            onSelect={(id) => {
+              setPatientUserId(id);
+              void listCrmUsers({ q: id, take: 1 }).then((result) => {
+                const match = result.items.find((row) => row.id === id);
+                if (match) setPatientLabel(userLabel(match));
+              });
+            }}
+          />
+        </div>
+
         <div className="space-y-1">
           <Label htmlFor="tracking">Tracking number</Label>
           <Input
@@ -157,6 +271,48 @@ export function CrmOrderEditPage() {
             onChange={(event) => setShippingPhone(event.target.value)}
           />
         </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Shipping address</div>
+            {(Object.keys(EMPTY_ADDRESS) as Array<keyof OrderAddressInput>).map(
+              (field) => (
+                <Input
+                  key={field}
+                  placeholder={field}
+                  value={shippingAddress[field] ?? ""}
+                  onChange={(e) =>
+                    setShippingAddress((prev) => ({
+                      ...prev,
+                      [field]: e.target.value,
+                    }))
+                  }
+                />
+              ),
+            )}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Billing address</div>
+            {(Object.keys(EMPTY_ADDRESS) as Array<keyof OrderAddressInput>).map(
+              (field) => (
+                <Input
+                  key={field}
+                  placeholder={field}
+                  value={billingAddress[field] ?? ""}
+                  onChange={(e) =>
+                    setBillingAddress((prev) => ({
+                      ...prev,
+                      [field]: e.target.value,
+                    }))
+                  }
+                />
+              ),
+            )}
+          </div>
+        </div>
+
+        <AdminTagsEditor value={adminTags} onChange={setAdminTags} />
+
         <div className="flex gap-2">
           <Button type="submit" disabled={saving}>
             {saving ? "Saving…" : "Save"}

@@ -1,12 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsDateString,
+  IsEnum,
+  IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { OrderStatus, OrderType } from '../../../../generated/prisma';
+import { AdminOrderAddressDto } from './admin-order.dto';
 
 export class CrmUpdateOrderDto {
   @ApiPropertyOptional()
@@ -33,6 +39,28 @@ export class CrmUpdateOrderDto {
   @IsString()
   @MaxLength(64)
   shippingPhone?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  patientUserId?: string;
+
+  @ApiPropertyOptional({ type: AdminOrderAddressDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdminOrderAddressDto)
+  shippingAddress?: AdminOrderAddressDto;
+
+  @ApiPropertyOptional({ type: AdminOrderAddressDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdminOrderAddressDto)
+  billingAddress?: AdminOrderAddressDto;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsObject()
+  adminTags?: Record<string, unknown> | null;
 }
 
 export class CrmCancelOrderDto {
@@ -63,12 +91,26 @@ export class CrmFulfillOrderDto {
   reason?: string;
 }
 
-export class CrmAddOrderNoteDto {
-  @ApiProperty()
+import { AddNoteDto } from '../../../common/dto/note.dto';
+
+export class CrmAddOrderNoteDto extends AddNoteDto {}
+
+export class CrmTransitionOrderDto {
+  @ApiProperty({ enum: OrderStatus })
+  @IsEnum(OrderStatus)
+  toStatus!: OrderStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  @MaxLength(5000)
-  body!: string;
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class CrmRetryOrderPaymentDto {
+  @ApiProperty()
+  @IsUUID()
+  paymentMethodId!: string;
 }
 
 export function parseOrderStatusFilter(

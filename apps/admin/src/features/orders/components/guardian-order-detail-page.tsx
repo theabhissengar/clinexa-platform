@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,16 +18,29 @@ import {
   listAdminOrderActivity,
   listAdminOrderHistory,
   listAdminOrderNotes,
+  listAdminOrders,
   overrideAdminOrder,
   restoreAdminOrder,
+  retryAdminOrderPayment,
   transitionAdminOrder,
 } from "@/features/orders/api/admin-orders-api";
+import { OrderPaymentRetryPanel } from "@/features/orders/components/order-payment-retry-panel";
 import {
   customerLabel,
   formatDateTime,
   formatMoneyCents,
+  productStatusLabel,
   statusLabel,
 } from "@/features/orders/lib/format";
+import {
+  getAdminSubscription,
+  listAdminSubscriptionRenewals,
+} from "@/features/subscriptions/api/admin-subscriptions-api";
+import { ModuleDetailSearch, type ModuleSearchResult } from "@/features/shared/components/module-detail-search";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
+import { RelatedEntityTree } from "@/features/shared/components/related-entity-tree";
+import { AdminTagsList } from "@/features/shared/components/admin-tags-editor";
+import type { NoteVisibility } from "@/features/shared/types/notes";
 import type {
   OrderActivity,
   OrderDetail,
@@ -35,6 +48,10 @@ import type {
   OrderStatus,
   OrderStatusHistory,
 } from "@/features/orders/types";
+import type {
+  SubscriptionDetail,
+  SubscriptionRenewalAttempt,
+} from "@/features/subscriptions/types";
 
 const ALL_STATUSES: OrderStatus[] = [
   "DRAFT",
@@ -104,6 +121,7 @@ function formatJson(value: unknown): string {
 
 export function GuardianOrderDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = params.id;
   const { can } = usePermissions();
@@ -122,8 +140,13 @@ export function GuardianOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [addingNote, setAddingNote] = useState(false);
+  const [linkedSubscription, setLinkedSubscription] =
+    useState<SubscriptionDetail | null>(null);
+  const [linkedRenewals, setLinkedRenewals] = useState<
+    SubscriptionRenewalAttempt[]
+  >([]);
 
-  const [noteBody, setNoteBody] = useState("");
   const [transitionTo, setTransitionTo] = useState<OrderStatus | "">("");
   const [transitionReason, setTransitionReason] = useState("");
   const [correctAmountCents, setCorrectAmountCents] = useState("");
@@ -184,6 +207,69 @@ export function GuardianOrderDetailPage() {
       cancelled = true;
     };
   }, [orderId]);
+
+  useEffect(() => {
+    if (!order?.subscriptionId) {
+      setLinkedSubscription(null);
+      setLinkedRenewals([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([
+      getAdminSubscription(order.subscriptionId, true),
+      listAdminSubscriptionRenewals(order.subscriptionId),
+    ])
+      .then(([subscription, renewals]) => {
+        if (cancelled) return;
+        setLinkedSubscription(subscription);
+        setLinkedRenewals(renewals);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLinkedSubscription(null);
+        setLinkedRenewals([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.subscriptionId]);
+
+  const searchOrders = useCallback(async (q: string): Promise<ModuleSearchResult[]> => {
+    const result = await listAdminOrders({ q, take: 10 });
+    return result.items.map((row) => ({
+      id: row.id,
+      label: row.orderNumber,
+      sublabel: customerLabel(row),
+    }));
+  }, []);
+
+  const treeRenewals = useMemo(
+    () =>
+      linkedRenewals
+        .filter((attempt) => attempt.orderId)
+        .map((attempt) => ({
+          id: attempt.orderId as string,
+          label: attempt.billingPeriodKey,
+        })),
+    [linkedRenewals],
+  );
+
+  async function handleAddNote(body: string, visibility: NoteVisibility) {
+    if (!order || !canEdit) return;
+    setAddingNote(true);
+    setMessage(null);
+    setError(null);
+    try {
+      await addAdminOrderNote(order.id, body, visibility);
+      setMessage("Note added.");
+      const noteRows = await listAdminOrderNotes(orderId);
+      setNotes(noteRows);
+    } catch (err) {
+      setError(getErrorMessage(err, "Unable to add note."));
+    } finally {
+      setAddingNote(false);
+    }
+  }
 
   async function runAction(
     action: () => Promise<unknown>,
@@ -327,17 +413,6 @@ export function GuardianOrderDetailPage() {
     setOverrideReason("");
   }
 
-  async function onAddNote(event: React.FormEvent) {
-    event.preventDefault();
-    if (!order || !canEdit || !noteBody.trim()) return;
-    await runAction(
-      () => addAdminOrderNote(order.id, noteBody.trim()),
-      "Note added.",
-      "Unable to add note.",
-    );
-    setNoteBody("");
-  }
-
   if (loading) {
     return (
       <main className="px-6 py-10 text-sm text-muted-foreground">
@@ -380,7 +455,7 @@ export function GuardianOrderDetailPage() {
             {order.orderNumber}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {statusLabel(order.status)} · {statusLabel(order.orderType)} ·{" "}
+            {productStatusLabel(order.status)} · {statusLabel(order.orderType)} ·{" "}
             {formatDateTime(order.createdAt)}
           </p>
           <div className="mt-2 flex flex-wrap gap-1">
@@ -445,6 +520,21 @@ export function GuardianOrderDetailPage() {
         </p>
       ) : null}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      <Section title="Search orders">
+        <ModuleDetailSearch
+          placeholder="Order number, customer, id…"
+          searchFn={async (q) => {
+            const result = await listAdminOrders({ q, take: 8 });
+            return result.items.map((item) => ({
+              id: item.id,
+              label: item.orderNumber,
+              sublabel: customerLabel(item),
+            }));
+          }}
+          onSelect={(id) => router.push(`/guardian/orders/${id}`)}
+        />
+      </Section>
 
       <Section title="Order header">
         <dl className="grid gap-2 text-sm sm:grid-cols-2">
@@ -619,6 +709,18 @@ export function GuardianOrderDetailPage() {
         <p className="mt-2 text-xs text-muted-foreground">
           Payment actions are owned by Payments — not executed here.
         </p>
+        {order.status === "PAYMENT_PENDING" ? (
+          <OrderPaymentRetryPanel
+            orderId={order.id}
+            patientUserId={order.patientUserId}
+            context="admin"
+            onRetry={async (paymentMethodId) => {
+              await retryAdminOrderPayment(order.id, paymentMethodId);
+              const refreshed = await getAdminOrder(order.id, true);
+              setOrder(refreshed);
+            }}
+          />
+        ) : null}
       </Section>
 
       <Section title="Clinical references">
@@ -744,7 +846,7 @@ export function GuardianOrderDetailPage() {
             <dt className="text-muted-foreground">Admin tags</dt>
             <dd>
               <pre className="mt-1 overflow-x-auto rounded-md bg-muted/40 p-2 font-mono text-xs">
-                {formatJson(order.adminTags)}
+                <AdminTagsList value={order.adminTags} />
               </pre>
             </dd>
           </div>
@@ -831,7 +933,7 @@ export function GuardianOrderDetailPage() {
         </Section>
       ) : null}
 
-      {canOverride ? (
+      {canOverride && order.status !== "FULFILLED" ? (
         <Section title="Administrative override (Class D)">
           <p className="mb-3 text-xs text-muted-foreground">
             Bypasses normal lifecycle transitions. Use only with a documented
@@ -880,35 +982,46 @@ export function GuardianOrderDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Notes" id="notes">
-        {notes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No notes yet.</p>
-        ) : (
-          <ul className="space-y-3 text-sm">
-            {notes.map((note) => (
-              <li key={note.id} className="border-b border-border pb-2">
-                <p className="whitespace-pre-wrap">{note.body}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Author {note.authorUserId} · {formatDateTime(note.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-        {canEdit ? (
-          <form className="mt-4 space-y-2" onSubmit={onAddNote}>
-            <Label htmlFor="note">Add note</Label>
-            <textarea
-              id="note"
-              className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={noteBody}
-              onChange={(event) => setNoteBody(event.target.value)}
-            />
-            <Button type="submit" size="sm" disabled={busy || !noteBody.trim()}>
-              Add note
-            </Button>
-          </form>
-        ) : null}
+      <Section title="Notes & activity" id="notes">
+        <NotesTimeline
+          notes={notes}
+          activities={activity}
+          composerDisabled={!canEdit}
+          addingNote={addingNote}
+          onAddNote={canEdit ? handleAddNote : undefined}
+        />
+      </Section>
+
+      <Section title="Hardcopy documents">
+        <p className="text-sm text-muted-foreground">
+          Hardcopy document management is not available in this phase.
+        </p>
+      </Section>
+
+      <Section title="Scanned documents">
+        <p className="text-sm text-muted-foreground">
+          Scanned document upload and viewing is not available in this phase.
+        </p>
+      </Section>
+
+      <Section title="Related entities">
+        <RelatedEntityTree
+          context="guardian"
+          user={{
+            id: order.patientUserId,
+            label: customerLabel(order),
+          }}
+          parentOrder={
+            order.orderType === "SUBSCRIPTION_INITIAL"
+              ? { id: order.id, label: order.orderNumber }
+              : undefined
+          }
+          subscription={
+            order.subscriptionId
+              ? { id: order.subscriptionId, label: order.subscriptionId }
+              : undefined
+          }
+        />
       </Section>
 
       <Section title="History" id="history">

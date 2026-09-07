@@ -11,6 +11,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { AddNoteDto } from '../../../common/dto/note.dto';
 import { SubscriptionStatus } from '../../../../generated/prisma';
 
 export class AdminSubscriptionCustomerDto {
@@ -136,13 +137,20 @@ export class AdminLifecycleReasonDto {
   reason?: string;
 }
 
-export class AdminAddSubscriptionNoteDto {
-  @ApiProperty()
+export class AdminMigrateSubscriptionDto {
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  @MaxLength(5000)
-  body!: string;
+  @MaxLength(500)
+  reason?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  migratedToSubscriptionId?: string;
 }
+
+export class AdminAddSubscriptionNoteDto extends AddNoteDto {}
 
 export class AdminOverrideSubscriptionDto {
   @ApiProperty({ enum: SubscriptionStatus })

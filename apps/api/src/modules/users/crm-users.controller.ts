@@ -1,12 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { UserStatus } from '../../../generated/prisma';
+import { UserStatus, NoteVisibility } from '../../../generated/prisma';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
 import { Permissions } from '../rbac/constants/permissions';
 import { CrmUpdateUserDto } from './dto/user.dto';
+import { AddNoteDto } from '../../common/dto/note.dto';
 import { UsersService } from './users.service';
 
 /**
@@ -54,5 +55,28 @@ export class CrmUsersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.users.updateCrm(id, dto, user.id);
+  }
+
+  @Get(':id/notes')
+  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @ApiOperation({ summary: 'List user notes (CRM)' })
+  notes(@Param('id') id: string) {
+    return this.users.listNotes(id);
+  }
+
+  @Post(':id/notes')
+  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @ApiOperation({ summary: 'Add user note (CRM)' })
+  addNote(
+    @Param('id') id: string,
+    @Body() dto: AddNoteDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.users.addNote({
+      userId: id,
+      authorUserId: user.id,
+      body: dto.body,
+      visibility: dto.visibility ?? NoteVisibility.PRIVATE,
+    });
   }
 }

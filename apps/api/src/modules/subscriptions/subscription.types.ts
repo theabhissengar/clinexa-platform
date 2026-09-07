@@ -52,6 +52,13 @@ export type TransitionSubscriptionInput = {
   failedRenewalAttempt?: boolean;
 };
 
+export type ParentOrderHookInput = {
+  subscriptionId: string;
+  actorUserId?: string | null;
+  source: string;
+  reason?: string | null;
+};
+
 export type PauseSubscriptionInput = {
   subscriptionId: string;
   actorUserId?: string | null;
@@ -82,12 +89,19 @@ export type UpdateSubscriptionFieldsInput = {
   opsFlags?: unknown;
   adminTags?: unknown;
   reconciliationFlags?: unknown;
+  paymentMethodId?: string | null;
+  patientUserId?: string;
+  nextRenewalAt?: Date | null;
+  currentPeriodStart?: Date | null;
+  currentPeriodEnd?: Date | null;
+  endsAt?: Date | null;
 };
 
 export type AddSubscriptionNoteInput = {
   subscriptionId: string;
   authorUserId: string;
   body: string;
+  visibility?: import('../../../generated/prisma').NoteVisibility;
 };
 
 export type ClassDSubscriptionInput = {

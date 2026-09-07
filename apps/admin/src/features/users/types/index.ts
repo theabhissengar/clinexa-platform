@@ -51,6 +51,7 @@ export type AdminUser = {
   stripeCustomerIdTest: string | null;
   preferences: Record<string, unknown> | null;
   internalNotes: string | null;
+  medicalProfile: MedicalProfile | null;
   emailVerifiedAt: string | null;
   lastActiveAt: string | null;
   archivedAt: string | null;
@@ -67,6 +68,43 @@ export type AdminUser = {
   };
 };
 
+export type MedicalProfileEntry = {
+  id: string;
+  text: string;
+};
+
+export type MedicalProfile = {
+  allergies?: MedicalProfileEntry[];
+  conditions?: MedicalProfileEntry[];
+  medications?: MedicalProfileEntry[];
+  additionalNotes?: MedicalProfileEntry[];
+};
+
+export type NoteVisibility = "PRIVATE" | "USER_VISIBLE";
+
+export type UserNote = {
+  id: string;
+  userId: string;
+  authorUserId: string;
+  body: string;
+  visibility: NoteVisibility;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SavedPaymentMethod = {
+  id: string;
+  userId: string;
+  brand: string | null;
+  last4: string | null;
+  expMonth: number | null;
+  expYear: number | null;
+  isDefault: boolean;
+  deletedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OperationalUser = {
   id: string;
   email: string;
@@ -81,6 +119,7 @@ export type OperationalUser = {
   billingAddress: AddressSnapshot | null;
   shippingAddress: AddressSnapshot | null;
   internalNotes: string | null;
+  medicalProfile: MedicalProfile | null;
   roles: UserRoleRef[];
   createdAt: string;
   updatedAt: string;
@@ -152,6 +191,7 @@ export type UpdateUserOperationalPayload = {
   gender?: UserGender;
   region?: string | null;
   internalNotes?: string | null;
+  medicalProfile?: MedicalProfile | null;
   billingAddress?: AddressSnapshot | null;
   shippingAddress?: AddressSnapshot | null;
 };

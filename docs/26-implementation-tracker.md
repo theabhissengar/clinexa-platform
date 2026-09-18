@@ -379,7 +379,7 @@ Every phase record in §5 carries these fields.
 | **Scope** | Navigation improvements, dashboard redesign, table/form polish, global search, favorites, pinned modules, keyboard shortcuts, responsive, accessibility, design polish, animations, loading states, usability — **no detailed UI plan in P8** |
 | **Architecture changes** | Additive UX only; must not fork the shared shell (`UI-011`) |
 | **Documentation updates** | Tracker status when started; design-system notes as needed |
-| **Notes** | Roadmap Phase 5A established shared tokens (Geist mapping, light/dark semantic + success/warning/info/hold, sidebar-primary no longer purple), `StatusBadge` + `status-semantics` registry (not wired into feature pages), and justified shadcn primitives (badge, card, table, alert, dialog, alert-dialog, tabs). Feature `emerald-*`/`amber-*` migrations and screen redesigns are 5E/5F. Login, shell chrome, Command Center, Sonner, and form controls remain deferred. Unlisted preview: `/dev/design-system`. Products must not invent custom UX patterns that conflict with the shared platform. |
+| **Notes** | Roadmap Phase 5A established shared tokens (Geist mapping, light/dark semantic + success/warning/info/hold, sidebar-primary no longer purple), `StatusBadge` + `status-semantics` registry (not wired into feature pages), and justified shadcn primitives (badge, card, table, alert, dialog, alert-dialog, tabs). Shared `ThemeToggle` is also on `/login`. Feature `emerald-*`/`amber-*` migrations and screen redesigns are 5E/5F. Shell chrome redesign, Command Center, Sonner, and form controls remain deferred. Unlisted preview: `/dev/design-system`. Products must not invent custom UX patterns that conflict with the shared platform. |
 | **Verification** | Shared shell remains one product; no module-private design systems |
 
 ### PF — Future work
@@ -549,6 +549,7 @@ A phase is complete when all of the following hold.
 | 2.15 | 2026-08-25 | Platform Engineering | P14h on `feature/subscriptions-p14h-freeze`: verification/regression freeze; RBAC seed/guards confirmed; §20 matrix satisfied; tracker/registry/blueprint aligned; **P14 Complete** |
 | 2.16 | 2026-08-26 | Platform Engineering | P15 Phase 2 payments/promotions marked complete; Phase 3 expansion record added (`feature/payments-phase3`: P3-SUB-001/002, P3-REN-001) |
 | 2.17 | 2026-09-18 | Platform Engineering | P10 In progress on `feature/ui-modernization-5a-design-system`: Phase 5A design-system foundation (tokens, StatusBadge registry, justified shadcn primitives). 5B–5H not started |
+| 2.18 | 2026-09-18 | Platform Engineering | 5A follow-up: shared ThemeToggle on `/login`; laptop/desktop layout notes for 5A surfaces |
 
 ---
 

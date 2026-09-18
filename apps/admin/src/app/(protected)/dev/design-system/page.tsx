@@ -22,7 +22,7 @@ export default function DesignSystemPreviewPage() {
   const unknown = resolveStatusSemantics(UNKNOWN_STATUS);
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-4 py-6 md:px-6 md:py-8">
+    <main className="mx-auto flex w-full max-w-3xl min-w-0 flex-1 flex-col gap-8 px-4 py-6 md:px-6 md:py-8 lg:max-w-4xl">
       <header className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-semibold tracking-tight">
           Design system preview
@@ -54,7 +54,7 @@ export default function DesignSystemPreviewPage() {
                 className="flex flex-wrap items-center gap-3 text-sm"
               >
                 <StatusBadge status={example.status} />
-                <span className="text-muted-foreground">
+                <span className="min-w-0 break-words text-muted-foreground">
                   {example.tone} · {semantics.value} · {semantics.label}
                 </span>
               </li>
@@ -62,7 +62,7 @@ export default function DesignSystemPreviewPage() {
           })}
           <li className="flex flex-wrap items-center gap-3 text-sm">
             <StatusBadge status={UNKNOWN_STATUS} />
-            <span className="text-muted-foreground">
+            <span className="min-w-0 break-words text-muted-foreground">
               unknown fallback · original {unknown.value} · {unknown.label}
             </span>
           </li>

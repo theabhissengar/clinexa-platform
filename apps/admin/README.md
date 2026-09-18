@@ -61,7 +61,16 @@ Architecture SoT: [docs/18-crm.md §4 Application Shell](../../docs/18-crm.md#4-
 
 ### Theme
 
-Light / dark / system via `next-themes`. Use semantic tokens only (`bg-background`, `text-muted-foreground`, `bg-sidebar`, …). No direct palette colors in shell components.
+Light / dark / system via `next-themes`. Use semantic tokens only (`bg-background`, `text-muted-foreground`, `bg-sidebar`, `text-success`, `bg-warning/10`, …). No direct palette colors in shell components.
+
+**Phase 5A / P10 design-system foundation** (tokens live in `src/app/globals.css`):
+
+- Geist Sans is mapped through `--font-sans` / `--font-heading` (`--font-geist-sans`); Geist Mono through `--font-mono`.
+- Shared light/dark semantic tokens include `success`, `warning`, `info`, `hold`, and `destructive` (plus foreground pairs). CRM and Guardian must not fork palettes.
+- Status semantics: `src/lib/status-semantics.ts` + `StatusBadge` (`src/components/ui/status-badge.tsx`). Labels are required; color is supporting only. Feature pages are **not** migrated in 5A.
+- Unlisted preview: `/dev/design-system` (not in `nav-config`).
+- Installed primitives (base-nova / Base UI): Badge, Card, Table, Alert, Dialog, Alert Dialog, Tabs. Deferred: Sonner, Form, Textarea, Select, Checkbox, Switch, Popover, Pagination, Command.
+- Feature-page `emerald-*` / `amber-*` classes remain until 5E/5F. Do not restyle AppShell, Login, or module screens in 5A.
 
 ### Local seed accounts (API)
 
@@ -101,7 +110,7 @@ src/
 │   └── env.ts
 ├── features/
 ├── hooks/
-├── lib/                   # platform-context, legacy-redirects
+├── lib/                   # platform-context, legacy-redirects, status-semantics
 ├── providers/
 └── services/
 ```

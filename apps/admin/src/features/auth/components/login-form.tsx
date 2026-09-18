@@ -48,7 +48,7 @@ export function LoginForm() {
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex w-full flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex w-full max-w-sm flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">Email</Label>
         <Input

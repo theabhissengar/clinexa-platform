@@ -36,7 +36,7 @@ export function UserMenu() {
             type="button"
             variant="ghost"
             size="sm"
-            className="gap-2 px-2"
+            className="h-8 gap-2 px-1.5 sm:px-2"
             aria-label="User menu"
           />
         }
@@ -46,15 +46,18 @@ export function UserMenu() {
             {email ? initialsFromEmail(email) : "?"}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden max-w-40 truncate text-sm md:inline">
+        <span className="hidden max-w-36 truncate text-sm lg:inline">
           {email}
         </span>
-        <ChevronsUpDown className="size-3.5 text-muted-foreground" />
+        <ChevronsUpDown
+          className="hidden size-3.5 text-muted-foreground sm:block"
+          aria-hidden
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-normal">
-            <p className="truncate text-sm text-foreground">{email}</p>
+            <p className="truncate text-sm text-foreground">{email || "Signed in"}</p>
             <p className="text-xs text-muted-foreground">Signed in</p>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
@@ -64,7 +67,7 @@ export function UserMenu() {
             void logout();
           }}
         >
-          <LogOut />
+          <LogOut aria-hidden />
           Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>

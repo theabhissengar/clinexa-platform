@@ -77,10 +77,11 @@ Architecture SoT: [docs/18-crm.md §4 Application Shell](../../docs/18-crm.md#4-
 - Shared light/dark semantic tokens include `success`, `warning`, `info`, `hold`, and `destructive` (plus foreground pairs). CRM and Guardian must not fork palettes.
 - Status semantics: `src/lib/status-semantics.ts` + `StatusBadge` (`src/components/ui/status-badge.tsx`). Labels are required; color is supporting only. Feature pages are **not** migrated in 5A.
 - Unlisted preview: `/dev/design-system` (not in `nav-config`).
-- Installed primitives (base-nova / Base UI): Badge, Card, Table, Alert, Dialog, Alert Dialog, Tabs. Deferred: Sonner, Form, Textarea, Select, Checkbox, Switch, Popover, Pagination, Command.
+- Installed primitives (base-nova / Base UI): Badge, Card, Table, Alert, Dialog, Alert Dialog, Tabs, Sonner. Deferred: Form, Textarea, Select, Checkbox, Switch, Popover, Pagination, Command.
 - Feature-page `emerald-*` / `amber-*` classes remain until 5E/5F.
-- **Phase 5B / application shell:** chrome uses Phase 5A tokens only. Do not redesign feature pages, Login layout, PageHeader/PageBody (5C), or Command Center (5G) here.
-- **Laptop / desktop layout:** shell is persistent from 1024px; off-canvas below. Login stays a centered `max-w-sm` card (5A). Existing CRM/Guardian tables still use horizontal scroll (unchanged in 5B).
+- **Phase 5B / application shell:** chrome uses Phase 5A tokens only. Feature pages, Login layout, and Command Center (5G) are not redesigned here.
+- **Laptop / desktop layout:** shell is persistent from 1024px; off-canvas below. Login stays a centered `max-w-sm` card (5A). Existing CRM/Guardian tables still use horizontal scroll (unchanged in 5B/5C).
+- **Phase 5C / shared UX patterns:** reusable presentation components live in `src/components/patterns/` (`ClinexaPage`, `PageHeader`, `PageBody`, `DataTable`, `FilterBar`, empty/error/skeleton states, `ConfirmDialog`, `FormSection`, `FieldGrid`, `EntityDetailHeader`, `DetailSection`). Intended for Guardian/CRM assembly in 5E/5F. Feature screens, `window.confirm`, and local `Section` helpers are **not** migrated in 5C. `StatusBadge` stays in `src/components/ui/status-badge.tsx`. Search/pagination implementations moved to patterns with compatibility re-exports from their previous feature paths. Mutation feedback convention: success → toast; recoverable failure → toast and/or inline; blocking validation/API errors → inline. Do not use `richColors`. Unlisted preview: `/dev/design-system` (not in `nav-config`, not a product destination).
 
 ### Local seed accounts (API)
 
@@ -115,7 +116,8 @@ src/
 ├── components/
 │   ├── auth/
 │   ├── layout/            # AppShell, sidebar, header, switcher, nav-config
-│   └── ui/                # shadcn primitives
+│   ├── patterns/          # Phase 5C shared UX patterns (not feature pages)
+│   └── ui/                # shadcn primitives + StatusBadge
 ├── config/
 │   └── env.ts
 ├── features/

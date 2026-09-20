@@ -23,7 +23,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "prisma:seed:ui-dataset": "ts-node --compiler-options {\\\"module\\\":\\\"CommonJS\\\"} prisma/seed-dev-ui-modernization-dataset.ts",
+    "prisma:verify:ui-dataset": "ts-node --compiler-options {\\\"module\\\":\\\"CommonJS\\\"} prisma/verify-ui-modernization-dataset.ts"
   },
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"

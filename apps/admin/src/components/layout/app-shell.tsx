@@ -17,9 +17,9 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="overflow-hidden">
+      <SidebarInset className="min-w-0 overflow-hidden">
         <AppHeader />
-        <div className="flex flex-1 flex-col overflow-auto">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col overflow-auto">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

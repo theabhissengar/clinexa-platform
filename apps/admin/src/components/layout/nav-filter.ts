@@ -60,6 +60,28 @@ export function isNavItemActive(pathname: string, route: string): boolean {
   return pathname === route || pathname.startsWith(`${route}/`);
 }
 
+/**
+ * True only when this item is the longest catalog match for the pathname.
+ * Prefer for sidebar active highlighting so nested routes (e.g. payment-providers)
+ * do not also light the parent (Settings). Breadcrumbs keep findNavItemByPath.
+ */
+export function isNavItemSoleActive(
+  pathname: string,
+  item: NavItem,
+  siblings: readonly NavItem[],
+): boolean {
+  if (!isNavItemActive(pathname, item.route)) {
+    return false;
+  }
+  const longerMatch = siblings.some(
+    (other) =>
+      other.key !== item.key &&
+      other.route.length > item.route.length &&
+      isNavItemActive(pathname, other.route),
+  );
+  return !longerMatch;
+}
+
 export function findNavItemByPath(
   items: readonly NavItem[],
   pathname: string,

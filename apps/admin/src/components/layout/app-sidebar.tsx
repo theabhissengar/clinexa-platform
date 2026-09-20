@@ -2,14 +2,16 @@
 
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useId, useMemo, useState } from "react";
 
+import { BrandMark } from "@/components/layout/brand-mark";
 import { NAV_ITEMS, type NavItem } from "@/components/layout/nav-config";
 import {
   filterNavItems,
   groupNavItems,
   isNavItemActive,
+  isNavItemSoleActive,
   type NavGroupSection,
 } from "@/components/layout/nav-filter";
 import {
@@ -47,8 +49,9 @@ import { cn } from "@/lib/utils";
 export function AppSidebar() {
   const { can, canAny } = usePermissions();
   const pathname = usePathname();
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, isMobile, setOpenMobile } = useSidebar();
+  // Desktop cookie collapse must never drive flyouts inside the mobile Sheet.
+  const collapsed = !isMobile && state === "collapsed";
 
   const context = resolveContextFromPathname(pathname);
   const visibleNav = useMemo(() => {
@@ -57,6 +60,10 @@ export function AppSidebar() {
     }
     return filterNavItems(NAV_ITEMS, { context, can, canAny });
   }, [context, can, canAny]);
+
+  useEffect(() => {
+    setOpenMobile(false);
+  }, [pathname, setOpenMobile]);
 
   const brandHref = context ? CONTEXT_LANDING[context] : "/";
   const brandLabel = context ? CONTEXT_LABEL[context] : "Clinexa";
@@ -70,10 +77,9 @@ export function AppSidebar() {
               size="lg"
               render={<Link href={brandHref} />}
               tooltip="Clinexa"
+              aria-label={`Clinexa ${brandLabel}`}
             >
-              <span className="flex size-8 items-center justify-center rounded-md bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
-                C
-              </span>
+              <BrandMark />
               <span className="truncate font-semibold tracking-tight">
                 Clinexa
                 <span className="ml-1.5 text-xs font-normal text-sidebar-foreground/70">
@@ -112,7 +118,12 @@ function FlatNav({
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => (
-            <NavLinkItem key={item.key} item={item} pathname={pathname} />
+            <NavLinkItem
+              key={item.key}
+              item={item}
+              pathname={pathname}
+              siblings={items}
+            />
           ))}
         </SidebarMenu>
       </SidebarGroupContent>
@@ -139,8 +150,9 @@ function GuardianNav({
       {sections.map((section) => {
         const isOpen = expanded[section.key] ?? true;
         const sectionActive = section.items.some((item) =>
-          isNavItemActive(pathname, item.route),
+          isNavItemSoleActive(pathname, item, items),
         );
+        const panelId = `nav-section-${section.key}`;
 
         if (collapsed) {
           return (
@@ -149,6 +161,7 @@ function GuardianNav({
               section={section}
               sectionActive={sectionActive}
               pathname={pathname}
+              allItems={items}
             />
           );
         }
@@ -157,8 +170,10 @@ function GuardianNav({
           <SidebarGroup key={section.key}>
             <button
               type="button"
-              className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+              id={`${panelId}-trigger`}
+              className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left outline-none transition-colors duration-150 ease-out hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               aria-expanded={isOpen}
+              aria-controls={panelId}
               onClick={() =>
                 setExpanded((prev) => ({
                   ...prev,
@@ -171,20 +186,21 @@ function GuardianNav({
               </SidebarGroupLabel>
               <ChevronDown
                 className={cn(
-                  "size-3.5 shrink-0 text-sidebar-foreground/60 transition-transform",
+                  "size-3.5 shrink-0 text-sidebar-foreground/60 transition-transform duration-150 ease-out",
                   isOpen ? "rotate-0" : "-rotate-90",
                 )}
                 aria-hidden
               />
             </button>
             {isOpen ? (
-              <SidebarGroupContent>
+              <SidebarGroupContent id={panelId} role="region" aria-labelledby={`${panelId}-trigger`}>
                 <SidebarMenu>
                   {section.items.map((item) => (
                     <NavLinkItem
                       key={item.key}
                       item={item}
                       pathname={pathname}
+                      siblings={items}
                     />
                   ))}
                 </SidebarMenu>
@@ -201,13 +217,15 @@ function CollapsedGroupFlyout({
   section,
   sectionActive,
   pathname,
+  allItems,
 }: {
   section: NavGroupSection;
   sectionActive: boolean;
   pathname: string;
+  allItems: readonly NavItem[];
 }) {
-  const router = useRouter();
   const LeadIcon = section.items[0]?.icon;
+  const menuId = useId();
 
   return (
     <SidebarGroup>
@@ -220,30 +238,38 @@ function CollapsedGroupFlyout({
                   <SidebarMenuButton
                     isActive={sectionActive}
                     tooltip={section.label}
+                    aria-label={section.label}
+                    aria-haspopup="menu"
+                    aria-controls={menuId}
                   />
                 }
               >
-                {LeadIcon ? <LeadIcon /> : null}
+                {LeadIcon ? <LeadIcon aria-hidden /> : null}
                 <span>{section.label}</span>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="right" align="start" className="min-w-44">
+              <DropdownMenuContent
+                id={menuId}
+                side="right"
+                align="start"
+                className="min-w-44"
+              >
                 <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
                   {section.label}
                 </div>
                 {section.items.map((item) => {
                   const Icon = item.icon;
-                  const active = isNavItemActive(pathname, item.route);
+                  const active = isNavItemSoleActive(pathname, item, allItems);
                   return (
                     <DropdownMenuItem
                       key={item.key}
-                      className="gap-2"
-                      onClick={() => {
-                        if (!active) {
-                          router.push(item.route);
-                        }
-                      }}
+                      className={cn(
+                        "gap-2",
+                        active && "bg-accent font-medium text-accent-foreground",
+                      )}
+                      render={<Link href={item.route} />}
+                      aria-current={active ? "page" : undefined}
                     >
-                      <Icon className="size-3.5" />
+                      <Icon className="size-3.5" aria-hidden />
                       <span>{item.title}</span>
                     </DropdownMenuItem>
                   );
@@ -260,12 +286,14 @@ function CollapsedGroupFlyout({
 function NavLinkItem({
   item,
   pathname,
+  siblings,
 }: {
   item: NavItem;
   pathname: string;
+  siblings: readonly NavItem[];
 }) {
   const Icon = item.icon;
-  const active = isNavItemActive(pathname, item.route);
+  const active = isNavItemSoleActive(pathname, item, siblings);
 
   return (
     <SidebarMenuItem>
@@ -275,7 +303,7 @@ function NavLinkItem({
         disabled={item.disabled}
         render={<Link href={item.route} />}
       >
-        <Icon />
+        <Icon aria-hidden />
         <span>{item.title}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>

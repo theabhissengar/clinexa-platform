@@ -371,16 +371,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Modernize the complete Guardian and CRM user experience after major functional modules are complete |
-| **Status** | In progress (Phase 5A complete; Phase 5B application shell in progress; 5C–5H not started) |
+| **Status** | In progress (Phase 5A complete; Phase 5B complete; Phase 5C shared patterns in progress; 5D–5H not started) |
 | **Owner** | Platform architecture / Frontend |
-| **Branch** | `feature/ui-modernization-5b-application-shell` |
+| **Branch** | `feature/ui-modernization-5c-shared-patterns` |
 | **PR** | — |
 | **Dependencies** | Major Guardian and CRM functional modules delivered (not gated on P8 alone) |
 | **Scope** | Navigation improvements, dashboard redesign, table/form polish, global search, favorites, pinned modules, keyboard shortcuts, responsive, accessibility, design polish, animations, loading states, usability — **no detailed UI plan in P8** |
 | **Architecture changes** | Additive UX only; must not fork the shared shell (`UI-011`) |
 | **Documentation updates** | Tracker status when started; design-system notes as needed |
-| **Notes** | **5A complete** on `dev` (`feature/ui-modernization-5a-design-system`): shared tokens, `StatusBadge` registry, justified shadcn primitives, shared `ThemeToggle` on `/login`. **5B in progress** on `feature/ui-modernization-5b-application-shell`: shared shell chrome only (AppShell, sidebar, header, switcher, theme, user menu, breadcrumbs, BrandMark). Off-canvas below 1024px (`useIsMobile` sole consumer is Sidebar). Mobile Sheet closes on navigate; collapsed desktop never drives flyouts in the Sheet. Active nav uses longest-match + accent bar (not color alone). Breadcrumbs collapse only the redundant Guardian group on narrow widths. `nav-config` routes/permissions unchanged. Deferred to later slices: 5C PageBody/PageHeader patterns; 5D Login redesign; 5E/5F feature pages; 5G Command Center; 5H a11y/regression. Feature `emerald-*`/`amber-*` remain until 5E/5F. Unlisted preview: `/dev/design-system`. |
-| **Verification** | Shared shell remains one product; no module-private design systems; lint/typecheck/build for admin |
+| **Notes** | **5A complete** on `dev` (`feature/ui-modernization-5a-design-system`): shared tokens, `StatusBadge` registry, justified shadcn primitives, shared `ThemeToggle` on `/login`. **5B complete** on `dev` (`feature/ui-modernization-5b-application-shell`, PR #87): shared shell chrome only (AppShell, sidebar, header, switcher, theme, user menu, breadcrumbs, BrandMark). Off-canvas below 1024px (`useIsMobile` sole consumer is Sidebar). **5C in progress** on `feature/ui-modernization-5c-shared-patterns`: reusable patterns under `apps/admin/src/components/patterns/` (`ClinexaPage`, `PageHeader`, `PageBody`, `DataTable`, `FilterBar`, `EmptyState`, `ErrorState`, skeletons, `ConfirmDialog`, `FormSection`, `FieldGrid`, `EntityDetailHeader`, `DetailSection`). Search/pagination (`ClearableSearchInput`, `ListPaginationBar`, `ModuleDetailSearch`) moved into patterns with compatibility re-exports. `StatusBadge` remains in `components/ui/`. Sonner Toaster mounted once (no `richColors`); no mutation toasts added to feature pages. Guardian/CRM/Login screens are **not** migrated; `/dev/design-system` is the only 5C consumer. Deferred: 5D Login redesign; 5E/5F feature adoption of these patterns; 5G Command Center; 5H a11y/regression. Feature `emerald-*`/`amber-*` remain until 5E/5F. |
+| **Verification** | Shared shell remains one product; no module-private design systems; lint/typecheck/build for admin; `/dev/design-system` exercises 5C patterns with mock data only |
 
 ### PF — Future work
 
@@ -551,6 +551,7 @@ A phase is complete when all of the following hold.
 | 2.17 | 2026-09-18 | Platform Engineering | P10 In progress on `feature/ui-modernization-5a-design-system`: Phase 5A design-system foundation (tokens, StatusBadge registry, justified shadcn primitives). 5B–5H not started |
 | 2.18 | 2026-09-18 | Platform Engineering | 5A follow-up: shared ThemeToggle on `/login`; laptop/desktop layout notes for 5A surfaces |
 | 2.19 | 2026-09-20 | Platform Engineering | P10 Phase 5B on `feature/ui-modernization-5b-application-shell`: shared shell modernization (sidebar/header/switcher/theme/user/breadcrumbs; off-canvas &lt;1024px; no feature-page or Login redesign) |
+| 2.20 | 2026-09-20 | Platform Engineering | P10 Phase 5C on `feature/ui-modernization-5c-shared-patterns`: shared UX patterns under `components/patterns/`; search/pagination moved with compatibility re-exports; Sonner mounted; `/dev/design-system` verification only; Guardian/CRM/Login not migrated; 5D–5H remain incomplete |
 
 ---
 

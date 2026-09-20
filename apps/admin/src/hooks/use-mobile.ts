@@ -1,6 +1,7 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
+/** Shell off-canvas breakpoint (NAV-120/121). Persistent sidebar from 1024px. */
+const MOBILE_BREAKPOINT = 1024
 
 function subscribe(onStoreChange: () => void) {
   const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)

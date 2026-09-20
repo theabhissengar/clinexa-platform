@@ -41,10 +41,17 @@ Copy [`.env.example`](.env.example) to `.env.local` before starting. Public envi
 
 **One shell serves both contexts.** Protected routes render through `(protected)/layout` → `AppShell`:
 
-- **AppShell** — composition only (`SidebarProvider` + sidebar + inset + header)
-- **AppSidebar** — renders `nav-config` filtered by **active context**, then by permission (do not edit for routine module adds)
-- **AppHeader** — trigger, breadcrumbs, **Application Switcher** (CRM | Guardian), theme toggle, user menu
+- **AppShell** — composition only (`SidebarProvider` + sidebar + inset + header); content canvas uses `min-w-0` to prevent horizontal overflow
+- **AppSidebar** — renders `nav-config` filtered by **active context**, then by permission (do not edit for routine module adds). CRM is flat; Guardian is grouped. Collapsed desktop uses flyout menus for Guardian groups; mobile Sheet never uses those flyouts
+- **BrandMark** — reusable “C” chip (`sidebar-primary` tokens) in the sidebar header
+- **AppHeader** — trigger, breadcrumbs, **Application Switcher** (CRM | Guardian), theme toggle, user menu (~56px)
 - **nav-config** — single source of truth for titles, routes, icons, permissions, order, **context**, and **group**
+
+**Responsive shell (Phase 5B):**
+
+- **&lt; 1024px:** off-canvas Sheet sidebar (`useIsMobile` → 1024; Sidebar `lg:` visibility). Sheet closes on route change
+- **≥ 1024px:** persistent collapsible sidebar (expanded `16rem` / icon `3rem`; mobile Sheet `18rem`)
+- Breadcrumbs: nowrap + truncate; on narrow widths collapse only the redundant Guardian **group** label (context root + current page always remain)
 
 The Application Switcher replaces the `VendorSwitcher` placeholder. Switching context changes navigation and URL prefix only: same session, same theme, no re-authentication. It is permission-aware — a context the user cannot access is not offered. Vendor switching remains a separate, later concern and must not reuse this control's meaning.
 
@@ -71,8 +78,9 @@ Architecture SoT: [docs/18-crm.md §4 Application Shell](../../docs/18-crm.md#4-
 - Status semantics: `src/lib/status-semantics.ts` + `StatusBadge` (`src/components/ui/status-badge.tsx`). Labels are required; color is supporting only. Feature pages are **not** migrated in 5A.
 - Unlisted preview: `/dev/design-system` (not in `nav-config`).
 - Installed primitives (base-nova / Base UI): Badge, Card, Table, Alert, Dialog, Alert Dialog, Tabs. Deferred: Sonner, Form, Textarea, Select, Checkbox, Switch, Popover, Pagination, Command.
-- Feature-page `emerald-*` / `amber-*` classes remain until 5E/5F. Do not restyle AppShell or module screens in 5A.
-- **Laptop / desktop layout (5A surfaces):** login stays a centered `max-w-sm` card from ~1024px laptops through large monitors (MacBook 13/14/16 CSS widths ~1280–1728, Windows 1366/1920). Horizontal padding is `px-4` then `sm:px-6`; extra top padding keeps the theme control from overlapping the title on narrow widths. `/dev/design-system` uses `min-w-0` + wrapping rows so status labels do not overflow. Existing CRM/Guardian tables still use horizontal scroll (unchanged in 5A).
+- Feature-page `emerald-*` / `amber-*` classes remain until 5E/5F.
+- **Phase 5B / application shell:** chrome uses Phase 5A tokens only. Do not redesign feature pages, Login layout, PageHeader/PageBody (5C), or Command Center (5G) here.
+- **Laptop / desktop layout:** shell is persistent from 1024px; off-canvas below. Login stays a centered `max-w-sm` card (5A). Existing CRM/Guardian tables still use horizontal scroll (unchanged in 5B).
 
 ### Local seed accounts (API)
 

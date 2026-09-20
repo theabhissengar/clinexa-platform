@@ -28,7 +28,7 @@ function assertDevEnvironment(): void {
   }
 }
 
-async function ensureSubscriptionCatalog(prisma: PrismaClient) {
+export async function ensureSubscriptionCatalog(prisma: PrismaClient) {
   const weightCategory = await prisma.category.findUnique({
     where: { slug: 'weight-management' },
   });

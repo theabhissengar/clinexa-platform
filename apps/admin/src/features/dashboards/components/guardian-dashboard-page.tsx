@@ -3,7 +3,6 @@
 import {
   Boxes,
   Package,
-  Repeat,
   ShoppingCart,
   Users,
   Warehouse,

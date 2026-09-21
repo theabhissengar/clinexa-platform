@@ -235,7 +235,10 @@ export function CrmDashboardInsights({
 }: CrmDashboardInsightsProps) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
-  const renewalItems = renewals.data?.items ?? [];
+  const renewalItems = useMemo(
+    () => renewals.data?.items ?? [],
+    [renewals.data?.items],
+  );
   const { days, map: renewalsByDay } = useMemo(
     () => groupRenewalsByDay(renewalItems),
     [renewalItems],

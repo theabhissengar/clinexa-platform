@@ -111,9 +111,14 @@ export function AppSwitchLoaderProvider({ children }: { children: ReactNode }) {
       return;
     }
     const arrived = resolveContextFromPathname(pathname);
-    if (arrived === pendingTarget) {
-      finish();
+    if (arrived !== pendingTarget) {
+      return;
     }
+    // Defer so we don't call setState synchronously inside the effect body.
+    const timer = setTimeout(() => {
+      finish();
+    }, 0);
+    return () => clearTimeout(timer);
   }, [pathname, pendingTarget, finish]);
 
   useEffect(() => () => clearTimers(), [clearTimers]);

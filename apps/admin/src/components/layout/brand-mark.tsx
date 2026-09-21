@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 
 type BrandMarkProps = {
   className?: string;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "xl";
 };
 
 /**
@@ -15,11 +15,13 @@ export function BrandMark({ className, size = "md" }: BrandMarkProps) {
       aria-hidden
       className={cn(
         "flex shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-semibold text-sidebar-primary-foreground",
-        size === "lg"
-          ? "size-12 text-lg"
-          : size === "sm"
-            ? "size-7 text-xs"
-            : "size-8 text-sm",
+        size === "xl"
+          ? "size-16 rounded-xl text-2xl sm:size-20 sm:text-3xl"
+          : size === "lg"
+            ? "size-12 text-lg"
+            : size === "sm"
+              ? "size-7 text-xs"
+              : "size-8 text-sm",
         className,
       )}
     >

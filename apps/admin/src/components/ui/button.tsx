@@ -48,17 +48,25 @@ function Button({
   loading = false,
   disabled,
   children,
+  render,
+  nativeButton,
   ...props
 }: ButtonPrimitive.Props &
   VariantProps<typeof buttonVariants> & {
     loading?: boolean
   }) {
+  // Base UI defaults nativeButton=true. When `render` swaps in a Link/<a>,
+  // that must be false or it warns and drops native button semantics.
+  const resolvedNativeButton = nativeButton ?? render == null
+
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      render={render}
+      nativeButton={resolvedNativeButton}
       {...props}
     >
       {loading ? (

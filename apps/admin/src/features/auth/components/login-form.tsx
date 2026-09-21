@@ -1,15 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { isAxiosError } from "axios";
+import { CircleAlert, Eye, EyeOff } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CONTEXT_LANDING, type PlatformContext } from "@/lib/platform-context";
 import { useAuth } from "@/providers/auth-provider";
 
 const loginSchema = z.object({
@@ -19,10 +22,17 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export function LoginForm() {
+type LoginFormProps = {
+  destination: PlatformContext;
+};
+
+export function LoginForm({ destination }: LoginFormProps) {
   const { login } = useAuth();
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const emailErrorId = useId();
+  const passwordErrorId = useId();
 
   const {
     register,
@@ -37,7 +47,9 @@ export function LoginForm() {
     setFormError(null);
     try {
       await login(values);
-      router.replace("/");
+      // Intentional 5D destination override for this submit only.
+      // Authenticated visits to `/login` still go to `/` (NAV-107).
+      router.replace(CONTEXT_LANDING[destination]);
     } catch (error) {
       if (isAxiosError(error) && error.response?.status === 401) {
         setFormError("Invalid email or password");
@@ -48,7 +60,7 @@ export function LoginForm() {
   });
 
   return (
-    <form onSubmit={onSubmit} className="flex w-full max-w-sm flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex w-full flex-col gap-4">
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">Email</Label>
         <Input
@@ -56,35 +68,65 @@ export function LoginForm() {
           type="email"
           autoComplete="username"
           aria-invalid={Boolean(errors.email)}
+          aria-describedby={errors.email ? emailErrorId : undefined}
           {...register("email")}
         />
         {errors.email ? (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
+          <p id={emailErrorId} className="text-sm text-destructive">
+            {errors.email.message}
+          </p>
         ) : null}
       </div>
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="password">Password</Label>
-        <Input
-          id="password"
-          type="password"
-          autoComplete="current-password"
-          aria-invalid={Boolean(errors.password)}
-          {...register("password")}
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            type={passwordVisible ? "text" : "password"}
+            autoComplete="current-password"
+            aria-invalid={Boolean(errors.password)}
+            aria-describedby={errors.password ? passwordErrorId : undefined}
+            className="pr-9"
+            {...register("password")}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-1/2 right-0.5 -translate-y-1/2"
+            aria-label={passwordVisible ? "Hide password" : "Show password"}
+            aria-pressed={passwordVisible}
+            onClick={() => setPasswordVisible((visible) => !visible)}
+          >
+            {passwordVisible ? (
+              <EyeOff aria-hidden />
+            ) : (
+              <Eye aria-hidden />
+            )}
+          </Button>
+        </div>
         {errors.password ? (
-          <p className="text-sm text-destructive">{errors.password.message}</p>
+          <p id={passwordErrorId} className="text-sm text-destructive">
+            {errors.password.message}
+          </p>
         ) : null}
       </div>
 
       {formError ? (
-        <p className="text-sm text-destructive" role="alert">
-          {formError}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
       ) : null}
 
-      <Button type="submit" disabled={isSubmitting} className="mt-2 w-full">
-        {isSubmitting ? "Signing in…" : "Sign in"}
+      <Button
+        type="submit"
+        loading={isSubmitting}
+        aria-label={isSubmitting ? "Signing in" : undefined}
+        className="w-full"
+      >
+        Sign in
       </Button>
     </form>
   );

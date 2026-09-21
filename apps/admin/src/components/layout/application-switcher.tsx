@@ -14,16 +14,10 @@ import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import {
   CONTEXT_LABEL,
   CONTEXT_LANDING,
-  PlatformContexts,
+  PLATFORM_CONTEXT_LIST,
   canAccessContext,
   resolveContextFromPathname,
-  type PlatformContext,
 } from "@/lib/platform-context";
-
-const SWITCHER_CONTEXTS: readonly PlatformContext[] = [
-  PlatformContexts.CRM,
-  PlatformContexts.GUARDIAN,
-];
 
 /**
  * Application Switcher — CRM | Guardian (NAV-100–104).
@@ -36,7 +30,7 @@ export function ApplicationSwitcher() {
   const { can } = usePermissions();
 
   const active = resolveContextFromPathname(pathname);
-  const accessible = SWITCHER_CONTEXTS.filter((context) =>
+  const accessible = PLATFORM_CONTEXT_LIST.filter((context) =>
     canAccessContext(context, can),
   );
 

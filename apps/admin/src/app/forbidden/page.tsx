@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 
+import { BrandMark } from "@/components/layout/brand-mark";
+import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
-import { useAuth } from "@/providers/auth-provider";
 import { resolveDefaultLanding } from "@/lib/platform-context";
+import { useAuth } from "@/providers/auth-provider";
 
 export default function ForbiddenPage() {
   const { status } = useAuth();
@@ -16,25 +18,25 @@ export default function ForbiddenPage() {
       : "/login";
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
-      <div className="mx-auto max-w-md text-center">
-        <p className="text-sm font-medium tracking-wide text-muted-foreground uppercase">
+    <main className="flex min-h-dvh flex-1 flex-col items-center justify-center px-4 py-16 sm:px-6">
+      <div className="mx-auto flex max-w-md flex-col items-center text-center">
+        <BrandMark />
+        <p className="mt-6 text-sm font-medium tracking-wide text-muted-foreground uppercase">
           Access denied
         </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+        <h1 className="mt-3 font-heading text-h1 font-semibold tracking-tight">
           Forbidden
         </h1>
-        <p className="mt-3 text-base text-muted-foreground">
+        <p className="mt-3 text-sm text-muted-foreground">
           You are signed in but do not have permission to view this resource.
         </p>
-        <div className="mt-8 flex justify-center gap-3">
-          <Link
-            href={homeHref}
-            className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/80"
-          >
-            {status === "authenticated" ? "Go home" : "Sign in"}
-          </Link>
-        </div>
+        <Button
+          className="mt-8"
+          nativeButton={false}
+          render={<Link href={homeHref} />}
+        >
+          {status === "authenticated" ? "Go home" : "Sign in"}
+        </Button>
       </div>
     </main>
   );

@@ -2,12 +2,12 @@ import { cn } from "@/lib/utils";
 
 type BrandMarkProps = {
   className?: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 };
 
 /**
- * Minimal Clinexa "C" brand mark for shell chrome.
- * Uses Phase 5A sidebar-primary tokens (light/dark). Login usage deferred to 5D.
+ * Minimal Clinexa "C" brand mark for shell chrome and login.
+ * Uses Phase 5A sidebar-primary tokens (light/dark).
  */
 export function BrandMark({ className, size = "md" }: BrandMarkProps) {
   return (
@@ -15,7 +15,11 @@ export function BrandMark({ className, size = "md" }: BrandMarkProps) {
       aria-hidden
       className={cn(
         "flex shrink-0 items-center justify-center rounded-md bg-sidebar-primary font-semibold text-sidebar-primary-foreground",
-        size === "sm" ? "size-7 text-xs" : "size-8 text-sm",
+        size === "lg"
+          ? "size-12 text-lg"
+          : size === "sm"
+            ? "size-7 text-xs"
+            : "size-8 text-sm",
         className,
       )}
     >

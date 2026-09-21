@@ -36,6 +36,12 @@ export const CONTEXT_LANDING: Record<PlatformContext, string> = {
   guardian: "/guardian",
 };
 
+/** Ordered Internal Platform contexts (shell switcher + login selector). */
+export const PLATFORM_CONTEXT_LIST: readonly PlatformContext[] = [
+  PlatformContexts.CRM,
+  PlatformContexts.GUARDIAN,
+];
+
 /** Roles that prefer Guardian as the default post-login context (NAV-107). */
 const GUARDIAN_DEFAULT_ROLES: ReadonlySet<string> = new Set<RoleCode>([
   Roles.ADMINISTRATOR,

@@ -1,10 +1,34 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClearableSearchInput,
+  ClinexaPage,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  FilterBarGroup,
+  FilterBarRow,
+  ListPaginationBar,
+  PageBody,
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderCopy,
+  PageHeaderDescription,
+  PageHeaderTitle,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import { Permissions } from "@/features/auth/permissions";
 import { listAdminOrders } from "@/features/orders/api/admin-orders-api";
@@ -19,8 +43,7 @@ import type {
   OrderStatus,
   OrderType,
 } from "@/features/orders/types";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
+import { cn } from "@/lib/utils";
 
 const STATUS_TABS: Array<{ key: OrderStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "All" },
@@ -103,7 +126,6 @@ export function GuardianOrdersListPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canCreate = can(Permissions.ORD_CREATE);
@@ -173,259 +195,277 @@ export function GuardianOrdersListPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+    <ClinexaPage width="wide" className="gap-6">
+      <PageHeader>
+        <PageHeaderCopy>
+          <PageHeaderTitle>Orders</PageHeaderTitle>
+          <PageHeaderDescription>
             Administrative order management (Class D): create, archive, restore,
             soft-delete, financial corrections, and overrides.
-          </p>
-        </div>
+          </PageHeaderDescription>
+        </PageHeaderCopy>
         {canCreate ? (
-          <Button size="sm" render={<Link href="/guardian/orders/new" />}>
-            Create order
-          </Button>
+          <PageHeaderActions>
+            <Button size="sm" render={<Link href="/guardian/orders/new" />}>
+              Create order
+            </Button>
+          </PageHeaderActions>
         ) : null}
-      </div>
+      </PageHeader>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const active = appliedStatus === tab.key;
-            const count =
-              tab.key === "ALL" ? statusCounts.ALL : statusCounts[tab.key];
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
+      <PageBody>
+        <FilterBar>
+          <FilterBarRow>
+            <FilterBarGroup className="flex-wrap gap-x-3 gap-y-1 text-sm">
+              {STATUS_TABS.map((tab, index) => {
+                const active = appliedStatus === tab.key;
+                const count =
+                  tab.key === "ALL" ? statusCounts.ALL : statusCounts[tab.key];
+                return (
+                  <span
+                    key={tab.key}
+                    className="inline-flex items-center gap-3"
+                  >
+                    {index > 0 ? (
+                      <span className="text-muted-foreground/40">|</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        writeParams({
+                          status: tab.key === "ALL" ? null : tab.key,
+                          page: "1",
+                        })
+                      }
+                      className={cn(
+                        active
+                          ? "font-medium text-foreground"
+                          : "text-primary hover:underline",
+                      )}
+                    >
+                      {tab.label}
+                      {typeof count === "number" ? (
+                        <span className="ml-1 text-muted-foreground">
+                          ({count})
+                        </span>
+                      ) : null}
+                    </button>
+                  </span>
+                );
+              })}
+            </FilterBarGroup>
+            <FilterBarGroup>
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  applySearch();
+                }}
+              >
+                <ClearableSearchInput
+                  value={draftQ}
+                  onChange={setDraftQ}
+                  onClear={() => {
+                    setDraftQ("");
+                    if (appliedQ) writeParams({ q: null, page: "1" });
+                  }}
+                  placeholder="Search orders"
+                  className="w-52"
+                  aria-label="Search orders"
+                />
+                <Button type="submit" size="sm" variant="outline">
+                  Search
+                </Button>
+              </form>
+            </FilterBarGroup>
+          </FilterBarRow>
+          <FilterBarRow>
+            <FilterBarGroup className="flex flex-wrap items-end gap-3 text-sm">
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Order type</span>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-2"
+                  value={appliedType}
+                  onChange={(event) =>
                     writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
+                      orderType:
+                        event.target.value === "ALL" ? null : event.target.value,
                       page: "1",
                     })
                   }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
+                >
+                  {TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Archived</span>
+                <select
+                  className="h-9 rounded-md border border-input bg-background px-2"
+                  value={appliedArchived}
+                  onChange={(event) =>
+                    writeParams({
+                      archived: event.target.value,
+                      page: "1",
+                    })
                   }
                 >
-                  {tab.label}
-                  {typeof count === "number" ? (
-                    <span className="ml-1 text-muted-foreground">({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applySearch();
-          }}
+                  {ARCHIVED_OPTIONS.map((opt) => (
+                    <option key={opt.key} value={opt.key}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Created from</span>
+                <input
+                  type="date"
+                  className="h-9 rounded-md border border-input bg-background px-2"
+                  value={appliedFrom.slice(0, 10)}
+                  onChange={(event) =>
+                    writeParams({
+                      createdFrom: event.target.value
+                        ? new Date(event.target.value).toISOString()
+                        : null,
+                      page: "1",
+                    })
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">Created to</span>
+                <input
+                  type="date"
+                  className="h-9 rounded-md border border-input bg-background px-2"
+                  value={appliedTo.slice(0, 10)}
+                  onChange={(event) =>
+                    writeParams({
+                      createdTo: event.target.value
+                        ? new Date(
+                            `${event.target.value}T23:59:59.999Z`,
+                          ).toISOString()
+                        : null,
+                      page: "1",
+                    })
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-2 pb-2">
+                <input
+                  type="checkbox"
+                  checked={includeDeleted}
+                  onChange={(event) =>
+                    writeParams({
+                      includeDeleted: event.target.checked ? "1" : null,
+                      page: "1",
+                    })
+                  }
+                />
+                <span className="text-muted-foreground">Include deleted</span>
+              </label>
+            </FilterBarGroup>
+          </FilterBarRow>
+        </FilterBar>
+
+        <DataTable
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No orders found"
+              description="Try a different search or status filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load orders">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
         >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search orders"
-            className="w-52"
-            aria-label="Search orders"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search
-          </Button>
-        </form>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Order type</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedType}
-            onChange={(event) =>
-              writeParams({
-                orderType:
-                  event.target.value === "ALL" ? null : event.target.value,
-                page: "1",
-              })
-            }
-          >
-            {TYPE_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Archived</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedArchived}
-            onChange={(event) =>
-              writeParams({
-                archived: event.target.value,
-                page: "1",
-              })
-            }
-          >
-            {ARCHIVED_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Created from</span>
-          <input
-            type="date"
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedFrom.slice(0, 10)}
-            onChange={(event) =>
-              writeParams({
-                createdFrom: event.target.value
-                  ? new Date(event.target.value).toISOString()
-                  : null,
-                page: "1",
-              })
-            }
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Created to</span>
-          <input
-            type="date"
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedTo.slice(0, 10)}
-            onChange={(event) =>
-              writeParams({
-                createdTo: event.target.value
-                  ? new Date(
-                      `${event.target.value}T23:59:59.999Z`,
-                    ).toISOString()
-                  : null,
-                page: "1",
-              })
-            }
-          />
-        </label>
-        <label className="flex items-center gap-2 pb-2">
-          <input
-            type="checkbox"
-            checked={includeDeleted}
-            onChange={(event) =>
-              writeParams({
-                includeDeleted: event.target.checked ? "1" : null,
-                page: "1",
-              })
-            }
-          />
-          <span className="text-muted-foreground">Include deleted</span>
-        </label>
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading orders…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No orders found.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Order</th>
-                <th className="px-3 py-2 font-medium">Customer</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Total</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium">Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((order) => {
-                const href = `/guardian/orders/${order.id}${
-                  searchParams.toString()
-                    ? `?return=${encodeURIComponent(`?${searchParams.toString()}`)}`
-                    : ""
-                }`;
-                return (
-                  <tr
-                    key={order.id}
-                    className={
-                      hoveredId === order.id
-                        ? "border-b border-border bg-muted/30"
-                        : "border-b border-border"
-                    }
-                    onMouseEnter={() => setHoveredId(order.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  >
-                    <td className="px-3 py-2">
-                      <Link
-                        href={href}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {order.orderNumber}
-                      </Link>
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {order.archivedAt ? (
-                          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                            Archived
-                          </span>
-                        ) : null}
-                        {order.deletedAt ? (
-                          <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
-                            Deleted
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div>{customerLabel(order)}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {order.customerEmail ?? "—"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">{statusLabel(order.status)}</td>
-                    <td className="px-3 py-2">{statusLabel(order.orderType)}</td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {formatMoneyCents(order.totalCents, order.currency)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {formatDateTime(order.createdAt)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {formatDateTime(order.updatedAt)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: String(page) })}
-        onNext={() => writeParams({ page: String(page + 2) })}
-      />
-    </main>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Order</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Total</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead>Updated</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((order) => {
+              const href = `/guardian/orders/${order.id}${
+                searchParams.toString()
+                  ? `?return=${encodeURIComponent(`?${searchParams.toString()}`)}`
+                  : ""
+              }`;
+              return (
+                <TableRow key={order.id} className="align-top">
+                  <TableCell>
+                    <Link
+                      href={href}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      {order.orderNumber}
+                    </Link>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {order.archivedAt ? (
+                        <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Archived
+                        </span>
+                      ) : null}
+                      {order.deletedAt ? (
+                        <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs text-destructive">
+                          Deleted
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div>{customerLabel(order)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {order.customerEmail ?? "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={order.status} />
+                  </TableCell>
+                  <TableCell>{statusLabel(order.orderType)}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMoneyCents(order.totalCents, order.currency)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(order.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(order.updatedAt)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

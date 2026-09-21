@@ -14,7 +14,7 @@ import {
   formatDateTime,
   getErrorMessage,
   parseJsonObject,
-  statusLabel,
+  productStatusLabel,
 } from "@/features/subscriptions/lib/format";
 import type { SubscriptionDetail } from "@/features/subscriptions/types";
 import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
@@ -129,9 +129,9 @@ export function GuardianSubscriptionEditPage() {
           Edit administrative fields
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Status {statusLabel(row.status)} · updated {formatDateTime(row.updatedAt)}.
-          Product/customer snapshots, clinical requirement, and payment
-          execution are not editable here.
+          Status {productStatusLabel(row.status)} · updated{" "}
+          {formatDateTime(row.updatedAt)}. Product/customer snapshots, clinical
+          requirement, and payment execution are not editable here.
         </p>
       </div>
 

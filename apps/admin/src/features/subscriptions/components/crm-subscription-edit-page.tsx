@@ -4,9 +4,24 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClinexaPage,
+  EntityDetailLeading,
+  ErrorState,
+  FieldGrid,
+  FormSection,
+  PageBody,
+  PageHeader,
+  PageHeaderCopy,
+  PageHeaderDescription,
+  PageHeaderMeta,
+  PageHeaderTitle,
+  PageSkeleton,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { PaymentMethodSelect } from "@/features/payments/components/payment-method-select";
 import {
   getCrmSubscription,
@@ -15,7 +30,6 @@ import {
 import {
   formatDateTime,
   getErrorMessage,
-  statusLabel,
 } from "@/features/subscriptions/lib/format";
 import type { SubscriptionDetail } from "@/features/subscriptions/types";
 import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
@@ -117,137 +131,149 @@ export function CrmSubscriptionEditPage() {
 
   if (loading) {
     return (
-      <main className="px-6 py-10 text-sm text-muted-foreground">
-        Loading subscription…
-      </main>
+      <ClinexaPage width="form">
+        <PageSkeleton />
+      </ClinexaPage>
     );
   }
 
   if (!row) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <p className="text-sm text-destructive">
+      <ClinexaPage width="form" className="gap-4">
+        <ErrorState title="Unable to load subscription">
           {error ?? "Subscription not found."}
-        </p>
+        </ErrorState>
         <Link
           href="/crm/subscriptions"
-          className="mt-3 inline-block text-sm underline"
+          className="text-sm text-primary underline-offset-4 hover:underline"
         >
           Back to subscriptions
         </Link>
-      </main>
+      </ClinexaPage>
     );
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div>
-        <Link
-          href={`/crm/subscriptions/${row.id}`}
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-        >
-          ← {row.subscriptionNumber ?? row.id}
-        </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-          Edit operational fields
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Status {statusLabel(row.status)} · updated {formatDateTime(row.updatedAt)}.
-          Timeline edits update the subscription schedule source of truth.
+    <ClinexaPage width="form" className="gap-6">
+      <PageHeader>
+        <PageHeaderCopy>
+          <EntityDetailLeading>
+            <Link
+              href={`/crm/subscriptions/${row.id}`}
+              className="underline-offset-4 hover:underline"
+            >
+              ← {row.subscriptionNumber ?? row.id}
+            </Link>
+          </EntityDetailLeading>
+          <PageHeaderTitle>Edit operational fields</PageHeaderTitle>
+          <PageHeaderMeta>
+            <StatusBadge status={row.status} />
+            <span className="text-sm text-muted-foreground">
+              updated {formatDateTime(row.updatedAt)}
+            </span>
+          </PageHeaderMeta>
+          <PageHeaderDescription>
+            Timeline edits update the subscription schedule source of truth.
+          </PageHeaderDescription>
+        </PageHeaderCopy>
+      </PageHeader>
+
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
         </p>
-      </div>
+      ) : null}
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <form className="space-y-4" onSubmit={onSubmit}>
-        <div className="space-y-1">
-          <Label htmlFor="shippingNotes">Shipping preference notes</Label>
-          <textarea
-            id="shippingNotes"
-            className="min-h-24 w-full rounded-md border border-input bg-background p-2 text-sm"
-            value={shippingNotes}
-            onChange={(event) => setShippingNotes(event.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="opsFlags">Ops flags (JSON object)</Label>
-          <textarea
-            id="opsFlags"
-            className="min-h-24 w-full rounded-md border border-input bg-background p-2 font-mono text-sm"
-            value={opsFlagsText}
-            onChange={(event) => setOpsFlagsText(event.target.value)}
-            placeholder='{"holdShipment": true}'
-          />
-        </div>
-        <AdminTagsEditor
-          key={row.id}
-          value={adminTags}
-          onChange={setAdminTags}
-        />
-
-        <div className="rounded-md border border-border p-3">
-          <div className="mb-3 text-sm font-medium">Payment timeline</div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="currentPeriodStart">Current period start</Label>
-              <Input
-                id="currentPeriodStart"
-                type="datetime-local"
-                value={currentPeriodStart}
-                onChange={(e) => setCurrentPeriodStart(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="currentPeriodEnd">Current period end</Label>
-              <Input
-                id="currentPeriodEnd"
-                type="datetime-local"
-                value={currentPeriodEnd}
-                onChange={(e) => setCurrentPeriodEnd(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="nextRenewalAt">Next renewal</Label>
-              <Input
-                id="nextRenewalAt"
-                type="datetime-local"
-                value={nextRenewalAt}
-                onChange={(e) => setNextRenewalAt(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="endsAt">Ends at</Label>
-              <Input
-                id="endsAt"
-                type="datetime-local"
-                value={endsAt}
-                onChange={(e) => setEndsAt(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="mt-3">
-            <PaymentMethodSelect
-              userId={row.patientUserId}
-              value={paymentMethodId}
-              onChange={setPaymentMethodId}
-              context="crm"
+      <PageBody>
+        <form className="space-y-4" onSubmit={onSubmit}>
+          <div className="space-y-1">
+            <Label htmlFor="shippingNotes">Shipping preference notes</Label>
+            <textarea
+              id="shippingNotes"
+              className="min-h-24 w-full rounded-lg border border-input bg-background p-2 text-sm"
+              value={shippingNotes}
+              onChange={(event) => setShippingNotes(event.target.value)}
             />
           </div>
-        </div>
+          <div className="space-y-1">
+            <Label htmlFor="opsFlags">Ops flags (JSON object)</Label>
+            <textarea
+              id="opsFlags"
+              className="min-h-24 w-full rounded-lg border border-input bg-background p-2 font-mono text-sm"
+              value={opsFlagsText}
+              onChange={(event) => setOpsFlagsText(event.target.value)}
+              placeholder='{"holdShipment": true}'
+            />
+          </div>
+          <AdminTagsEditor
+            key={row.id}
+            value={adminTags}
+            onChange={setAdminTags}
+          />
 
-        <div className="flex gap-2">
-          <Button type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            render={<Link href={`/crm/subscriptions/${row.id}`} />}
-          >
-            Cancel
-          </Button>
-        </div>
-      </form>
-    </main>
+          <FormSection title="Payment timeline">
+            <FieldGrid columns={2}>
+              <div className="space-y-1">
+                <Label htmlFor="currentPeriodStart">Current period start</Label>
+                <Input
+                  id="currentPeriodStart"
+                  type="datetime-local"
+                  value={currentPeriodStart}
+                  onChange={(e) => setCurrentPeriodStart(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="currentPeriodEnd">Current period end</Label>
+                <Input
+                  id="currentPeriodEnd"
+                  type="datetime-local"
+                  value={currentPeriodEnd}
+                  onChange={(e) => setCurrentPeriodEnd(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="nextRenewalAt">Next renewal</Label>
+                <Input
+                  id="nextRenewalAt"
+                  type="datetime-local"
+                  value={nextRenewalAt}
+                  onChange={(e) => setNextRenewalAt(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="endsAt">Ends at</Label>
+                <Input
+                  id="endsAt"
+                  type="datetime-local"
+                  value={endsAt}
+                  onChange={(e) => setEndsAt(e.target.value)}
+                />
+              </div>
+            </FieldGrid>
+            <div className="mt-3">
+              <PaymentMethodSelect
+                userId={row.patientUserId}
+                value={paymentMethodId}
+                onChange={setPaymentMethodId}
+                context="crm"
+              />
+            </div>
+          </FormSection>
+
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              render={<Link href={`/crm/subscriptions/${row.id}`} />}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </PageBody>
+    </ClinexaPage>
   );
 }

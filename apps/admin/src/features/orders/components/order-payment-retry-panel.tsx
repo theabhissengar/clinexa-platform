@@ -57,7 +57,7 @@ export function OrderPaymentRetryPanel({
       />
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
       {message ? (
-        <p className="text-xs text-emerald-700 dark:text-emerald-400">{message}</p>
+        <p className="text-xs text-success">{message}</p>
       ) : null}
       <Button type="submit" size="sm" disabled={busy || !methodId}>
         {busy ? "Retrying…" : "Retry payment"}

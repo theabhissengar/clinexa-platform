@@ -4,6 +4,16 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClinexaPage,
+  EntityDetailLeading,
+  ErrorState,
+  PageBody,
+  PageHeader,
+  PageHeaderCopy,
+  PageHeaderTitle,
+  PageSkeleton,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import { Permissions } from "@/features/auth/permissions";
@@ -70,45 +80,57 @@ export function CrmSubscriptionNotesPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <Link
-        href={`/crm/subscriptions/${params.id}`}
-        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-      >
-        ← Subscription
-      </Link>
-      <h1 className="text-2xl font-semibold tracking-tight">Notes</h1>
-      {canEdit ? (
-        <form className="space-y-2" onSubmit={onSubmit}>
-          <textarea
-            className="min-h-24 w-full rounded-md border border-input bg-background p-2 text-sm"
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            placeholder="Internal note"
-          />
-          <Button type="submit" size="sm" disabled={busy || !body.trim()}>
-            Add note
-          </Button>
-        </form>
-      ) : null}
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading notes…</p>
-      ) : error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No notes.</p>
-      ) : (
-        <ul className="space-y-3 text-sm">
-          {rows.map((row) => (
-            <li key={row.id} className="rounded-md border border-border p-3">
-              <div className="text-xs text-muted-foreground">
-                {formatDateTime(row.createdAt)}
-              </div>
-              <div className="mt-1 whitespace-pre-wrap">{row.body}</div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+    <ClinexaPage width="form" className="gap-6">
+      <PageHeader>
+        <PageHeaderCopy>
+          <EntityDetailLeading>
+            <Link
+              href={`/crm/subscriptions/${params.id}`}
+              className="underline-offset-4 hover:underline"
+            >
+              ← Subscription
+            </Link>
+          </EntityDetailLeading>
+          <PageHeaderTitle>Notes</PageHeaderTitle>
+        </PageHeaderCopy>
+      </PageHeader>
+
+      <PageBody>
+        {canEdit ? (
+          <form className="space-y-2" onSubmit={onSubmit}>
+            <textarea
+              className="min-h-24 w-full rounded-lg border border-input bg-background p-2 text-sm"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              placeholder="Internal note"
+            />
+            <Button type="submit" size="sm" disabled={busy || !body.trim()}>
+              Add note
+            </Button>
+          </form>
+        ) : null}
+        {loading ? (
+          <PageSkeleton />
+        ) : error ? (
+          <ErrorState title="Unable to load notes">{error}</ErrorState>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No notes.</p>
+        ) : (
+          <ul className="space-y-3 text-sm">
+            {rows.map((row) => (
+              <li
+                key={row.id}
+                className="rounded-xl border border-border bg-card p-3"
+              >
+                <div className="text-xs text-muted-foreground">
+                  {formatDateTime(row.createdAt)}
+                </div>
+                <div className="mt-1 whitespace-pre-wrap">{row.body}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PageBody>
+    </ClinexaPage>
   );
 }

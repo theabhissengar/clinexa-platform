@@ -371,16 +371,16 @@ Every phase record in §5 carries these fields.
 | Field | Value |
 | --- | --- |
 | **Objective** | Modernize the complete Guardian and CRM user experience after major functional modules are complete |
-| **Status** | In progress (Phase 5A–5D complete; Phase 5E in progress; 5F–5H not started) |
+| **Status** | In progress (Phase 5A–5E complete; Phase 5F in progress; 5G–5H not started) |
 | **Owner** | Platform architecture / Frontend |
-| **Branch** | `feature/ui-modernization-5e-dashboards` |
+| **Branch** | `feature/ui-modernization-5f-core-modules` |
 | **PR** | — |
 | **Dependencies** | Major Guardian and CRM functional modules delivered (not gated on P8 alone) |
-| **Scope** | Phase 5E: real-data CRM and Guardian home dashboards; Login-aligned dashboard canvas; shared sidebar/header visual modernization with existing navigation, permissions, routing, collapse, application switcher, theme, breadcrumbs, and 1024px breakpoint preserved. Later phases retain table/form polish, global search, favorites, pinned modules, keyboard shortcuts, and broader regression work. |
+| **Scope** | Phase 5F: CRM and Guardian Users, Orders, and Subscriptions feature-page UI modernization using Phase 5C patterns and StatusBadge; preserve APIs, RBAC, routes, and domain logic. Later phases retain Command Center (5G) and broader a11y/regression (5H). |
 | **Architecture changes** | Additive UX only; must not fork the shared shell (`UI-011`) |
 | **Documentation updates** | Tracker status when started; design-system notes as needed |
-| **Notes** | **5A complete** on `dev` (`feature/ui-modernization-5a-design-system`): shared tokens and `StatusBadge`. **5B complete** on `dev` (`feature/ui-modernization-5b-application-shell`, PR #87): shared shell behavior and 1024px off-canvas breakpoint. **5C complete** on `dev` (`feature/ui-modernization-5c-shared-patterns`, PR #90): reusable page/table/state patterns. **5D complete** on `dev` (`feature/ui-modernization-5d-login`): finalized Login/unauthorized/forbidden presentation; Login is the canonical visual reference. **5E in progress** on `feature/ui-modernization-5e-dashboards`: CRM operational and Guardian administrative dashboards use existing APIs only; `PageCanvas`/`MetricCard` are additive presentation patterns; shared sidebar/header receive a restrained semantic glass treatment without behavior changes. Login, feature-page internals, API, RBAC, and domain logic remain unchanged. Deferred: 5F feature adoption; 5G Command Center; 5H a11y/regression. |
-| **Verification** | Shared shell remains one product; no module-private design systems; lint/typecheck/build for admin; `/dev/design-system` exercises 5C patterns with mock data only |
+| **Notes** | **5A–5E complete** on `dev`. **5F in progress** on `feature/ui-modernization-5f-core-modules`: Users/Orders/Subscriptions list+detail (CRM+Guardian) adopt `ClinexaPage`, `DataTable`, `FilterBar`, `EntityDetailHeader`, `DetailSection`, `StatusBadge`, `ConfirmDialog`; Guardian Class D reason prompts use controlled Dialog+Input (not ConfirmDialog). Login, dashboards Soft* visuals, shell breakpoint, API, RBAC, and domain logic unchanged. Deferred: 5G Command Center; 5H a11y/regression; Plans/Roles feature adoption. |
+| **Verification** | Shared shell remains one product; no module-private design systems; lint/typecheck/build for admin; status product labels (Pending Payment, On Hold, etc.); Light/Dark/System; responsive widths without changing 1024px shell breakpoint |
 
 ### PF — Future work
 
@@ -554,6 +554,7 @@ A phase is complete when all of the following hold.
 | 2.20 | 2026-09-20 | Platform Engineering | P10 Phase 5C on `feature/ui-modernization-5c-shared-patterns`: shared UX patterns under `components/patterns/`; search/pagination moved with compatibility re-exports; Sonner mounted; `/dev/design-system` verification only; Guardian/CRM/Login not migrated; 5D–5H remain incomplete |
 | 2.21 | 2026-09-21 | Platform Engineering | P10 Phase 5D on `feature/ui-modernization-5d-login`: login/unauthorized/forbidden presentation; CRM/Guardian destination selector (same session; unauthorized selection still `/forbidden`); BrandMark on login; no auth/API/RBAC changes |
 | 2.22 | 2026-09-21 | Platform Engineering | P10 Phase 5E on `feature/ui-modernization-5e-dashboards`: real-data CRM/Guardian dashboards plus Login-aligned shared sidebar/header visual modernization; existing shell behavior, APIs, RBAC, feature pages, and Login remain unchanged |
+| 2.23 | 2026-09-21 | Platform Engineering | P10 Phase 5F on `feature/ui-modernization-5f-core-modules`: CRM/Guardian Users, Orders, Subscriptions adopt Phase 5C patterns + StatusBadge; ConfirmDialog / controlled reason Dialog; no API/RBAC/Login/Dashboard Soft* redesign |
 
 ---
 

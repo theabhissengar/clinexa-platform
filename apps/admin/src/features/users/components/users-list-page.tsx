@@ -1,13 +1,35 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import {
+  ClearableSearchInput,
+  ClinexaPage,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  FilterBarGroup,
+  FilterBarRow,
+  ListPaginationBar,
+  PageBody,
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderCopy,
+  PageHeaderDescription,
+  PageHeaderTitle,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/patterns";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Permissions } from "@/features/auth/permissions";
 import {
   archiveUser,
@@ -23,6 +45,7 @@ import type {
   UserStatus,
   UserStatusCounts,
 } from "@/features/users/types";
+import { cn } from "@/lib/utils";
 
 const STATUS_TABS: Array<{ key: UserStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "All" },
@@ -199,247 +222,262 @@ export function UsersListPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Administrative user lifecycle. Destructive actions are Class D
-            gated and never appear in CRM.
+    <ClinexaPage width="wide" className="gap-6">
+      <PageHeader>
+        <PageHeaderCopy>
+          <PageHeaderTitle>Users</PageHeaderTitle>
+          <PageHeaderDescription>
+            Administrative user lifecycle. Destructive actions are Class D gated
+            and never appear in CRM.
+          </PageHeaderDescription>
+        </PageHeaderCopy>
+        <PageHeaderActions>
+          <Button render={<Link href="/guardian/users/new" />}>Add user</Button>
+        </PageHeaderActions>
+      </PageHeader>
+
+      <PageBody>
+        {message ? (
+          <p className="text-sm text-success" role="status">
+            {message}
           </p>
-        </div>
-        <Button render={<Link href="/guardian/users/new" />}>Add user</Button>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const count = statusCounts?.[tab.key];
-            const active = appliedStatus === tab.key;
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
-                    writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
-                      page: "1",
-                    })
-                  }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
-                  }
-                >
-                  {tab.label}
-                  {count !== undefined ? (
-                    <span className="text-muted-foreground"> ({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applySearch();
-          }}
-        >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search users"
-            className="w-52"
-            aria-label="Search users"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search users
-          </Button>
-        </form>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          value={appliedRole}
-          onChange={(e) =>
-            writeParams({ role: e.target.value || null, page: "1" })
-          }
-          aria-label="Filter by role"
-        >
-          <option value="">All roles</option>
-          {roles.map((role) => (
-            <option key={role.code} value={role.code}>
-              {role.name}
-            </option>
-          ))}
-        </select>
-        {appliedRole ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => writeParams({ role: null, page: "1" })}
-          >
-            Clear role filter
-          </Button>
         ) : null}
-      </div>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {message ? (
-        <p className="text-sm text-emerald-600">{message}</p>
-      ) : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-240 text-left text-sm">
-            <thead className="bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Roles</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">2FA</th>
-                <th className="px-3 py-2 font-medium">Registered</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((user) => {
-                const editHref = `/guardian/users/${user.id}/edit`;
-                const isArchived = user.status === "ARCHIVED";
-                const isDeleted = user.status === "DELETED";
-                const canRestore = isArchived || isDeleted;
+        <FilterBar>
+          <FilterBarRow>
+            <FilterBarGroup className="flex-wrap gap-x-3 gap-y-1 text-sm">
+              {STATUS_TABS.map((tab, index) => {
+                const count = statusCounts?.[tab.key];
+                const active = appliedStatus === tab.key;
                 return (
-                  <tr
-                    key={user.id}
-                    className="group border-t border-border align-top hover:bg-muted/20"
-                    onMouseEnter={() => setHoveredId(user.id)}
-                    onMouseLeave={() => setHoveredId(null)}
+                  <span
+                    key={tab.key}
+                    className="inline-flex items-center gap-3"
                   >
-                    <td className="px-3 py-3">
-                      <Link
-                        href={editHref}
-                        className="font-semibold text-primary hover:underline"
-                      >
-                        {userName(user)}
-                      </Link>
-                      <div
-                        className={`mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity ${
-                          hoveredId === user.id
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100"
-                        }`}
-                      >
-                        <Link href={editHref} className="hover:underline">
-                          Edit
-                        </Link>
-                        <span className="text-muted-foreground">|</span>
-                        {canRestore ? (
-                          <RequirePermission
-                            permission={Permissions.ADM_RESTORE_USER}
-                          >
-                            <button
-                              type="button"
-                              className="hover:underline"
-                              onClick={() => void onRestore(user.id)}
-                            >
-                              Restore
-                            </button>
-                            <span className="text-muted-foreground">|</span>
-                          </RequirePermission>
-                        ) : (
-                          <RequirePermission
-                            permission={Permissions.ADM_ARCHIVE_USER}
-                          >
-                            <button
-                              type="button"
-                              className="hover:underline"
-                              onClick={() => void onArchive(user.id)}
-                            >
-                              Archive
-                            </button>
-                            <span className="text-muted-foreground">|</span>
-                          </RequirePermission>
-                        )}
-                        {!isDeleted ? (
-                          <RequirePermission
-                            permission={Permissions.ADM_DELETE_USER}
-                          >
-                            <button
-                              type="button"
-                              className="text-destructive hover:underline"
-                              onClick={() => void onDelete(user.id)}
-                            >
-                              Delete
-                            </button>
-                            <span className="text-muted-foreground">|</span>
-                          </RequirePermission>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="hover:underline"
-                          onClick={() => void onSendReset(user.id)}
-                        >
-                          Send reset
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {user.email}
-                    </td>
-                    <td className="px-3 py-3">
-                      {user.roles.length
-                        ? user.roles.map((r) => r.name).join(", ")
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      <span className="capitalize">
-                        {user.status.replace(/_/g, " ").toLowerCase()}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">—</td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {formatDate(user.createdAt)}
-                    </td>
-                  </tr>
+                    {index > 0 ? (
+                      <span className="text-muted-foreground/40">|</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        writeParams({
+                          status: tab.key === "ALL" ? null : tab.key,
+                          page: "1",
+                        })
+                      }
+                      className={cn(
+                        active
+                          ? "font-medium text-foreground"
+                          : "text-primary hover:underline",
+                      )}
+                    >
+                      {tab.label}
+                      {count !== undefined ? (
+                        <span className="text-muted-foreground"> ({count})</span>
+                      ) : null}
+                    </button>
+                  </span>
                 );
               })}
-              {!items.length ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-muted-foreground"
-                  >
-                    No users found.
-                  </td>
-                </tr>
+            </FilterBarGroup>
+            <FilterBarGroup>
+              <form
+                className="flex flex-wrap gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  applySearch();
+                }}
+              >
+                <ClearableSearchInput
+                  value={draftQ}
+                  onChange={setDraftQ}
+                  onClear={() => {
+                    setDraftQ("");
+                    if (appliedQ) writeParams({ q: null, page: "1" });
+                  }}
+                  placeholder="Search users"
+                  className="w-52"
+                  aria-label="Search users"
+                />
+                <Button type="submit" size="sm" variant="outline">
+                  Search users
+                </Button>
+              </form>
+            </FilterBarGroup>
+          </FilterBarRow>
+          <FilterBarRow>
+            <FilterBarGroup className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+                value={appliedRole}
+                onChange={(e) =>
+                  writeParams({ role: e.target.value || null, page: "1" })
+                }
+                aria-label="Filter by role"
+              >
+                <option value="">All roles</option>
+                {roles.map((role) => (
+                  <option key={role.code} value={role.code}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+              {appliedRole ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => writeParams({ role: null, page: "1" })}
+                >
+                  Clear role filter
+                </Button>
               ) : null}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </FilterBarGroup>
+          </FilterBarRow>
+        </FilterBar>
 
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: page <= 0 ? null : String(page) })}
-        onNext={() =>
-          writeParams({ page: String(Math.min(pageCount, page + 2)) })
-        }
-      />
-    </main>
+        <DataTable
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No users found"
+              description="Try a different search, status, or role filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load users">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Roles</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>2FA</TableHead>
+              <TableHead>Registered</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((user) => {
+              const editHref = `/guardian/users/${user.id}/edit`;
+              const isArchived = user.status === "ARCHIVED";
+              const isDeleted = user.status === "DELETED";
+              const canRestore = isArchived || isDeleted;
+              return (
+                <TableRow
+                  key={user.id}
+                  className="group align-top"
+                  onMouseEnter={() => setHoveredId(user.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <TableCell>
+                    <Link
+                      href={editHref}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      {userName(user)}
+                    </Link>
+                    <div
+                      className={cn(
+                        "mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity",
+                        hoveredId === user.id
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100",
+                      )}
+                    >
+                      <Link href={editHref} className="hover:underline">
+                        Edit
+                      </Link>
+                      <span className="text-muted-foreground">|</span>
+                      {canRestore ? (
+                        <RequirePermission
+                          permission={Permissions.ADM_RESTORE_USER}
+                        >
+                          <button
+                            type="button"
+                            className="hover:underline"
+                            onClick={() => void onRestore(user.id)}
+                          >
+                            Restore
+                          </button>
+                          <span className="text-muted-foreground">|</span>
+                        </RequirePermission>
+                      ) : (
+                        <RequirePermission
+                          permission={Permissions.ADM_ARCHIVE_USER}
+                        >
+                          <button
+                            type="button"
+                            className="hover:underline"
+                            onClick={() => void onArchive(user.id)}
+                          >
+                            Archive
+                          </button>
+                          <span className="text-muted-foreground">|</span>
+                        </RequirePermission>
+                      )}
+                      {!isDeleted ? (
+                        <RequirePermission
+                          permission={Permissions.ADM_DELETE_USER}
+                        >
+                          <button
+                            type="button"
+                            className="text-destructive hover:underline"
+                            onClick={() => void onDelete(user.id)}
+                          >
+                            Delete
+                          </button>
+                          <span className="text-muted-foreground">|</span>
+                        </RequirePermission>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="hover:underline"
+                        onClick={() => void onSendReset(user.id)}
+                      >
+                        Send reset
+                      </button>
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-48 truncate text-muted-foreground">
+                    {user.email}
+                  </TableCell>
+                  <TableCell>
+                    {user.roles.length
+                      ? user.roles.map((r) => r.name).join(", ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={user.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(user.createdAt)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

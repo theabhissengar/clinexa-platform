@@ -4,9 +4,22 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ClipboardList, FileText, Stethoscope } from "lucide-react";
+
+import {
+  ClinexaPage,
+  DetailSection,
+  EntityDetailHeader,
+  EntityDetailLeading,
+  ErrorState,
+  FieldGrid,
+  PageBody,
+  PageHeaderActions,
+  PageSkeleton,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { listCrmOrders } from "@/features/orders/api/orders-api";
 import {
   addCrmPaymentMethod,
@@ -21,8 +34,6 @@ import {
 } from "@/features/shared/components/module-detail-search";
 import { NotesTimeline } from "@/features/shared/components/notes-timeline";
 import { listCrmSubscriptions } from "@/features/subscriptions/api/subscriptions-api";
-import { productStatusLabel as orderStatusLabel } from "@/features/orders/lib/format";
-import { productStatusLabel as subscriptionStatusLabel } from "@/features/subscriptions/lib/format";
 import {
   addCrmUserNote,
   getCrmUser,
@@ -110,26 +121,6 @@ function userName(user: OperationalUser): string {
     user.displayName ||
     [user.firstName, user.lastName].filter(Boolean).join(" ") ||
     user.email
-  );
-}
-
-function Section({
-  id,
-  title,
-  children,
-}: {
-  id: SectionId;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      id={id}
-      className="rounded-md border border-border bg-background p-4"
-    >
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
   );
 }
 
@@ -272,39 +263,54 @@ export function CrmUserDetailPage() {
   }
 
   if (!user) {
+    if (error) {
+      return (
+        <ClinexaPage width="wide">
+          <ErrorState title="Unable to load user">{error}</ErrorState>
+        </ClinexaPage>
+      );
+    }
     return (
-      <main className="px-6 py-10 text-sm text-muted-foreground">
-        {error ?? "Loading user…"}
-      </main>
+      <ClinexaPage width="wide">
+        <PageSkeleton />
+      </ClinexaPage>
     );
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/crm/users"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            ← All users
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            {userName(user)}
-          </h1>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {user.email} · ID: {user.id}
-          </p>
-        </div>
-        <Link
-          href={`/guardian/users/${user.id}/edit`}
-          className="text-sm text-primary hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Manage in Guardian →
-        </Link>
-      </div>
+    <ClinexaPage width="wide" className="gap-6">
+      <EntityDetailHeader
+        leading={
+          <EntityDetailLeading>
+            <Link
+              href="/crm/users"
+              className="underline-offset-4 hover:underline"
+            >
+              ← All users
+            </Link>
+          </EntityDetailLeading>
+        }
+        title={userName(user)}
+        identifier={`${user.email} · ID: ${user.id}`}
+        status={<StatusBadge status={user.status} />}
+        actions={
+          <PageHeaderActions>
+            <Button
+              size="sm"
+              variant="outline"
+              render={
+                <Link
+                  href={`/guardian/users/${user.id}/edit`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                />
+              }
+            >
+              Manage in Guardian
+            </Button>
+          </PageHeaderActions>
+        }
+      />
 
       <ModuleDetailSearch
         placeholder="Search users…"
@@ -312,312 +318,333 @@ export function CrmUserDetailPage() {
         onSelect={(id) => router.push(`/crm/users/${id}`)}
       />
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
       {message ? (
-        <p className="text-sm text-emerald-600">{message}</p>
+        <p className="text-sm text-success" role="status">
+          {message}
+        </p>
       ) : null}
 
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <nav className="flex flex-row flex-wrap gap-2 lg:w-48 lg:flex-col lg:gap-1">
-          {SECTIONS.map((section) => (
-            <a
-              key={section.id}
-              href={`#${section.id}`}
-              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              {section.label}
-            </a>
-          ))}
-        </nav>
+      <PageBody>
+        <div className="flex flex-col gap-6 lg:flex-row">
+          <nav className="flex flex-row flex-wrap gap-2 lg:w-48 lg:flex-col lg:gap-1">
+            {SECTIONS.map((section) => (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {section.label}
+              </a>
+            ))}
+          </nav>
 
-        <div className="min-w-0 flex-1 space-y-4">
-          <Section id="profile" title="User Profile">
-            <form onSubmit={onSaveProfile} className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="firstName">First name</Label>
-                  <Input
-                    id="firstName"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="lastName">Last name</Label>
-                  <Input
-                    id="lastName"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="displayName">Display name</Label>
-                  <Input
-                    id="displayName"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="gender">Gender</Label>
-                  <select
-                    id="gender"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as UserGender)}
-                  >
-                    {GENDERS.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="region">Region</Label>
-                  <Input
-                    id="region"
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                  />
-                </div>
-              </div>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Update profile"}
+          <div className="flex min-w-0 flex-1 flex-col gap-4">
+            <DetailSection id="profile" title="User Profile">
+              <form onSubmit={onSaveProfile} className="space-y-3">
+                <FieldGrid columns={2}>
+                  <div className="space-y-1">
+                    <Label htmlFor="firstName">First name</Label>
+                    <Input
+                      id="firstName"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="lastName">Last name</Label>
+                    <Input
+                      id="lastName"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="displayName">Display name</Label>
+                    <Input
+                      id="displayName"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="phone">Phone</Label>
+                    <Input
+                      id="phone"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="gender">Gender</Label>
+                    <select
+                      id="gender"
+                      className="h-9 w-full rounded-lg border border-input bg-background px-2 text-sm"
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value as UserGender)}
+                    >
+                      {GENDERS.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="region">Region</Label>
+                    <Input
+                      id="region"
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                    />
+                  </div>
+                </FieldGrid>
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Saving…" : "Update profile"}
+                </Button>
+              </form>
+            </DetailSection>
+
+            <DetailSection id="medical" title="Medical Profile">
+              <MedicalProfileEditor
+                value={medicalProfile}
+                onChange={setMedicalProfile}
+                disabled={saving}
+              />
+              <Button
+                type="button"
+                className="mt-3"
+                disabled={saving}
+                onClick={() =>
+                  void onSaveProfile({
+                    preventDefault: () => {},
+                  } as React.FormEvent)
+                }
+              >
+                Save medical profile
               </Button>
-            </form>
-          </Section>
+            </DetailSection>
 
-          <Section id="medical" title="Medical Profile">
-            <MedicalProfileEditor
-              value={medicalProfile}
-              onChange={setMedicalProfile}
-              disabled={saving}
-            />
-            <Button
-              type="button"
-              className="mt-3"
-              disabled={saving}
-              onClick={() => void onSaveProfile({ preventDefault: () => {} } as React.FormEvent)}
-            >
-              Save medical profile
-            </Button>
-          </Section>
-
-          <Section id="orders" title="Orders">
-            {orders.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No orders.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {orders.map((order) => (
-                  <li key={order.id}>
-                    <Link
-                      href={`/crm/orders/${order.id}`}
-                      className="text-primary underline-offset-4 hover:underline"
+            <DetailSection id="orders" title="Orders">
+              {orders.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No orders.</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {orders.map((order) => (
+                    <li
+                      key={order.id}
+                      className="flex flex-wrap items-center gap-2"
                     >
-                      {order.orderNumber}
-                    </Link>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {orderStatusLabel(order.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
+                      <Link
+                        href={`/crm/orders/${order.id}`}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {order.orderNumber}
+                      </Link>
+                      <StatusBadge status={order.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DetailSection>
 
-          <Section id="subscriptions" title="Subscriptions">
-            {subscriptions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No subscriptions.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {subscriptions.map((row) => (
-                  <li key={row.id}>
-                    <Link
-                      href={`/crm/subscriptions/${row.id}`}
-                      className="text-primary underline-offset-4 hover:underline"
+            <DetailSection id="subscriptions" title="Subscriptions">
+              {subscriptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No subscriptions.</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {subscriptions.map((row) => (
+                    <li
+                      key={row.id}
+                      className="flex flex-wrap items-center gap-2"
                     >
-                      {row.subscriptionNumber ?? row.id}
-                    </Link>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {subscriptionStatusLabel(row.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
+                      <Link
+                        href={`/crm/subscriptions/${row.id}`}
+                        className="text-primary underline-offset-4 hover:underline"
+                      >
+                        {row.subscriptionNumber ?? row.id}
+                      </Link>
+                      <StatusBadge status={row.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DetailSection>
 
-          <Section id="prescriptions" title="Prescriptions">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>Prescription management is coming soon in a future phase.</p>
-            </div>
-          </Section>
-
-          <Section id="questionnaires" title="Questionnaires">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <ClipboardList className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>Questionnaire responses are coming soon in a future phase.</p>
-            </div>
-          </Section>
-
-          <Section id="addresses" title="Billing & Shipping addresses">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Billing address</div>
-                {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
-                  (field) => (
-                    <Input
-                      key={field}
-                      placeholder={field}
-                      value={billingAddress[field]}
-                      onChange={(e) =>
-                        setBillingAddress((prev) => ({
-                          ...prev,
-                          [field]: e.target.value,
-                        }))
-                      }
-                    />
-                  ),
-                )}
+            <DetailSection id="prescriptions" title="Prescriptions">
+              <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <p>Prescription management is coming soon in a future phase.</p>
               </div>
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Shipping address</div>
-                {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
-                  (field) => (
-                    <Input
-                      key={field}
-                      placeholder={field}
-                      value={shippingAddress[field]}
-                      onChange={(e) =>
-                        setShippingAddress((prev) => ({
-                          ...prev,
-                          [field]: e.target.value,
-                        }))
-                      }
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-            <Button
-              type="button"
-              className="mt-3"
-              disabled={saving}
-              onClick={() => void onSaveProfile({ preventDefault: () => {} } as React.FormEvent)}
-            >
-              Save addresses
-            </Button>
-          </Section>
+            </DetailSection>
 
-          <Section id="payments" title="Payment Profiles">
-            {paymentMethods.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No saved payment methods.
-              </p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {paymentMethods.map((method) => (
-                  <li
-                    key={method.id}
-                    className="flex flex-wrap items-center gap-2 border-b border-border pb-2"
-                  >
-                    <span>
-                      {method.brand ?? "Card"} ···{method.last4 ?? "????"}
-                      {method.isDefault ? " · default" : ""}
-                    </span>
-                    {!method.isDefault ? (
+            <DetailSection id="questionnaires" title="Questionnaires">
+              <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                <ClipboardList className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <p>
+                  Questionnaire responses are coming soon in a future phase.
+                </p>
+              </div>
+            </DetailSection>
+
+            <DetailSection id="addresses" title="Billing & Shipping addresses">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Billing address</div>
+                  {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
+                    (field) => (
+                      <Input
+                        key={field}
+                        placeholder={field}
+                        value={billingAddress[field]}
+                        onChange={(e) =>
+                          setBillingAddress((prev) => ({
+                            ...prev,
+                            [field]: e.target.value,
+                          }))
+                        }
+                      />
+                    ),
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Shipping address</div>
+                  {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
+                    (field) => (
+                      <Input
+                        key={field}
+                        placeholder={field}
+                        value={shippingAddress[field]}
+                        onChange={(e) =>
+                          setShippingAddress((prev) => ({
+                            ...prev,
+                            [field]: e.target.value,
+                          }))
+                        }
+                      />
+                    ),
+                  )}
+                </div>
+              </div>
+              <Button
+                type="button"
+                className="mt-3"
+                disabled={saving}
+                onClick={() =>
+                  void onSaveProfile({
+                    preventDefault: () => {},
+                  } as React.FormEvent)
+                }
+              >
+                Save addresses
+              </Button>
+            </DetailSection>
+
+            <DetailSection id="payments" title="Payment Profiles">
+              {paymentMethods.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No saved payment methods.
+                </p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {paymentMethods.map((method) => (
+                    <li
+                      key={method.id}
+                      className="flex flex-wrap items-center gap-2 border-b border-border pb-2"
+                    >
+                      <span>
+                        {method.brand ?? "Card"} ···{method.last4 ?? "????"}
+                        {method.isDefault ? " · default" : ""}
+                      </span>
+                      {!method.isDefault ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={saving}
+                          onClick={() =>
+                            void makeCrmPaymentMethodDefault(user.id, method.id)
+                              .then(() => listCrmPaymentMethods(user.id))
+                              .then(setPaymentMethods)
+                          }
+                        >
+                          Make default
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        disabled={saving}
+                        variant="ghost"
+                        disabled={saving || method.isDefault}
                         onClick={() =>
-                          void makeCrmPaymentMethodDefault(user.id, method.id)
+                          void deleteCrmPaymentMethod(user.id, method.id)
                             .then(() => listCrmPaymentMethods(user.id))
                             .then(setPaymentMethods)
                         }
                       >
-                        Make default
+                        Delete
                       </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={saving || method.isDefault}
-                      onClick={() =>
-                        void deleteCrmPaymentMethod(user.id, method.id)
-                          .then(() => listCrmPaymentMethods(user.id))
-                          .then(setPaymentMethods)
-                      }
-                    >
-                      Delete
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="mt-4 grid max-w-md gap-2 sm:grid-cols-2">
-              <Input
-                placeholder="Brand"
-                value={newCardBrand}
-                onChange={(e) => setNewCardBrand(e.target.value)}
-              />
-              <Input
-                placeholder="Last 4"
-                value={newCardLast4}
-                onChange={(e) => setNewCardLast4(e.target.value)}
-                maxLength={4}
-              />
-              <Button
-                type="button"
-                size="sm"
-                disabled={saving}
-                onClick={() => void onAddPaymentMethod()}
-              >
-                Add simulated card
-              </Button>
-            </div>
-          </Section>
-
-          <Section id="documents" title="Documents">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <FileText className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>
-                Document upload and management are not available in this phase.
-                This section is a placeholder for future document workflows.
-              </p>
-            </div>
-          </Section>
-
-          <Section id="notes" title="Notes">
-            {internalNotes ? (
-              <div className="mb-4 rounded-md border border-dashed border-border bg-muted/30 p-3 text-sm">
-                <div className="text-xs font-medium text-muted-foreground">
-                  Legacy internal notes blob
-                </div>
-                <p className="mt-2 whitespace-pre-wrap">{internalNotes}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-4 grid max-w-md gap-2 sm:grid-cols-2">
+                <Input
+                  placeholder="Brand"
+                  value={newCardBrand}
+                  onChange={(e) => setNewCardBrand(e.target.value)}
+                />
+                <Input
+                  placeholder="Last 4"
+                  value={newCardLast4}
+                  onChange={(e) => setNewCardLast4(e.target.value)}
+                  maxLength={4}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={saving}
+                  onClick={() => void onAddPaymentMethod()}
+                >
+                  Add simulated card
+                </Button>
               </div>
-            ) : null}
-            <NotesTimeline
-              notes={notes}
-              activities={[]}
-              onAddNote={onAddNote}
-              addingNote={addingNote}
-            />
-          </Section>
+            </DetailSection>
+
+            <DetailSection id="documents" title="Documents">
+              <div className="flex items-start gap-3 text-sm text-muted-foreground">
+                <FileText className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <p>
+                  Document upload and management are not available in this
+                  phase. This section is a placeholder for future document
+                  workflows.
+                </p>
+              </div>
+            </DetailSection>
+
+            <DetailSection id="notes" title="Notes">
+              {internalNotes ? (
+                <div className="mb-4 rounded-lg border border-dashed border-border bg-muted/30 p-3 text-sm">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    Legacy internal notes blob
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap">{internalNotes}</p>
+                </div>
+              ) : null}
+              <NotesTimeline
+                notes={notes}
+                activities={[]}
+                onAddNote={onAddNote}
+                addingNote={addingNote}
+              />
+            </DetailSection>
+          </div>
         </div>
-      </div>
-    </main>
+      </PageBody>
+    </ClinexaPage>
   );
 }

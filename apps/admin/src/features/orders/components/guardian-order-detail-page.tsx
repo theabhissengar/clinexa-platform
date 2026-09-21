@@ -2,11 +2,32 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+  ClinexaPage,
+  ConfirmDialog,
+  DetailSection,
+  EntityDetailHeader,
+  EntityDetailLeading,
+  ErrorState,
+  FieldGrid,
+  PageBody,
+  PageHeaderActions,
+  PageSkeleton,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import { Permissions } from "@/features/auth/permissions";
 import {
@@ -57,26 +78,6 @@ const ALL_STATUSES: OrderStatus[] = [
   "REFUNDED",
 ];
 
-function Section({
-  title,
-  children,
-  id,
-}: {
-  title: string;
-  children: React.ReactNode;
-  id?: string;
-}) {
-  return (
-    <section
-      id={id}
-      className="rounded-md border border-border bg-background p-4"
-    >
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3">{children}</div>
-    </section>
-  );
-}
-
 function getErrorMessage(error: unknown, fallback: string): string {
   if (
     error &&
@@ -96,12 +97,6 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function promptReason(label: string): string | null {
-  const reason = window.prompt(label);
-  if (reason == null) return null;
-  return reason.trim();
-}
-
 function formatJson(value: unknown): string {
   if (value == null) return "—";
   try {
@@ -109,6 +104,80 @@ function formatJson(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+type ReasonPromptDialogProps = {
+  open: boolean;
+  label: string;
+  onSubmit: (reason: string) => void;
+  onCancel: () => void;
+};
+
+function ReasonPromptDialog({
+  open,
+  label,
+  onSubmit,
+  onCancel,
+}: ReasonPromptDialogProps) {
+  const [reason, setReason] = useState("");
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) {
+          setReason("");
+          onCancel();
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reason</DialogTitle>
+          <DialogDescription>{label}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor="admin-order-reason">Reason</Label>
+          <Input
+            id="admin-order-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                const trimmed = reason.trim();
+                setReason("");
+                onSubmit(trimmed);
+              }
+            }}
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setReason("");
+              onCancel();
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => {
+              const trimmed = reason.trim();
+              setReason("");
+              onSubmit(trimmed);
+            }}
+          >
+            Continue
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function GuardianOrderDetailPage() {
@@ -141,12 +210,39 @@ export function GuardianOrderDetailPage() {
   const [overrideTo, setOverrideTo] = useState<OrderStatus | "">("");
   const [overrideReason, setOverrideReason] = useState("");
 
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [correctConfirmOpen, setCorrectConfirmOpen] = useState(false);
+  const [overrideConfirmOpen, setOverrideConfirmOpen] = useState(false);
+
+  const [reasonPromptOpen, setReasonPromptOpen] = useState(false);
+  const [reasonPromptLabel, setReasonPromptLabel] = useState("");
+  const reasonResolverRef = useRef<((value: string | null) => void) | null>(
+    null,
+  );
+
   const canEdit = can(Permissions.ORD_EDIT);
   const canArchive = can(Permissions.ORD_ARCHIVE);
   const canDelete = can(Permissions.ORD_DELETE);
   const canRestore = can(Permissions.ORD_RESTORE);
   const canCorrect = can(Permissions.ORD_CORRECT);
   const canOverride = can(Permissions.ORD_OVERRIDE);
+
+  const promptReason = useCallback((label: string): Promise<string | null> => {
+    setReasonPromptLabel(label);
+    setReasonPromptOpen(true);
+    return new Promise((resolve) => {
+      reasonResolverRef.current = resolve;
+    });
+  }, []);
+
+  function resolveReasonPrompt(value: string | null) {
+    setReasonPromptOpen(false);
+    const resolve = reasonResolverRef.current;
+    reasonResolverRef.current = null;
+    resolve?.(value);
+  }
 
   const load = useCallback(async () => {
     const [detail, noteRows, historyRows, activityRows] = await Promise.all([
@@ -231,58 +327,53 @@ export function GuardianOrderDetailPage() {
     }
   }
 
-  async function onArchive() {
+  async function onArchiveConfirm() {
     if (!order || !canArchive) return;
-    if (
-      !window.confirm(
-        `Archive order ${order.orderNumber}? This is a Class D administrative action.`,
-      )
-    ) {
-      return;
-    }
-    const reason = promptReason("Archive reason (optional):");
-    if (reason == null) return;
-    await runAction(
-      () => archiveAdminOrder(order.id, reason || undefined),
-      "Order archived.",
-      "Unable to archive order.",
-    );
+    const id = order.id;
+    // Return immediately so ConfirmDialog closes, then collect reason.
+    queueMicrotask(() => {
+      void (async () => {
+        const reason = await promptReason("Archive reason (optional):");
+        if (reason == null) return;
+        await runAction(
+          () => archiveAdminOrder(id, reason || undefined),
+          "Order archived.",
+          "Unable to archive order.",
+        );
+      })();
+    });
   }
 
-  async function onSoftDelete() {
+  async function onSoftDeleteConfirm() {
     if (!order || !canDelete) return;
-    if (
-      !window.confirm(
-        `Soft-delete order ${order.orderNumber}? This is a Class D administrative action.`,
-      )
-    ) {
-      return;
-    }
-    const reason = promptReason("Soft-delete reason (optional):");
-    if (reason == null) return;
-    await runAction(
-      () => deleteAdminOrder(order.id, reason || undefined),
-      "Order soft-deleted.",
-      "Unable to soft-delete order.",
-    );
+    const id = order.id;
+    queueMicrotask(() => {
+      void (async () => {
+        const reason = await promptReason("Soft-delete reason (optional):");
+        if (reason == null) return;
+        await runAction(
+          () => deleteAdminOrder(id, reason || undefined),
+          "Order soft-deleted.",
+          "Unable to soft-delete order.",
+        );
+      })();
+    });
   }
 
-  async function onRestore() {
+  async function onRestoreConfirm() {
     if (!order || !canRestore) return;
-    if (
-      !window.confirm(
-        `Restore order ${order.orderNumber}? This is a Class D administrative action.`,
-      )
-    ) {
-      return;
-    }
-    const reason = promptReason("Restore reason (optional):");
-    if (reason == null) return;
-    await runAction(
-      () => restoreAdminOrder(order.id, reason || undefined),
-      "Order restored.",
-      "Unable to restore order.",
-    );
+    const id = order.id;
+    queueMicrotask(() => {
+      void (async () => {
+        const reason = await promptReason("Restore reason (optional):");
+        if (reason == null) return;
+        await runAction(
+          () => restoreAdminOrder(id, reason || undefined),
+          "Order restored.",
+          "Unable to restore order.",
+        );
+      })();
+    });
   }
 
   async function onTransition(event: React.FormEvent) {
@@ -300,7 +391,7 @@ export function GuardianOrderDetailPage() {
     setTransitionReason("");
   }
 
-  async function onCorrect(event: React.FormEvent) {
+  function requestCorrectConfirm(event: React.FormEvent) {
     event.preventDefault();
     if (!order || !canCorrect) return;
     const amountCents = Number(correctAmountCents);
@@ -308,11 +399,14 @@ export function GuardianOrderDetailPage() {
       setError("Correction amount (cents) must be a non-zero number.");
       return;
     }
-    if (
-      !window.confirm(
-        `Apply financial correction of ${amountCents} cents to ${order.orderNumber}? Does not execute Payments.`,
-      )
-    ) {
+    setCorrectConfirmOpen(true);
+  }
+
+  async function onCorrectConfirm() {
+    if (!order || !canCorrect) return;
+    const amountCents = Number(correctAmountCents);
+    if (!Number.isFinite(amountCents) || amountCents === 0) {
+      setError("Correction amount (cents) must be a non-zero number.");
       return;
     }
     await runAction(
@@ -328,18 +422,20 @@ export function GuardianOrderDetailPage() {
     setCorrectReason("");
   }
 
-  async function onOverride(event: React.FormEvent) {
+  function requestOverrideConfirm(event: React.FormEvent) {
     event.preventDefault();
     if (!order || !canOverride || !overrideTo) return;
     if (!overrideReason.trim()) {
       setError("Override reason is required.");
       return;
     }
-    if (
-      !window.confirm(
-        `Administrative override (Class D): set ${order.orderNumber} to ${overrideTo}?`,
-      )
-    ) {
+    setOverrideConfirmOpen(true);
+  }
+
+  async function onOverrideConfirm() {
+    if (!order || !canOverride || !overrideTo) return;
+    if (!overrideReason.trim()) {
+      setError("Override reason is required.");
       return;
     }
     await runAction(
@@ -356,50 +452,53 @@ export function GuardianOrderDetailPage() {
 
   if (loading) {
     return (
-      <main className="px-6 py-10 text-sm text-muted-foreground">
-        Loading order…
-      </main>
+      <ClinexaPage width="wide">
+        <PageSkeleton />
+      </ClinexaPage>
     );
   }
 
   if (!order) {
     return (
-      <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 px-4 py-8 md:px-6">
-        <Link
-          href={backHref}
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-        >
-          ← All orders
-        </Link>
-        <p className="text-sm text-destructive">
+      <ClinexaPage width="wide" className="gap-6">
+        <EntityDetailLeading>
+          <Link
+            href={backHref}
+            className="underline-offset-4 hover:underline"
+          >
+            ← All orders
+          </Link>
+        </EntityDetailLeading>
+        <ErrorState title="Unable to load order">
           {error ?? "Order not found."}
-        </p>
-      </main>
+        </ErrorState>
+      </ClinexaPage>
     );
   }
 
   const shipping = order.addresses.find((a) => a.kind === "SHIPPING");
   const billing = order.addresses.find((a) => a.kind === "BILLING");
   const adjustments = order.adjustments ?? [];
+  const correctAmountNumber = Number(correctAmountCents);
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href={backHref}
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            ← All orders
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            {order.orderNumber}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {productStatusLabel(order.status)} · {statusLabel(order.orderType)} ·{" "}
-            {formatDateTime(order.createdAt)}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-1">
+    <ClinexaPage width="wide" className="gap-6">
+      <EntityDetailHeader
+        leading={
+          <EntityDetailLeading>
+            <Link
+              href={backHref}
+              className="underline-offset-4 hover:underline"
+            >
+              ← All orders
+            </Link>
+          </EntityDetailLeading>
+        }
+        title={order.orderNumber}
+        identifier={`${statusLabel(order.orderType)} · ${formatDateTime(order.createdAt)}`}
+        status={<StatusBadge status={order.status} />}
+        metadata={
+          <>
             {order.archivedAt ? (
               <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                 Archived {formatDateTime(order.archivedAt)}
@@ -410,609 +509,707 @@ export function GuardianOrderDetailPage() {
                 Deleted {formatDateTime(order.deletedAt)}
               </span>
             ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {canEdit ? (
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link href={`/guardian/orders/${order.id}/edit`} />}
-            >
-              Edit
-            </Button>
-          ) : null}
-          {canArchive && !order.archivedAt && !order.deletedAt ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void onArchive()}
-            >
-              Archive
-            </Button>
-          ) : null}
-          {canDelete && !order.deletedAt ? (
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void onSoftDelete()}
-            >
-              Soft-delete
-            </Button>
-          ) : null}
-          {canRestore && (order.archivedAt || order.deletedAt) ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => void onRestore()}
-            >
-              Restore
-            </Button>
-          ) : null}
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <PageHeaderActions>
+            {canEdit ? (
+              <Button
+                size="sm"
+                variant="outline"
+                render={<Link href={`/guardian/orders/${order.id}/edit`} />}
+              >
+                Edit
+              </Button>
+            ) : null}
+            {canArchive && !order.archivedAt && !order.deletedAt ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setArchiveConfirmOpen(true)}
+              >
+                Archive
+              </Button>
+            ) : null}
+            {canDelete && !order.deletedAt ? (
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={busy}
+                onClick={() => setDeleteConfirmOpen(true)}
+              >
+                Soft-delete
+              </Button>
+            ) : null}
+            {canRestore && (order.archivedAt || order.deletedAt) ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setRestoreConfirmOpen(true)}
+              >
+                Restore
+              </Button>
+            ) : null}
+          </PageHeaderActions>
+        }
+      />
 
       {message ? (
-        <p className="text-sm text-emerald-700 dark:text-emerald-400">
+        <p className="text-sm text-success" role="status">
           {message}
         </p>
       ) : null}
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <Section title="Search orders">
-        <ModuleDetailSearch
-          placeholder="Order number, customer, id…"
-          searchFn={async (q) => {
-            const result = await listAdminOrders({ q, take: 8 });
-            return result.items.map((item) => ({
-              id: item.id,
-              label: item.orderNumber,
-              sublabel: customerLabel(item),
-            }));
-          }}
-          onSelect={(id) => router.push(`/guardian/orders/${id}`)}
-        />
-      </Section>
-
-      <Section title="Order header">
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Order ID</dt>
-            <dd className="font-mono text-xs">{order.id}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Total</dt>
-            <dd className="tabular-nums font-medium">
-              {formatMoneyCents(order.totalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Customer (snapshot)</dt>
-            <dd>{customerLabel(order)}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Patient user</dt>
-            <dd>
-              <Link
-                href={`/crm/users/${order.patientUserId}`}
-                className="text-primary hover:underline"
-              >
-                {order.patient.displayName ||
-                  order.patient.email ||
-                  order.patientUserId}
-              </Link>
-            </dd>
-          </div>
-        </dl>
-      </Section>
-
-      <Section title="Customer">
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Snapshot name</dt>
-            <dd>{customerLabel(order)}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Snapshot email</dt>
-            <dd>{order.customerEmail ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Snapshot phone</dt>
-            <dd>{order.customerPhone ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Live account phone</dt>
-            <dd>{order.patient.phone ?? "—"}</dd>
-          </div>
-        </dl>
-      </Section>
-
-      <Section title="Order items" id="items">
-        <p className="mb-2 text-xs text-muted-foreground">
-          Historical snapshots — not live catalog data.
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
         </p>
-        {order.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No line items.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-border text-muted-foreground">
-                <tr>
-                  <th className="py-2 pr-2 font-medium">Product</th>
-                  <th className="py-2 pr-2 font-medium">SKU</th>
-                  <th className="py-2 pr-2 font-medium">Qty</th>
-                  <th className="py-2 pr-2 font-medium">Unit</th>
-                  <th className="py-2 pr-2 font-medium">Discount</th>
-                  <th className="py-2 pr-2 font-medium">Line total</th>
-                  <th className="py-2 font-medium">Rx</th>
-                </tr>
-              </thead>
-              <tbody>
-                {order.items.map((item) => (
-                  <tr key={item.id} className="border-b border-border">
-                    <td className="py-2 pr-2">
-                      <div>{item.productName}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {item.productType}
-                      </div>
-                    </td>
-                    <td className="py-2 pr-2 font-mono text-xs">{item.sku}</td>
-                    <td className="py-2 pr-2">{item.quantity}</td>
-                    <td className="py-2 pr-2 tabular-nums">
-                      {formatMoneyCents(item.salePriceCents, order.currency)}
-                    </td>
-                    <td className="py-2 pr-2 tabular-nums">
-                      {formatMoneyCents(item.discountCents, order.currency)}
-                    </td>
-                    <td className="py-2 pr-2 tabular-nums">
-                      {formatMoneyCents(item.lineTotalCents, order.currency)}
-                    </td>
-                    <td className="py-2">{item.isRxEligible ? "Yes" : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
+      ) : null}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Section title="Shipping address (snapshot)">
-          {shipping ? (
-            <address className="text-sm not-italic leading-relaxed">
-              {shipping.fullName ? <div>{shipping.fullName}</div> : null}
-              <div>{shipping.line1}</div>
-              {shipping.line2 ? <div>{shipping.line2}</div> : null}
-              <div>
-                {[shipping.city, shipping.region, shipping.postalCode]
-                  .filter(Boolean)
-                  .join(", ")}
-              </div>
-              <div>{shipping.country}</div>
-              <div className="mt-1 text-muted-foreground">
-                Phone: {shipping.phone ?? "—"}
-              </div>
-            </address>
-          ) : (
-            <p className="text-sm text-muted-foreground">No shipping snapshot.</p>
-          )}
-        </Section>
-        <Section title="Billing address (snapshot)">
-          {billing ? (
-            <address className="text-sm not-italic leading-relaxed">
-              {billing.fullName ? <div>{billing.fullName}</div> : null}
-              <div>{billing.line1}</div>
-              {billing.line2 ? <div>{billing.line2}</div> : null}
-              <div>
-                {[billing.city, billing.region, billing.postalCode]
-                  .filter(Boolean)
-                  .join(", ")}
-              </div>
-              <div>{billing.country}</div>
-              <div className="mt-1 text-muted-foreground">
-                Phone: {billing.phone ?? "—"}
-              </div>
-            </address>
-          ) : (
-            <p className="text-sm text-muted-foreground">No billing snapshot.</p>
-          )}
-        </Section>
-      </div>
-
-      <Section title="Payment summary">
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Status summary</dt>
-            <dd>{order.paymentStatusSummary ?? "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Payment intent ref</dt>
-            <dd className="font-mono text-xs">
-              {order.paymentIntentId ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Latest payment ref</dt>
-            <dd className="font-mono text-xs">
-              {order.latestPaymentId ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Refunded</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.refundedTotalCents, order.currency)}
-            </dd>
-          </div>
-        </dl>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Payment actions are owned by Payments — not executed here.
-        </p>
-        {order.status === "PAYMENT_PENDING" ? (
-          <OrderPaymentRetryPanel
-            orderId={order.id}
-            patientUserId={order.patientUserId}
-            context="admin"
-            onRetry={async (paymentMethodId) => {
-              await retryAdminOrderPayment(order.id, paymentMethodId);
-              const refreshed = await getAdminOrder(order.id, true);
-              setOrder(refreshed);
+      <PageBody dense>
+        <DetailSection title="Search orders">
+          <ModuleDetailSearch
+            placeholder="Order number, customer, id…"
+            searchFn={async (q) => {
+              const result = await listAdminOrders({ q, take: 8 });
+              return result.items.map((item) => ({
+                id: item.id,
+                label: item.orderNumber,
+                sublabel: customerLabel(item),
+              }));
             }}
+            onSelect={(id) => router.push(`/guardian/orders/${id}`)}
           />
-        ) : null}
-      </Section>
+        </DetailSection>
 
-      <Section title="Clinical references">
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Consultation</dt>
-            <dd className="font-mono text-xs">
-              {order.consultationId ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Prescription</dt>
-            <dd className="font-mono text-xs">
-              {order.prescriptionId ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Questionnaire response</dt>
-            <dd className="font-mono text-xs">
-              {order.questionnaireResponseId ?? "—"}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Rx / clinical flags</dt>
-            <dd>
-              {order.isRxOrder ? "Rx order" : "Non-Rx"}
-              {order.requiresClinicalReview ? " · requires review" : ""}
-            </dd>
-          </div>
-        </dl>
-      </Section>
+        <DetailSection title="Order header">
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">Order ID</div>
+              <div className="font-mono text-xs">{order.id}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="tabular-nums font-medium">
+                {formatMoneyCents(order.totalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Customer (snapshot)
+              </div>
+              <div className="text-sm">{customerLabel(order)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Patient user</div>
+              <div className="text-sm">
+                <Link
+                  href={`/crm/users/${order.patientUserId}`}
+                  className="text-primary hover:underline"
+                >
+                  {order.patient.displayName ||
+                    order.patient.email ||
+                    order.patientUserId}
+                </Link>
+              </div>
+            </div>
+          </FieldGrid>
+        </DetailSection>
 
-      <Section title="Inventory">
-        <p className="text-sm">
-          Reservation ref:{" "}
-          <span className="font-mono text-xs">
-            {order.reservationId ?? "—"}
-          </span>
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Inventory mutations follow Orders ↔ Inventory ownership rules.
-        </p>
-      </Section>
+        <DetailSection title="Customer">
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">Snapshot name</div>
+              <div className="text-sm">{customerLabel(order)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Snapshot email</div>
+              <div className="text-sm">{order.customerEmail ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Snapshot phone</div>
+              <div className="text-sm">{order.customerPhone ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Live account phone
+              </div>
+              <div className="text-sm">{order.patient.phone ?? "—"}</div>
+            </div>
+          </FieldGrid>
+        </DetailSection>
 
-      <Section title="Totals">
-        <dl className="grid gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Subtotal</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.subtotalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Discounts</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.discountTotalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Shipping</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.shippingTotalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Tax</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.taxTotalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Adjustments</dt>
-            <dd className="tabular-nums">
-              {formatMoneyCents(order.adjustmentTotalCents, order.currency)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Total</dt>
-            <dd className="tabular-nums font-medium">
-              {formatMoneyCents(order.totalCents, order.currency)}
-            </dd>
-          </div>
-        </dl>
-      </Section>
+        <DetailSection
+          id="items"
+          title="Order items"
+          description="Historical snapshots — not live catalog data."
+        >
+          {order.items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No line items.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-b border-border text-muted-foreground">
+                  <tr>
+                    <th className="py-2 pr-2 font-medium">Product</th>
+                    <th className="py-2 pr-2 font-medium">SKU</th>
+                    <th className="py-2 pr-2 font-medium">Qty</th>
+                    <th className="py-2 pr-2 font-medium">Unit</th>
+                    <th className="py-2 pr-2 font-medium">Discount</th>
+                    <th className="py-2 pr-2 font-medium">Line total</th>
+                    <th className="py-2 font-medium">Rx</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr key={item.id} className="border-b border-border">
+                      <td className="py-2 pr-2">
+                        <div>{item.productName}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.productType}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-2 font-mono text-xs">
+                        {item.sku}
+                      </td>
+                      <td className="py-2 pr-2">{item.quantity}</td>
+                      <td className="py-2 pr-2 tabular-nums">
+                        {formatMoneyCents(item.salePriceCents, order.currency)}
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums">
+                        {formatMoneyCents(item.discountCents, order.currency)}
+                      </td>
+                      <td className="py-2 pr-2 tabular-nums">
+                        {formatMoneyCents(item.lineTotalCents, order.currency)}
+                      </td>
+                      <td className="py-2">
+                        {item.isRxEligible ? "Yes" : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </DetailSection>
 
-      <Section title="Adjustments">
-        {adjustments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No adjustments.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {adjustments.map((row) => (
-              <li key={row.id} className="border-b border-border pb-2">
+        <div className="grid gap-4 md:grid-cols-2">
+          <DetailSection title="Shipping address (snapshot)">
+            {shipping ? (
+              <address className="text-sm not-italic leading-relaxed">
+                {shipping.fullName ? <div>{shipping.fullName}</div> : null}
+                <div>{shipping.line1}</div>
+                {shipping.line2 ? <div>{shipping.line2}</div> : null}
                 <div>
-                  <span className="font-medium">{row.kind}</span>{" "}
-                  <span className="tabular-nums">
-                    {formatMoneyCents(row.amountCents, order.currency)}
-                  </span>
+                  {[shipping.city, shipping.region, shipping.postalCode]
+                    .filter(Boolean)
+                    .join(", ")}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {row.actorUserId ?? "system"} · {formatDateTime(row.createdAt)}
-                  {row.reason ? ` · ${row.reason}` : ""}
+                <div>{shipping.country}</div>
+                <div className="mt-1 text-muted-foreground">
+                  Phone: {shipping.phone ?? "—"}
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+              </address>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No shipping snapshot.
+              </p>
+            )}
+          </DetailSection>
+          <DetailSection title="Billing address (snapshot)">
+            {billing ? (
+              <address className="text-sm not-italic leading-relaxed">
+                {billing.fullName ? <div>{billing.fullName}</div> : null}
+                <div>{billing.line1}</div>
+                {billing.line2 ? <div>{billing.line2}</div> : null}
+                <div>
+                  {[billing.city, billing.region, billing.postalCode]
+                    .filter(Boolean)
+                    .join(", ")}
+                </div>
+                <div>{billing.country}</div>
+                <div className="mt-1 text-muted-foreground">
+                  Phone: {billing.phone ?? "—"}
+                </div>
+              </address>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No billing snapshot.
+              </p>
+            )}
+          </DetailSection>
+        </div>
 
-      <Section title="Admin metadata">
-        <dl className="grid gap-3 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-muted-foreground">Tracking / carrier</dt>
-            <dd>
-              {order.trackingNumber ?? "—"}
-              {order.carrier ? ` · ${order.carrier}` : ""}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-muted-foreground">Shipped at</dt>
-            <dd>{formatDateTime(order.shippedAt)}</dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-muted-foreground">Admin tags</dt>
-            <dd>
+        <DetailSection
+          title="Payment summary"
+          description="Payment actions are owned by Payments — not executed here."
+        >
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">Status summary</div>
+              <div className="text-sm">{order.paymentStatusSummary ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Payment intent ref
+              </div>
+              <div className="font-mono text-xs">
+                {order.paymentIntentId ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Latest payment ref
+              </div>
+              <div className="font-mono text-xs">
+                {order.latestPaymentId ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Refunded</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.refundedTotalCents, order.currency)}
+              </div>
+            </div>
+          </FieldGrid>
+          {order.status === "PAYMENT_PENDING" ? (
+            <OrderPaymentRetryPanel
+              orderId={order.id}
+              patientUserId={order.patientUserId}
+              context="admin"
+              onRetry={async (paymentMethodId) => {
+                await retryAdminOrderPayment(order.id, paymentMethodId);
+                const refreshed = await getAdminOrder(order.id, true);
+                setOrder(refreshed);
+              }}
+            />
+          ) : null}
+        </DetailSection>
+
+        <DetailSection title="Clinical references">
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">Consultation</div>
+              <div className="font-mono text-xs">
+                {order.consultationId ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Prescription</div>
+              <div className="font-mono text-xs">
+                {order.prescriptionId ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Questionnaire response
+              </div>
+              <div className="font-mono text-xs">
+                {order.questionnaireResponseId ?? "—"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Rx / clinical flags
+              </div>
+              <div className="text-sm">
+                {order.isRxOrder ? "Rx order" : "Non-Rx"}
+                {order.requiresClinicalReview ? " · requires review" : ""}
+              </div>
+            </div>
+          </FieldGrid>
+        </DetailSection>
+
+        <DetailSection
+          title="Inventory"
+          description="Inventory mutations follow Orders ↔ Inventory ownership rules."
+        >
+          <p className="text-sm">
+            Reservation ref:{" "}
+            <span className="font-mono text-xs">
+              {order.reservationId ?? "—"}
+            </span>
+          </p>
+        </DetailSection>
+
+        <DetailSection title="Totals">
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">Subtotal</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.subtotalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Discounts</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.discountTotalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Shipping</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.shippingTotalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Tax</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.taxTotalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Adjustments</div>
+              <div className="tabular-nums text-sm">
+                {formatMoneyCents(order.adjustmentTotalCents, order.currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Total</div>
+              <div className="tabular-nums text-sm font-medium">
+                {formatMoneyCents(order.totalCents, order.currency)}
+              </div>
+            </div>
+          </FieldGrid>
+        </DetailSection>
+
+        <DetailSection title="Adjustments">
+          {adjustments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No adjustments.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {adjustments.map((row) => (
+                <li key={row.id} className="border-b border-border pb-2">
+                  <div>
+                    <span className="font-medium">{row.kind}</span>{" "}
+                    <span className="tabular-nums">
+                      {formatMoneyCents(row.amountCents, order.currency)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {row.actorUserId ?? "system"} ·{" "}
+                    {formatDateTime(row.createdAt)}
+                    {row.reason ? ` · ${row.reason}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Admin metadata">
+          <FieldGrid columns={2}>
+            <div>
+              <div className="text-xs text-muted-foreground">
+                Tracking / carrier
+              </div>
+              <div className="text-sm">
+                {order.trackingNumber ?? "—"}
+                {order.carrier ? ` · ${order.carrier}` : ""}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Shipped at</div>
+              <div className="text-sm">{formatDateTime(order.shippedAt)}</div>
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-xs text-muted-foreground">Admin tags</div>
               <pre className="mt-1 overflow-x-auto rounded-md bg-muted/40 p-2 font-mono text-xs">
                 <AdminTagsList value={order.adminTags} />
               </pre>
-            </dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-muted-foreground">Reconciliation flags</dt>
-            <dd>
+            </div>
+            <div className="sm:col-span-2">
+              <div className="text-xs text-muted-foreground">
+                Reconciliation flags
+              </div>
               <pre className="mt-1 overflow-x-auto rounded-md bg-muted/40 p-2 font-mono text-xs">
                 {formatJson(order.reconciliationFlags)}
               </pre>
-            </dd>
-          </div>
-        </dl>
-      </Section>
+            </div>
+          </FieldGrid>
+        </DetailSection>
 
-      {canEdit && order.allowedNextStatuses.length > 0 ? (
-        <Section title="Normal status transition">
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onTransition}>
-            <div className="space-y-1">
-              <Label htmlFor="transitionTo">Next status</Label>
-              <select
-                id="transitionTo"
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                value={transitionTo}
-                onChange={(event) =>
-                  setTransitionTo(event.target.value as OrderStatus | "")
-                }
-                required
-              >
-                <option value="">Select…</option>
-                {order.allowedNextStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="transitionReason">Reason (optional)</Label>
-              <Input
-                id="transitionReason"
-                value={transitionReason}
-                onChange={(event) => setTransitionReason(event.target.value)}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Button type="submit" size="sm" disabled={busy || !transitionTo}>
-                Apply transition
-              </Button>
-            </div>
-          </form>
-        </Section>
-      ) : null}
+        {canEdit && order.allowedNextStatuses.length > 0 ? (
+          <DetailSection title="Normal status transition">
+            <form className="grid gap-3 sm:grid-cols-2" onSubmit={onTransition}>
+              <div className="space-y-1">
+                <Label htmlFor="transitionTo">Next status</Label>
+                <select
+                  id="transitionTo"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={transitionTo}
+                  onChange={(event) =>
+                    setTransitionTo(event.target.value as OrderStatus | "")
+                  }
+                  required
+                >
+                  <option value="">Select…</option>
+                  {order.allowedNextStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {productStatusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="transitionReason">Reason (optional)</Label>
+                <Input
+                  id="transitionReason"
+                  value={transitionReason}
+                  onChange={(event) => setTransitionReason(event.target.value)}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Button type="submit" size="sm" disabled={busy || !transitionTo}>
+                  Apply transition
+                </Button>
+              </div>
+            </form>
+          </DetailSection>
+        ) : null}
 
-      {canCorrect ? (
-        <Section title="Financial correction">
-          <p className="mb-3 text-xs text-muted-foreground">
-            Does not execute Payments. Records an order adjustment only.
+        {canCorrect ? (
+          <DetailSection
+            title="Financial correction"
+            description="Does not execute Payments. Records an order adjustment only."
+          >
+            <form
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={requestCorrectConfirm}
+            >
+              <div className="space-y-1">
+                <Label htmlFor="correctAmount">Amount (cents)</Label>
+                <Input
+                  id="correctAmount"
+                  type="number"
+                  value={correctAmountCents}
+                  onChange={(event) => setCorrectAmountCents(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="correctReason">Reason</Label>
+                <Input
+                  id="correctReason"
+                  value={correctReason}
+                  onChange={(event) => setCorrectReason(event.target.value)}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Button type="submit" size="sm" disabled={busy}>
+                  Apply correction
+                </Button>
+              </div>
+            </form>
+          </DetailSection>
+        ) : null}
+
+        {canOverride && order.status !== "FULFILLED" ? (
+          <DetailSection
+            title="Administrative override (Class D)"
+            description="Bypasses normal lifecycle transitions. Use only with a documented reason."
+          >
+            <form
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={requestOverrideConfirm}
+            >
+              <div className="space-y-1">
+                <Label htmlFor="overrideTo">To status</Label>
+                <select
+                  id="overrideTo"
+                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                  value={overrideTo}
+                  onChange={(event) =>
+                    setOverrideTo(event.target.value as OrderStatus | "")
+                  }
+                  required
+                >
+                  <option value="">Select…</option>
+                  {ALL_STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {productStatusLabel(status)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="overrideReason">Reason (required)</Label>
+                <Input
+                  id="overrideReason"
+                  value={overrideReason}
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="destructive"
+                  disabled={busy || !overrideTo || !overrideReason.trim()}
+                >
+                  Apply override
+                </Button>
+              </div>
+            </form>
+          </DetailSection>
+        ) : null}
+
+        <DetailSection id="notes" title="Notes & activity">
+          <NotesTimeline
+            notes={notes}
+            activities={activity}
+            composerDisabled={!canEdit}
+            addingNote={addingNote}
+            onAddNote={canEdit ? handleAddNote : undefined}
+          />
+        </DetailSection>
+
+        <DetailSection title="Hardcopy documents">
+          <p className="text-sm text-muted-foreground">
+            Hardcopy document management is not available in this phase.
           </p>
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onCorrect}>
-            <div className="space-y-1">
-              <Label htmlFor="correctAmount">Amount (cents)</Label>
-              <Input
-                id="correctAmount"
-                type="number"
-                value={correctAmountCents}
-                onChange={(event) => setCorrectAmountCents(event.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="correctReason">Reason</Label>
-              <Input
-                id="correctReason"
-                value={correctReason}
-                onChange={(event) => setCorrectReason(event.target.value)}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Button type="submit" size="sm" disabled={busy}>
-                Apply correction
-              </Button>
-            </div>
-          </form>
-        </Section>
-      ) : null}
+        </DetailSection>
 
-      {canOverride && order.status !== "FULFILLED" ? (
-        <Section title="Administrative override (Class D)">
-          <p className="mb-3 text-xs text-muted-foreground">
-            Bypasses normal lifecycle transitions. Use only with a documented
-            reason.
+        <DetailSection title="Scanned documents">
+          <p className="text-sm text-muted-foreground">
+            Scanned document upload and viewing is not available in this phase.
           </p>
-          <form className="grid gap-3 sm:grid-cols-2" onSubmit={onOverride}>
-            <div className="space-y-1">
-              <Label htmlFor="overrideTo">To status</Label>
-              <select
-                id="overrideTo"
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                value={overrideTo}
-                onChange={(event) =>
-                  setOverrideTo(event.target.value as OrderStatus | "")
-                }
-                required
-              >
-                <option value="">Select…</option>
-                {ALL_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {statusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="overrideReason">Reason (required)</Label>
-              <Input
-                id="overrideReason"
-                value={overrideReason}
-                onChange={(event) => setOverrideReason(event.target.value)}
-                required
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Button
-                type="submit"
-                size="sm"
-                variant="destructive"
-                disabled={busy || !overrideTo || !overrideReason.trim()}
-              >
-                Apply override
-              </Button>
-            </div>
-          </form>
-        </Section>
-      ) : null}
+        </DetailSection>
 
-      <Section title="Notes & activity" id="notes">
-        <NotesTimeline
-          notes={notes}
-          activities={activity}
-          composerDisabled={!canEdit}
-          addingNote={addingNote}
-          onAddNote={canEdit ? handleAddNote : undefined}
-        />
-      </Section>
+        <DetailSection title="Related entities">
+          <RelatedEntityTree
+            context="guardian"
+            user={{
+              id: order.patientUserId,
+              label: customerLabel(order),
+            }}
+            parentOrder={
+              order.orderType === "SUBSCRIPTION_INITIAL"
+                ? { id: order.id, label: order.orderNumber }
+                : undefined
+            }
+            subscription={
+              order.subscriptionId
+                ? { id: order.subscriptionId, label: order.subscriptionId }
+                : undefined
+            }
+          />
+        </DetailSection>
 
-      <Section title="Hardcopy documents">
-        <p className="text-sm text-muted-foreground">
-          Hardcopy document management is not available in this phase.
-        </p>
-      </Section>
+        <DetailSection
+          id="history"
+          title="History"
+          description="Status transitions only — not Platform Audit."
+        >
+          {history.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No history yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {history.map((row) => (
+                <li key={row.id} className="border-b border-border pb-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {row.fromStatus ? (
+                      <StatusBadge status={row.fromStatus} />
+                    ) : (
+                      "—"
+                    )}
+                    <span aria-hidden>→</span>
+                    <StatusBadge status={row.toStatus} />
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {row.source}
+                    {row.actorUserId ? ` · ${row.actorUserId}` : ""} ·{" "}
+                    {formatDateTime(row.createdAt)}
+                    {row.reason ? ` · ${row.reason}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
 
-      <Section title="Scanned documents">
-        <p className="text-sm text-muted-foreground">
-          Scanned document upload and viewing is not available in this phase.
-        </p>
-      </Section>
+        <DetailSection
+          id="activity"
+          title="Activity"
+          description="Operational events — separate from History and Platform Audit."
+        >
+          {activity.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No activity yet.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {activity.map((row) => (
+                <li key={row.id} className="border-b border-border pb-2">
+                  <div>
+                    <span className="font-medium">{row.kind}</span> —{" "}
+                    {row.summary}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {row.actorUserId ?? "system"} ·{" "}
+                    {formatDateTime(row.createdAt)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
+      </PageBody>
 
-      <Section title="Related entities">
-        <RelatedEntityTree
-          context="guardian"
-          user={{
-            id: order.patientUserId,
-            label: customerLabel(order),
-          }}
-          parentOrder={
-            order.orderType === "SUBSCRIPTION_INITIAL"
-              ? { id: order.id, label: order.orderNumber }
-              : undefined
-          }
-          subscription={
-            order.subscriptionId
-              ? { id: order.subscriptionId, label: order.subscriptionId }
-              : undefined
-          }
-        />
-      </Section>
+      <ConfirmDialog
+        open={archiveConfirmOpen}
+        onOpenChange={setArchiveConfirmOpen}
+        title={`Archive order ${order.orderNumber}?`}
+        description="This is a Class D administrative action."
+        confirmLabel="Archive"
+        loading={busy}
+        onConfirm={onArchiveConfirm}
+      />
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={setDeleteConfirmOpen}
+        title={`Soft-delete order ${order.orderNumber}?`}
+        description="This is a Class D administrative action."
+        confirmLabel="Soft-delete"
+        destructive
+        loading={busy}
+        onConfirm={onSoftDeleteConfirm}
+      />
+      <ConfirmDialog
+        open={restoreConfirmOpen}
+        onOpenChange={setRestoreConfirmOpen}
+        title={`Restore order ${order.orderNumber}?`}
+        description="This is a Class D administrative action."
+        confirmLabel="Restore"
+        loading={busy}
+        onConfirm={onRestoreConfirm}
+      />
+      <ConfirmDialog
+        open={correctConfirmOpen}
+        onOpenChange={setCorrectConfirmOpen}
+        title={`Apply financial correction of ${correctAmountNumber} cents to ${order.orderNumber}?`}
+        description="Does not execute Payments."
+        confirmLabel="Apply correction"
+        loading={busy}
+        onConfirm={onCorrectConfirm}
+      />
+      <ConfirmDialog
+        open={overrideConfirmOpen}
+        onOpenChange={setOverrideConfirmOpen}
+        title={`Administrative override (Class D): set ${order.orderNumber} to ${overrideTo}?`}
+        description="Bypasses normal lifecycle transitions."
+        confirmLabel="Apply override"
+        destructive
+        loading={busy}
+        onConfirm={onOverrideConfirm}
+      />
 
-      <Section title="History" id="history">
-        <p className="mb-2 text-xs text-muted-foreground">
-          Status transitions only — not Platform Audit.
-        </p>
-        {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No history yet.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {history.map((row) => (
-              <li key={row.id} className="border-b border-border pb-2">
-                <div>
-                  {row.fromStatus ? statusLabel(row.fromStatus) : "—"} →{" "}
-                  {statusLabel(row.toStatus)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {row.source}
-                  {row.actorUserId ? ` · ${row.actorUserId}` : ""} ·{" "}
-                  {formatDateTime(row.createdAt)}
-                  {row.reason ? ` · ${row.reason}` : ""}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-
-      <Section title="Activity" id="activity">
-        <p className="mb-2 text-xs text-muted-foreground">
-          Operational events — separate from History and Platform Audit.
-        </p>
-        {activity.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity yet.</p>
-        ) : (
-          <ul className="space-y-2 text-sm">
-            {activity.map((row) => (
-              <li key={row.id} className="border-b border-border pb-2">
-                <div>
-                  <span className="font-medium">{row.kind}</span> — {row.summary}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {row.actorUserId ?? "system"} ·{" "}
-                  {formatDateTime(row.createdAt)}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-    </main>
+      <ReasonPromptDialog
+        open={reasonPromptOpen}
+        label={reasonPromptLabel}
+        onSubmit={(reason) => resolveReasonPrompt(reason)}
+        onCancel={() => resolveReasonPrompt(null)}
+      />
+    </ClinexaPage>
   );
 }

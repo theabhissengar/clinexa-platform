@@ -4,10 +4,19 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  ClinexaPage,
+  EntityDetailHeader,
+  EntityDetailLeading,
+  ErrorState,
+  PageHeaderActions,
+  PageSkeleton,
+} from "@/components/patterns";
+import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RequirePermission } from "@/components/auth/require-permission";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Permissions } from "@/features/auth/permissions";
 import {
   archiveUser,
@@ -305,10 +314,17 @@ export function UserEditorPage({ userId, initialTab }: Props) {
   }
 
   if (!user) {
+    if (error) {
+      return (
+        <ClinexaPage width="wide">
+          <ErrorState title="Unable to load user">{error}</ErrorState>
+        </ClinexaPage>
+      );
+    }
     return (
-      <main className="px-6 py-10 text-sm text-muted-foreground">
-        {error ?? "Loading user…"}
-      </main>
+      <ClinexaPage width="wide">
+        <PageSkeleton />
+      </ClinexaPage>
     );
   }
 
@@ -317,43 +333,45 @@ export function UserEditorPage({ userId, initialTab }: Props) {
   const canRestore = isArchived || isDeleted;
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/guardian/users"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            ← All users
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            {userName(user)}
-          </h1>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {user.email} · ID: {user.id}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link
-            href={`/guardian/users/${userId}/history`}
-            className="text-primary hover:underline"
-          >
-            History
-          </Link>
-          <span className="text-muted-foreground">·</span>
-          <Link
-            href={`/guardian/users/${userId}/activity`}
-            className="text-primary hover:underline"
-          >
-            Activity
-          </Link>
-        </div>
-      </div>
+    <ClinexaPage width="wide" className="gap-6">
+      <EntityDetailHeader
+        leading={
+          <EntityDetailLeading>
+            <Link
+              href="/guardian/users"
+              className="underline-offset-4 hover:underline"
+            >
+              ← All users
+            </Link>
+          </EntityDetailLeading>
+        }
+        title={userName(user)}
+        identifier={`${user.email} · ID: ${user.id}`}
+        status={<StatusBadge status={user.status} />}
+        actions={
+          <PageHeaderActions>
+            <Button
+              size="sm"
+              variant="outline"
+              render={<Link href={`/guardian/users/${userId}/history`} />}
+            >
+              History
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              render={<Link href={`/guardian/users/${userId}/activity`} />}
+            >
+              Activity
+            </Button>
+          </PageHeaderActions>
+        }
+      />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
         <form
           onSubmit={onSave}
-          className="overflow-hidden rounded-md border border-border bg-card"
+          className="overflow-hidden rounded-xl border border-border bg-card"
         >
           <div className="grid md:grid-cols-[160px_1fr]">
             <nav className="border-b border-border md:border-b-0 md:border-r">
@@ -766,7 +784,9 @@ export function UserEditorPage({ userId, initialTab }: Props) {
               <p className="mb-2 text-xs text-destructive">{error}</p>
             ) : null}
             {message ? (
-              <p className="mb-2 text-xs text-emerald-600">{message}</p>
+              <p className="mb-2 text-xs text-success" role="status">
+                {message}
+              </p>
             ) : null}
             <Button type="submit" disabled={saving}>
               {saving ? "Saving…" : "Update User"}
@@ -775,16 +795,14 @@ export function UserEditorPage({ userId, initialTab }: Props) {
         </form>
 
         <aside className="flex flex-col gap-4">
-          <div className="rounded-md border border-border bg-card">
+          <div className="rounded-xl border border-border bg-card">
             <div className="border-b border-border px-3 py-2 text-sm font-medium">
               Status
             </div>
             <div className="space-y-2 p-3 text-sm">
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-muted-foreground">Current</span>
-                <span className="capitalize">
-                  {user.status.replace(/_/g, " ").toLowerCase()}
-                </span>
+                <StatusBadge status={user.status} />
               </div>
               <div className="flex flex-col gap-1 pt-1">
                 {user.status !== "ACTIVE" ? (
@@ -873,7 +891,7 @@ export function UserEditorPage({ userId, initialTab }: Props) {
             </div>
           </div>
 
-          <div className="rounded-md border border-border bg-card">
+          <div className="rounded-xl border border-border bg-card">
             <div className="border-b border-border px-3 py-2 text-sm font-medium">
               Roles
             </div>
@@ -885,6 +903,6 @@ export function UserEditorPage({ userId, initialTab }: Props) {
           </div>
         </aside>
       </div>
-    </main>
+    </ClinexaPage>
   );
 }

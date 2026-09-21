@@ -150,6 +150,8 @@ Define the Guardian context so that:
 | Governance | Audit trail, activity, system logs, administrative reports and exports | Append-only audit; export AuthZ and PHI minimization (`FR-ADM-004`, `FR-RPT-*`) |
 | Destructive operations | The only UI that renders them | Guardian-owned permission enforcement on every call (§7) |
 
+**Phase 5E dashboard implementation.** `/guardian` presents permission-aware administrative signals from existing Products, Inventory, Users, Orders, and Subscriptions APIs. Catalog publish state, inventory health, user governance, and secondary commerce volume are shown without invented analytics, charts, or backend aggregates. The dashboard may summarize the existing Inventory endpoint but does not change the Inventory module. Its canvas and shared sidebar/header use the finalized Login visual language; shell routing, RBAC, navigation groups, collapse, and the 1024px breakpoint remain unchanged.
+
 **GRD-016** — Guardian is a presentation and administration client. All durable identity, catalog, commerce, content, and configuration decisions are enforced by the Backend API.
 
 ### 2.2 Relationship with CRM

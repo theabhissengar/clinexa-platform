@@ -36,13 +36,13 @@ export function UserMenu() {
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-2 px-1.5 sm:px-2"
+            className="h-8 gap-2 rounded-lg px-1.5 hover:bg-background/70 sm:px-2"
             aria-label="User menu"
           />
         }
       >
-        <Avatar className="size-7">
-          <AvatarFallback className="text-xs">
+        <Avatar className="size-7 ring-1 ring-foreground/10">
+          <AvatarFallback className="bg-accent text-xs font-medium text-accent-foreground">
             {email ? initialsFromEmail(email) : "?"}
           </AvatarFallback>
         </Avatar>

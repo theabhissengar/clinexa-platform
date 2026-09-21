@@ -45,9 +45,10 @@ export function ApplicationSwitcher() {
         type="button"
         variant="outline"
         size="sm"
-        className="h-8 gap-1.5 px-2.5 pointer-events-none"
+        className="pointer-events-none h-8 gap-1.5 border-border bg-background/65 px-2.5 shadow-none"
         aria-label={`Application context: ${CONTEXT_LABEL[only]}`}
       >
+        <span className="size-1.5 rounded-full bg-primary" aria-hidden />
         <span className="text-sm font-medium">{CONTEXT_LABEL[only]}</span>
       </Button>
     );
@@ -63,11 +64,12 @@ export function ApplicationSwitcher() {
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2.5"
+            className="h-8 gap-1.5 border-border bg-background/65 px-2.5 shadow-none hover:bg-background"
             aria-label="Switch application context"
           />
         }
       >
+        <span className="size-1.5 rounded-full bg-primary" aria-hidden />
         <span className="text-sm font-medium">{currentLabel}</span>
         <ChevronsUpDown className="size-3.5 opacity-60" aria-hidden />
       </DropdownMenuTrigger>

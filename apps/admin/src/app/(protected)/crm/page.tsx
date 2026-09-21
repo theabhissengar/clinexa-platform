@@ -1,18 +1,10 @@
 "use client";
 
-import { LayoutDashboard } from "lucide-react";
-
-import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
+import { CrmDashboardPage } from "@/features/dashboards";
 
 /**
- * CRM operational dashboard placeholder.
+ * CRM operational dashboard.
  */
-export default function CrmDashboardPage() {
-  return (
-    <ModuleComingSoon
-      title="CRM Dashboard"
-      description="Operational KPIs, clinical queues, and day-to-day workspace widgets will land here. This page is a shell placeholder only."
-      icon={LayoutDashboard}
-    />
-  );
+export default function CrmDashboardRoute() {
+  return <CrmDashboardPage />;
 }

@@ -70,19 +70,22 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
+      <SidebarHeader className="border-b border-sidebar-border bg-[color-mix(in_oklch,var(--sidebar)_72%,var(--accent)_28%)]">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
+              className="rounded-lg hover:bg-sidebar-accent/80 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
               render={<Link href={brandHref} />}
               tooltip="Clinexa"
               aria-label={`Clinexa ${brandLabel}`}
             >
-              <BrandMark />
-              <span className="truncate font-semibold tracking-tight">
-                Clinexa
-                <span className="ml-1.5 text-xs font-normal text-sidebar-foreground/70">
+              <BrandMark className="shadow-sm" />
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate font-semibold tracking-tight">
+                  Clinexa
+                </span>
+                <span className="truncate text-xs font-normal text-sidebar-foreground/70">
                   {brandLabel}
                 </span>
               </span>

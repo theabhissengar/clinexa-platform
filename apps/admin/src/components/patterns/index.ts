@@ -1,3 +1,4 @@
+export { BrandLoader } from "@/components/patterns/brand-loader";
 export { ClearableSearchInput } from "@/components/patterns/clearable-search-input";
 export { ClinexaPage } from "@/components/patterns/clinexa-page";
 export type { ClinexaPageWidth } from "@/components/patterns/clinexa-page";
@@ -25,8 +26,10 @@ export {
 } from "@/components/patterns/filter-bar";
 export { FormSection } from "@/components/patterns/form-section";
 export { ListPaginationBar } from "@/components/patterns/list-pagination-bar";
+export { MetricCard } from "@/components/patterns/metric-card";
 export { ModuleDetailSearch } from "@/components/patterns/module-detail-search";
 export type { ModuleSearchResult } from "@/components/patterns/module-detail-search";
+export { PageCanvas } from "@/components/patterns/page-canvas";
 export { PageBody } from "@/components/patterns/page-body";
 export {
   PageHeader,

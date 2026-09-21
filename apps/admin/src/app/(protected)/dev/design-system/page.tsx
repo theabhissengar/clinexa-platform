@@ -20,8 +20,10 @@ import {
   FilterBarRow,
   FormSection,
   ListPaginationBar,
+  MetricCard,
   ModuleDetailSearch,
   PageBody,
+  PageCanvas,
   PageHeader,
   PageHeaderActions,
   PageHeaderCopy,
@@ -106,6 +108,30 @@ export default function DesignSystemPreviewPage() {
       )}
 
       <PageBody>
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-h2 font-semibold">
+            Dashboard canvas and metrics
+          </h2>
+          <PageCanvas className="rounded-xl p-4 ring-1 ring-foreground/10">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard
+                label="Operational queue"
+                value={24}
+                hint="Real values are supplied by feature pages"
+                icon={<Package />}
+              />
+              <MetricCard
+                label="Needs attention"
+                value={3}
+                hint="Semantic warning treatment"
+                tone="warning"
+                icon={<Inbox />}
+              />
+              <MetricCard label="Loading metric" loading />
+            </div>
+          </PageCanvas>
+        </section>
+
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-h2 font-semibold">StatusBadge tones</h2>
           <ul className="flex flex-col gap-2">

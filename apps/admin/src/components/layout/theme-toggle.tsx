@@ -11,6 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS = [
   { value: "light", label: "Light" },
@@ -26,7 +27,7 @@ function subscribe() {
  * Theme switch — light / dark / system via next-themes.
  * Shared by shell header and login (presentation only; do not fork theme state).
  */
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string } = {}) {
   const { theme, setTheme } = useTheme();
   const mounted = useSyncExternalStore(subscribe, () => true, () => false);
 
@@ -38,7 +39,7 @@ export function ThemeToggle() {
             type="button"
             variant="ghost"
             size="icon-sm"
-            className="relative"
+            className={cn("relative rounded-full", className)}
             aria-label="Toggle theme"
           />
         }

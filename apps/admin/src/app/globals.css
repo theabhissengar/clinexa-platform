@@ -173,6 +173,211 @@
   html {
     @apply font-sans;
   }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@keyframes login-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes login-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes login-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.login-enter-atmosphere {
+  animation: login-fade-in 700ms ease-out both;
+}
+
+.login-enter-rings {
+  animation: login-ring-in 900ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-enter-brand {
+  animation: login-slide-in 650ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-enter-card {
+  animation: login-rise 600ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes login-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes login-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -28px, 0);
+  }
+}
+
+@keyframes login-float-alt {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(16px, 22px, 0);
+  }
+}
+
+@keyframes login-grid-pan {
+  to {
+    background-position: 56px 56px;
+  }
+}
+
+@keyframes login-float-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-18px, 16px, 0);
+  }
+}
+
+@keyframes login-float-diag {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(20px, -16px, 0);
+  }
+}
+
+.login-spin {
+  animation: login-spin 80s linear infinite;
+}
+
+.login-spin-reverse {
+  animation: login-spin 110s linear infinite reverse;
+}
+
+.login-spin-slow {
+  animation: login-spin 140s linear infinite;
+}
+
+.login-float {
+  animation: login-float 14s ease-in-out infinite;
+}
+
+.login-float-delayed {
+  animation: login-float-alt 18s ease-in-out infinite;
+}
+
+.login-float-slow {
+  animation: login-float 22s ease-in-out infinite;
+}
+
+.login-float-drift {
+  animation: login-float-drift 16s ease-in-out infinite;
+}
+
+.login-float-diag {
+  animation: login-float-diag 19s ease-in-out infinite;
+}
+
+.login-grid-pan {
+  animation: login-grid-pan 48s linear infinite;
+}
+
+.login-fold-stage {
+  perspective: 1400px;
+  perspective-origin: 50% 45%;
+}
+
+.login-fold-sheet {
+  transform: translateZ(0);
+  transform-origin: center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+@keyframes login-fold-tr-bl {
+  0% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 0.55);
+  }
+  50% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, 76deg);
+    animation-timing-function: cubic-bezier(0, 0.45, 0.6, 1);
+  }
+  100% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
+  }
+}
+
+@keyframes login-fold-bl-tr {
+  0% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
+    animation-timing-function: cubic-bezier(0.4, 0, 1, 0.55);
+  }
+  50% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, -76deg);
+    animation-timing-function: cubic-bezier(0, 0.45, 0.6, 1);
+  }
+  100% {
+    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
+  }
+}
+
+.login-fold-to-guardian,
+.login-fold-to-crm {
+  will-change: transform;
+}
+
+.login-fold-to-guardian {
+  transform-origin: 100% 0%;
+  animation: login-fold-tr-bl 640ms linear both;
+}
+
+.login-fold-to-crm {
+  transform-origin: 0% 100%;
+  animation: login-fold-bl-tr 640ms linear both;
 }
 
 @media (prefers-reduced-motion: reduce) {

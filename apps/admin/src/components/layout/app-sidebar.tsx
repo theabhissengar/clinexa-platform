@@ -10,7 +10,6 @@ import { NAV_ITEMS, type NavItem } from "@/components/layout/nav-config";
 import {
   filterNavItems,
   groupNavItems,
-  isNavItemActive,
   isNavItemSoleActive,
   type NavGroupSection,
 } from "@/components/layout/nav-filter";
@@ -149,45 +148,46 @@ function GuardianNav({
   collapsed: boolean;
 }) {
   const sections = useMemo(() => groupNavItems(items), [items]);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>(() =>
-    initialExpanded(sections, pathname),
-  );
 
-  // When the route selects a page, keep only that section open.
-  // Users can still open other sections manually until the next navigation.
-  useEffect(() => {
-    setExpanded((prev) => {
-      let activeKey: string | null = null;
-      for (const section of sections) {
-        const hasActive = section.items.some((item) =>
-          isNavItemSoleActive(pathname, item, items),
-        );
-        if (hasActive) {
-          activeKey = section.key;
-          break;
-        }
+  const activeSectionKey = useMemo(() => {
+    for (const section of sections) {
+      const hasActive = section.items.some((item) =>
+        isNavItemSoleActive(pathname, item, items),
+      );
+      if (hasActive) {
+        return section.key;
       }
-      if (!activeKey) {
-        return prev;
-      }
+    }
+    return null;
+  }, [sections, pathname, items]);
 
-      let changed = false;
-      const next: Record<string, boolean> = { ...prev };
-      for (const section of sections) {
-        const shouldOpen = section.key === activeKey;
-        if (next[section.key] !== shouldOpen) {
-          next[section.key] = shouldOpen;
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [pathname, sections, items]);
+  // Manual open/close overrides for the current route only. Resetting when the
+  // path changes is done during render (not in an effect) so lint stays clean.
+  const [manual, setManual] = useState<{
+    path: string;
+    map: Record<string, boolean>;
+  }>({ path: pathname, map: {} });
+
+  if (manual.path !== pathname) {
+    setManual({ path: pathname, map: {} });
+  }
+
+  const manualMap = manual.path === pathname ? manual.map : {};
+
+  function isSectionOpen(sectionKey: string): boolean {
+    if (manualMap[sectionKey] !== undefined) {
+      return manualMap[sectionKey]!;
+    }
+    if (activeSectionKey) {
+      return sectionKey === activeSectionKey;
+    }
+    return sectionKey === "dashboard";
+  }
 
   return (
     <>
       {sections.map((section) => {
-        const isOpen = expanded[section.key] ?? true;
+        const isOpen = isSectionOpen(section.key);
         const sectionActive = section.items.some((item) =>
           isNavItemSoleActive(pathname, item, items),
         );
@@ -217,10 +217,13 @@ function GuardianNav({
               aria-expanded={isOpen}
               aria-controls={panelId}
               onClick={() =>
-                setExpanded((prev) => ({
-                  ...prev,
-                  [section.key]: !isOpen,
-                }))
+                setManual({
+                  path: pathname,
+                  map: {
+                    ...manualMap,
+                    [section.key]: !isOpen,
+                  },
+                })
               }
             >
               <SidebarGroupLabel className="h-auto flex-1 cursor-pointer p-0 text-xs leading-none font-semibold tracking-[0.1em] text-[#6b675f] uppercase dark:text-white/55">
@@ -435,27 +438,4 @@ function NavLinkItem({
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
-}
-
-function initialExpanded(
-  sections: NavGroupSection[],
-  pathname: string,
-): Record<string, boolean> {
-  const next: Record<string, boolean> = {};
-  let activeKey: string | null = null;
-  for (const section of sections) {
-    const hasActive = section.items.some((item) =>
-      isNavItemActive(pathname, item.route),
-    );
-    if (hasActive) {
-      activeKey = section.key;
-    }
-  }
-  for (const section of sections) {
-    // Only the active section starts open; otherwise leave closed for a clean accordion.
-    next[section.key] = activeKey
-      ? section.key === activeKey
-      : section.key === "dashboard";
-  }
-  return next;
 }

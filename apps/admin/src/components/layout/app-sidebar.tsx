@@ -36,7 +36,6 @@ import {
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import {
   CONTEXT_LABEL,
-  CONTEXT_LANDING,
   resolveContextFromPathname,
   type PlatformContext,
 } from "@/lib/platform-context";
@@ -65,7 +64,6 @@ export function AppSidebar() {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
 
-  const brandHref = context ? CONTEXT_LANDING[context] : "/";
   const brandLabel = context ? CONTEXT_LABEL[context] : "Clinexa";
   const isGuardian = context === "guardian";
 
@@ -78,32 +76,26 @@ export function AppSidebar() {
         "dark:[&_[data-slot=sidebar-inner]]:!bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)]",
       )}
     >
-      <SidebarHeader className="relative overflow-hidden border-b border-black/8 bg-[#1c1c1c] text-white dark:border-white/10 dark:bg-[#121417]">
+      <SidebarHeader className="relative h-14 shrink-0 gap-0 overflow-hidden border-b border-black/8 bg-[#1c1c1c] p-0 text-white dark:border-white/10 dark:bg-[#121417]">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(239,213,106,0.22),transparent_55%)] opacity-80"
         />
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              size="lg"
-              className="relative z-10 rounded-2xl text-white hover:bg-white/8 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-              render={<Link href={brandHref} />}
-              tooltip="Clinexa"
-              aria-label={`Clinexa ${brandLabel}`}
-            >
-              <BrandMark className="bg-[#efd56a] text-[#1c1c1c] shadow-sm" />
-              <span className="flex min-w-0 flex-col leading-tight">
-                <span className="truncate font-semibold tracking-tight">
-                  Clinexa
-                </span>
-                <span className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-[#efd56a]/90">
-                  {brandLabel}
-                </span>
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {/* Static brand band — height locked to AppHeader (h-14) */}
+        <div
+          className="relative z-10 flex h-full w-full min-w-0 items-center gap-2 overflow-hidden px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+          aria-label={`Clinexa ${brandLabel}`}
+        >
+          <BrandMark className="shrink-0 bg-[#efd56a] text-[#1c1c1c] shadow-sm" />
+          <span className="flex min-w-0 flex-col leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="truncate text-sm font-semibold tracking-tight">
+              Clinexa
+            </span>
+            <span className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#efd56a]/90">
+              {brandLabel}
+            </span>
+          </span>
+        </div>
       </SidebarHeader>
       <SidebarContent className="gap-1 px-2 py-2">
         {isGuardian ? (
@@ -161,6 +153,37 @@ function GuardianNav({
     initialExpanded(sections, pathname),
   );
 
+  // When the route selects a page, keep only that section open.
+  // Users can still open other sections manually until the next navigation.
+  useEffect(() => {
+    setExpanded((prev) => {
+      let activeKey: string | null = null;
+      for (const section of sections) {
+        const hasActive = section.items.some((item) =>
+          isNavItemSoleActive(pathname, item, items),
+        );
+        if (hasActive) {
+          activeKey = section.key;
+          break;
+        }
+      }
+      if (!activeKey) {
+        return prev;
+      }
+
+      let changed = false;
+      const next: Record<string, boolean> = { ...prev };
+      for (const section of sections) {
+        const shouldOpen = section.key === activeKey;
+        if (next[section.key] !== shouldOpen) {
+          next[section.key] = shouldOpen;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [pathname, sections, items]);
+
   return (
     <>
       {sections.map((section) => {
@@ -190,7 +213,7 @@ function GuardianNav({
             <button
               type="button"
               id={`${panelId}-trigger`}
-              className="flex h-6 w-full items-center gap-1 rounded-md px-1.5 text-left outline-none transition-colors duration-200 ease-out hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:hover:bg-white/8"
+              className="flex h-7 w-full items-center gap-1.5 rounded-full px-2 text-left outline-none transition-colors duration-200 ease-out hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-sidebar-ring dark:hover:bg-white/8"
               aria-expanded={isOpen}
               aria-controls={panelId}
               onClick={() =>
@@ -200,12 +223,12 @@ function GuardianNav({
                 }))
               }
             >
-              <SidebarGroupLabel className="h-auto flex-1 cursor-pointer p-0 text-[0.6rem] leading-none font-semibold tracking-[0.12em] text-[#8a857a] uppercase dark:text-white/45">
+              <SidebarGroupLabel className="h-auto flex-1 cursor-pointer p-0 text-xs leading-none font-semibold tracking-[0.1em] text-[#6b675f] uppercase dark:text-white/55">
                 {section.label}
               </SidebarGroupLabel>
               <ChevronDown
                 className={cn(
-                  "size-3 shrink-0 text-[#8a857a] transition-transform duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:text-white/45",
+                  "size-3.5 shrink-0 text-[#8a857a] transition-transform duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:text-white/45",
                   isOpen ? "rotate-0" : "-rotate-90",
                 )}
                 aria-hidden
@@ -261,7 +284,11 @@ function CollapsedGroupFlyout({
   pathname: string;
   allItems: readonly NavItem[];
 }) {
-  const LeadIcon = section.items[0]?.icon;
+  const activeItem = section.items.find((item) =>
+    isNavItemSoleActive(pathname, item, allItems),
+  );
+  // Prefer the selected page icon so re-collapse still surfaces the current route.
+  const LeadIcon = activeItem?.icon ?? section.items[0]?.icon;
   const menuId = useId();
 
   return (
@@ -274,16 +301,50 @@ function CollapsedGroupFlyout({
                 render={
                   <SidebarMenuButton
                     isActive={sectionActive}
-                    tooltip={section.label}
-                    aria-label={section.label}
+                    tooltip={
+                      activeItem
+                        ? `${section.label}: ${activeItem.title}`
+                        : section.label
+                    }
+                    aria-label={
+                      activeItem
+                        ? `${section.label}: ${activeItem.title}`
+                        : section.label
+                    }
                     aria-haspopup="menu"
                     aria-controls={menuId}
-                    className="rounded-xl data-active:bg-[#1c1c1c]/8 dark:data-active:bg-[#efd56a]/18"
+                    className={cn(
+                      "rounded-full text-sm",
+                      // Match CRM active pills; hide the default left rail marker
+                      // that otherwise clips as a dark sliver in icon mode.
+                      "data-active:bg-[#1c1c1c] data-active:text-white data-active:before:hidden",
+                      "data-active:hover:bg-[#1c1c1c] data-active:hover:text-white",
+                      "dark:data-active:bg-[#efd56a] dark:data-active:text-[#1c1c1c]",
+                      "dark:data-active:hover:bg-[#efd56a] dark:data-active:hover:text-[#1c1c1c]",
+                      "data-open:bg-[#1c1c1c]/10 data-open:hover:bg-[#1c1c1c]/10",
+                      "dark:data-open:bg-[#efd56a]/18 dark:data-open:hover:bg-[#efd56a]/18",
+                      sectionActive &&
+                        "data-open:bg-[#1c1c1c] data-open:text-white data-open:hover:bg-[#1c1c1c] data-open:hover:text-white dark:data-open:bg-[#efd56a] dark:data-open:text-[#1c1c1c] dark:data-open:hover:bg-[#efd56a] dark:data-open:hover:text-[#1c1c1c]",
+                    )}
                   />
                 }
               >
-                {LeadIcon ? <LeadIcon aria-hidden /> : null}
-                <span>{section.label}</span>
+                {LeadIcon ? (
+                  <span
+                    className={cn(
+                      "flex size-full items-center justify-center [&_svg]:size-4",
+                      sectionActive
+                        ? "text-[#efd56a] dark:text-[#1c1c1c]"
+                        : "text-[#6b675f] dark:text-white/60",
+                    )}
+                    aria-hidden
+                  >
+                    <LeadIcon />
+                  </span>
+                ) : null}
+                <span className="group-data-[collapsible=icon]:hidden">
+                  {section.label}
+                </span>
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 id={menuId}
@@ -345,25 +406,32 @@ function NavLinkItem({
         size={isGuardian ? "sm" : "default"}
         render={<Link href={item.route} />}
         className={cn(
-          "min-w-0 rounded-full text-[0.8125rem]",
-          isGuardian ? "h-7 gap-1.5 px-1.5 py-0" : "h-8 gap-2 px-1.5",
+          "min-w-0 rounded-full text-sm",
+          isGuardian ? "h-8 gap-2 px-2 py-0" : "h-9 gap-2 px-2",
           "data-active:bg-[#1c1c1c] data-active:text-white data-active:before:hidden",
+          "data-active:hover:bg-[#1c1c1c] data-active:hover:text-white",
           "dark:data-active:bg-[#efd56a] dark:data-active:text-[#1c1c1c]",
+          "dark:data-active:hover:bg-[#efd56a] dark:data-active:hover:text-[#1c1c1c]",
         )}
       >
         <span
           className={cn(
-            "flex shrink-0 items-center justify-center rounded-full [&_svg]:size-3.5 group-data-[collapsible=icon]:contents",
+            "flex shrink-0 items-center justify-center rounded-full [&_svg]:size-4",
             isGuardian ? "size-5" : "size-6",
+            // Keep the chip box in icon mode so the glyph doesn't jump when the wrapper
+            // would otherwise collapse via `contents`.
+            "group-data-[collapsible=icon]:size-full group-data-[collapsible=icon]:bg-transparent!",
             active
-              ? "bg-[#efd56a]/25 text-[#efd56a] dark:bg-[#1c1c1c]/15 dark:text-[#1c1c1c]"
+              ? "bg-[#efd56a]/25 text-[#efd56a] group-data-[collapsible=icon]:text-[#efd56a] dark:bg-[#1c1c1c]/15 dark:text-[#1c1c1c] dark:group-data-[collapsible=icon]:text-[#1c1c1c]"
               : "bg-black/5 text-[#6b675f] dark:bg-white/8 dark:text-white/60",
           )}
           aria-hidden
         >
           <Icon />
         </span>
-        <span className="truncate">{item.title}</span>
+        <span className="truncate group-data-[collapsible=icon]:hidden">
+          {item.title}
+        </span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -374,11 +442,20 @@ function initialExpanded(
   pathname: string,
 ): Record<string, boolean> {
   const next: Record<string, boolean> = {};
+  let activeKey: string | null = null;
   for (const section of sections) {
     const hasActive = section.items.some((item) =>
       isNavItemActive(pathname, item.route),
     );
-    next[section.key] = hasActive || section.key === "dashboard";
+    if (hasActive) {
+      activeKey = section.key;
+    }
+  }
+  for (const section of sections) {
+    // Only the active section starts open; otherwise leave closed for a clean accordion.
+    next[section.key] = activeKey
+      ? section.key === activeKey
+      : section.key === "dashboard";
   }
   return next;
 }

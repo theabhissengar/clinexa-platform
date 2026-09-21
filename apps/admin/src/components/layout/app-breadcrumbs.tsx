@@ -77,7 +77,7 @@ export function AppBreadcrumbs() {
 
   return (
     <Breadcrumb className="min-w-0">
-      <BreadcrumbList className="flex-nowrap overflow-hidden">
+      <BreadcrumbList className="flex-nowrap overflow-hidden text-label">
         {segments.map((segment, index) => {
           const isLast = index === segments.length - 1;
           const isCollapsibleGroup =
@@ -85,7 +85,9 @@ export function AppBreadcrumbs() {
 
           return (
             <Fragment key={`${segment.label}-${index}`}>
-              {index > 0 ? <BreadcrumbSeparator /> : null}
+              {index > 0 ? (
+                <BreadcrumbSeparator className="text-muted-foreground/60" />
+              ) : null}
               {isCollapsibleGroup ? (
                 <>
                   <BreadcrumbItem className="lg:hidden" aria-hidden>
@@ -100,12 +102,12 @@ export function AppBreadcrumbs() {
               ) : (
                 <BreadcrumbItem className={isLast ? "min-w-0" : "shrink-0"}>
                   {isLast || !segment.href ? (
-                    <BreadcrumbPage className="truncate">
+                    <BreadcrumbPage className="truncate font-semibold">
                       {segment.label}
                     </BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink
-                      className="truncate"
+                      className="truncate font-medium text-foreground/70"
                       render={<Link href={segment.href} />}
                     >
                       {segment.label}

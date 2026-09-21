@@ -1,18 +1,10 @@
 "use client";
 
-import { LayoutDashboard } from "lucide-react";
-
-import { ModuleComingSoon } from "@/components/layout/module-coming-soon";
+import { GuardianDashboardPage } from "@/features/dashboards";
 
 /**
- * Guardian administrative dashboard placeholder.
+ * Guardian administrative dashboard.
  */
-export default function GuardianDashboardPage() {
-  return (
-    <ModuleComingSoon
-      title="Guardian Dashboard"
-      description="Administrative health, publish state, governance shortcuts, and platform signals will land here. This page is a shell placeholder only."
-      icon={LayoutDashboard}
-    />
-  );
+export default function GuardianDashboardRoute() {
+  return <GuardianDashboardPage />;
 }

@@ -93,7 +93,7 @@ export function LoginApplicationSelector({
       aria-label="Application"
       aria-disabled={disabled || undefined}
       onKeyDown={handleKeyDown}
-      className="grid grid-cols-2 gap-0.5 rounded-lg bg-[color-mix(in_oklch,var(--primary)_14%,transparent)] p-1 ring-1 ring-primary/15 dark:bg-input/30 dark:ring-input"
+      className="grid grid-cols-2 gap-0.5 rounded-lg bg-[color-mix(in_oklch,var(--accent)_28%,transparent)] p-1 ring-1 ring-black/6 dark:bg-input/30 dark:ring-white/10"
     >
       {PLATFORM_CONTEXT_LIST.map((context) => {
         const selected = context === value;

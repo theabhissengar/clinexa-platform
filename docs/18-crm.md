@@ -597,11 +597,12 @@ This section is the **contributor source of truth** for the shared **Internal Pl
 
 - **Lucide** is the official and only icon library for the Internal Platform. Do not mix React Icons, Heroicons, or other packs.
 
-### 4.8 Dashboard placeholder
+### 4.8 Dashboard
 
-- The current Dashboard page is a **placeholder** only.
-- Each context has its own dashboard (operational queues in CRM; administrative KPIs in Guardian).
-- Future dashboard widgets, analytics, and KPIs are implemented as page/feature content **without changing shell architecture**.
+- `/crm` is an operational dashboard composed from existing permission-gated Orders, Subscriptions, and CRM Users APIs.
+- It presents order-status queues (including `AWAITING_CLINICAL_REVIEW`, which is not a consultation queue), fulfillment attention, subscription health, recent orders, and renewal attention without inventing analytics or changing API contracts.
+- Guardian retains a separate administrative hierarchy. Both contexts share the same Login-derived visual language and shell behavior.
+- Widgets in §11.7 without implemented APIs (clinical consultation, pharmacy, tickets, CMS, marketing analytics, system health, and audit summaries) remain future work rather than placeholder data.
 
 ### 4.9 Super Administrator (ROLE-010)
 

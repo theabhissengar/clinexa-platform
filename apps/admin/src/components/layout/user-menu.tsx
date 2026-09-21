@@ -36,21 +36,21 @@ export function UserMenu() {
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 gap-2 px-1.5 sm:px-2"
+            className="h-8 gap-2 rounded-full px-1.5 hover:bg-black/5 sm:px-2 dark:hover:bg-white/10"
             aria-label="User menu"
           />
         }
       >
-        <Avatar className="size-7">
-          <AvatarFallback className="text-xs">
+        <Avatar className="size-7 ring-1 ring-black/8 dark:ring-white/12">
+          <AvatarFallback className="bg-[#efd56a] text-xs font-semibold text-[#1c1c1c]">
             {email ? initialsFromEmail(email) : "?"}
           </AvatarFallback>
         </Avatar>
-        <span className="hidden max-w-36 truncate text-sm lg:inline">
+        <span className="hidden max-w-36 truncate text-sm text-[#1c1c1c] lg:inline dark:text-white/90">
           {email}
         </span>
         <ChevronsUpDown
-          className="hidden size-3.5 text-muted-foreground sm:block"
+          className="hidden size-3.5 text-[#6b675f] sm:block dark:text-white/50"
           aria-hidden
         />
       </DropdownMenuTrigger>

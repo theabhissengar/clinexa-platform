@@ -24,7 +24,7 @@ export function ClinexaPage({
   className,
 }: ClinexaPageProps) {
   return (
-    <main
+    <div
       className={cn(
         "mx-auto flex w-full min-w-0 flex-1 flex-col px-4 py-6 md:px-6 md:py-8",
         PAGE_WIDTH[width],
@@ -32,6 +32,6 @@ export function ClinexaPage({
       )}
     >
       {children}
-    </main>
+    </div>
   );
 }

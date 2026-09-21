@@ -17,7 +17,16 @@ export type CrmSubscriptionAttention = {
 };
 
 function loadRecentOrders(): Promise<OrderListResponse> {
-  return listCrmOrders({ skip: 0, take: 8 });
+  // Larger sample powers ops widgets + Insights charts from the same live list.
+  return listCrmOrders({ skip: 0, take: 48 });
+}
+
+function loadRenewalOrders(): Promise<OrderListResponse> {
+  return listCrmOrders({
+    orderType: "SUBSCRIPTION_RENEWAL",
+    skip: 0,
+    take: 48,
+  });
 }
 
 async function loadSubscriptionAttention(): Promise<CrmSubscriptionAttention> {
@@ -62,6 +71,11 @@ export function useCrmDashboardData() {
     loadRecentOrders,
     "Unable to load order activity.",
   );
+  const renewals = useDashboardResource(
+    canViewOrders,
+    loadRenewalOrders,
+    "Unable to load renewal activity.",
+  );
   const subscriptions = useDashboardResource(
     canViewSubscriptions,
     loadSubscriptionAttention,
@@ -80,6 +94,7 @@ export function useCrmDashboardData() {
       canViewPatients,
     },
     orders,
+    renewals,
     subscriptions,
     patients,
   };

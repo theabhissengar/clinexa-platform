@@ -4,6 +4,7 @@ import { useCallback, useState, type ReactNode } from "react";
 
 import { BrandMark } from "@/components/layout/brand-mark";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { BrandLoader } from "@/components/patterns/brand-loader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { LoginApplicationSelector } from "@/features/auth/components/login-application-selector";
 import { LoginAtmosphere } from "@/features/auth/components/login-atmosphere";
@@ -56,11 +57,11 @@ export function LoginPageView({ form }: LoginPageViewProps) {
       <LoginThemeControl />
       <div className="grid min-h-dvh flex-1 lg:grid-cols-2">
         <LoginVisualPanel destination={destination} />
-        <div className="relative flex flex-col items-center justify-center overflow-visible bg-[color-mix(in_oklch,var(--muted)_58%,var(--info)_24%)] px-4 py-12 sm:px-6 sm:py-16 dark:bg-background">
+        <div className="relative flex flex-col items-center justify-center overflow-visible bg-[linear-gradient(145deg,#f7f4ef_0%,#f3efe8_42%,#f0e2c4_100%)] px-4 py-12 sm:px-6 sm:py-16 dark:bg-[linear-gradient(145deg,#16181c_0%,#1b1e24_45%,#242018_100%)]">
           <LoginAtmosphere variant="form" />
-          <div className="login-enter-brand relative z-10 mb-8 flex items-center gap-2.5 lg:hidden">
-            <BrandMark size="sm" />
-            <p className="text-sm font-semibold tracking-tight text-foreground">
+          <div className="login-enter-brand relative z-10 mb-8 flex items-center gap-3 lg:hidden">
+            <BrandMark size="md" className="bg-[#efd56a] text-[#1c1c1c]" />
+            <p className="text-base font-semibold tracking-tight text-foreground sm:text-lg">
               Clinexa
             </p>
           </div>
@@ -91,7 +92,7 @@ export function LoginPageView({ form }: LoginPageViewProps) {
             >
               <Card
                 className={cn(
-                  "w-full bg-[color-mix(in_oklch,var(--accent)_60%,var(--info)_22%)] shadow-sm ring-primary/15 dark:bg-card dark:ring-foreground/10",
+                  "w-full bg-[color-mix(in_oklch,white_76%,var(--accent)_24%)] shadow-sm ring-black/6 dark:bg-card dark:ring-white/10",
                 )}
               >
                 <CardHeader className="gap-4">
@@ -116,13 +117,5 @@ export function LoginPageView({ form }: LoginPageViewProps) {
 }
 
 export function LoginLoadingView() {
-  return (
-    <main className="relative flex min-h-dvh flex-1 flex-col items-center justify-center bg-[color-mix(in_oklch,var(--muted)_58%,var(--info)_24%)] px-4 py-12 sm:px-6 sm:py-16 dark:bg-background">
-      <LoginThemeControl />
-      <div className="flex flex-col items-center gap-3">
-        <BrandMark />
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </div>
-    </main>
-  );
+  return <BrandLoader label="Loading…" />;
 }

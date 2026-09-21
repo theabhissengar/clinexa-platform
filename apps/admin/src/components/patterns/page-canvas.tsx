@@ -6,14 +6,14 @@ type PageCanvasProps = {
 };
 
 /**
- * Login-aligned application canvas for modernized product screens.
- * It owns presentation only; the application shell remains the main landmark.
+ * Transparent page canvas over the shared Login-aligned shell atmosphere.
+ * Presentation only; the application shell remains the main landmark.
  */
 export function PageCanvas({ children, className }: PageCanvasProps) {
   return (
     <div
       className={cn(
-        "flex min-h-full min-w-0 flex-1 flex-col bg-[color-mix(in_oklch,var(--muted)_58%,var(--info)_24%)] dark:bg-background",
+        "relative flex min-h-full min-w-0 flex-1 flex-col bg-transparent",
         className,
       )}
     >

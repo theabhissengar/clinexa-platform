@@ -18,6 +18,11 @@ import {
   canAccessContext,
   resolveContextFromPathname,
 } from "@/lib/platform-context";
+import { cn } from "@/lib/utils";
+import { useAppSwitchLoader } from "@/providers/app-switch-loader-provider";
+
+const switcherTriggerClass =
+  "h-8 gap-1.5 rounded-full border-black/8 bg-white/80 px-2.5 shadow-none hover:bg-white dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12";
 
 /**
  * Application Switcher — CRM | Guardian (NAV-100–104).
@@ -28,6 +33,7 @@ export function ApplicationSwitcher() {
   const pathname = usePathname();
   const router = useRouter();
   const { can } = usePermissions();
+  const { beginSwitch } = useAppSwitchLoader();
 
   const active = resolveContextFromPathname(pathname);
   const accessible = PLATFORM_CONTEXT_LIST.filter((context) =>
@@ -45,10 +51,13 @@ export function ApplicationSwitcher() {
         type="button"
         variant="outline"
         size="sm"
-        className="pointer-events-none h-8 gap-1.5 border-border bg-background/65 px-2.5 shadow-none"
+        className={cn(switcherTriggerClass, "pointer-events-none")}
         aria-label={`Application context: ${CONTEXT_LABEL[only]}`}
       >
-        <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+        <span
+          className="size-1.5 rounded-full bg-[#1c1c1c] dark:bg-[#efd56a]"
+          aria-hidden
+        />
         <span className="text-sm font-medium">{CONTEXT_LABEL[only]}</span>
       </Button>
     );
@@ -64,14 +73,17 @@ export function ApplicationSwitcher() {
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 border-border bg-background/65 px-2.5 shadow-none hover:bg-background"
+            className={switcherTriggerClass}
             aria-label="Switch application context"
           />
         }
       >
-        <span className="size-1.5 rounded-full bg-primary" aria-hidden />
+        <span
+          className="size-1.5 rounded-full bg-[#1c1c1c] dark:bg-[#efd56a]"
+          aria-hidden
+        />
         <span className="text-sm font-medium">{currentLabel}</span>
-        <ChevronsUpDown className="size-3.5 opacity-60" aria-hidden />
+        <ChevronsUpDown className="size-3.5 opacity-50" aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-40">
         {accessible.map((context) => {
@@ -82,6 +94,7 @@ export function ApplicationSwitcher() {
               className="gap-2"
               onClick={() => {
                 if (!isActive) {
+                  beginSwitch(context);
                   router.push(CONTEXT_LANDING[context]);
                 }
               }}

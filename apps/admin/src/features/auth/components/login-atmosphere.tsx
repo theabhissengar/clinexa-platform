@@ -61,7 +61,7 @@ function Dot({ className, tone }: { className: string; tone: string }) {
 }
 
 /**
- * Decorative login backdrop. Token-only (primary/accent/info/border).
+ * Decorative login backdrop. Soft cream/gold tokens (primary/accent/border).
  * pointer-events-none so it never blocks the form or theme toggle.
  */
 export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
@@ -76,7 +76,7 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
         className={cn(
           "login-grid-pan absolute inset-0",
           brand
-            ? "bg-[linear-gradient(var(--sidebar-border)_1px,transparent_1px),linear-gradient(90deg,var(--sidebar-border)_1px,transparent_1px)] opacity-80 dark:opacity-30"
+            ? "bg-[linear-gradient(rgba(239,213,106,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(239,213,106,0.18)_1px,transparent_1px)] opacity-70 dark:opacity-40"
             : "bg-[linear-gradient(var(--border)_1px,transparent_1px),linear-gradient(90deg,var(--border)_1px,transparent_1px)] opacity-70 dark:opacity-20",
         )}
         style={{ backgroundSize: brand ? "56px 56px" : "72px 72px" }}
@@ -86,15 +86,15 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
         className={cn(
           "login-float absolute rounded-full blur-3xl",
           brand
-            ? "-top-28 -left-20 size-88 bg-primary/40 dark:bg-primary/25"
-            : "-top-32 -right-24 size-80 bg-info/30 dark:bg-primary/18",
+            ? "-top-28 -left-20 size-88 bg-[#efd56a]/35 dark:bg-[#efd56a]/20"
+            : "-top-32 -right-24 size-80 bg-accent/55 dark:bg-accent/30",
         )}
       />
       <div
         className={cn(
           "login-float-delayed absolute rounded-full blur-3xl",
           brand
-            ? "-right-16 -bottom-16 size-72 bg-accent dark:bg-accent/35"
+            ? "-right-16 -bottom-16 size-72 bg-accent/50 dark:bg-accent/30"
             : "-left-20 -bottom-20 size-64 bg-accent dark:bg-accent/25",
         )}
       />
@@ -102,23 +102,25 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
         className={cn(
           "login-float-drift absolute rounded-full blur-3xl",
           brand
-            ? "top-1/3 right-[18%] size-40 bg-sidebar-primary/35 dark:bg-sidebar-primary/20"
-            : "top-[55%] right-[8%] size-40 bg-info/30 dark:bg-info/15",
+            ? "top-1/3 right-[18%] size-40 bg-white/10 dark:bg-[#efd56a]/15"
+            : "top-[55%] right-[8%] size-40 bg-primary/12 dark:bg-accent/20",
         )}
       />
       <div
         className={cn(
           "login-float-slow absolute rounded-full blur-3xl",
           brand
-            ? "bottom-[18%] left-[8%] size-52 bg-sidebar-primary/20 dark:bg-primary/10"
-            : "top-[12%] left-[6%] size-48 bg-primary/15 dark:bg-primary/10",
+            ? "bottom-[18%] left-[8%] size-52 bg-[#efd56a]/20 dark:bg-primary/15"
+            : "top-[12%] left-[6%] size-48 bg-primary/12 dark:bg-primary/10",
         )}
       />
 
       <OrbitRing
         spinClass={brand ? "login-spin" : "login-spin-reverse"}
         className={cn(
-          "text-primary/50 dark:text-primary/20",
+          brand
+            ? "text-[#efd56a]/45 dark:text-[#efd56a]/25"
+            : "text-primary/40 dark:text-primary/20",
           brand
             ? "-right-10 top-8 size-112 xl:size-136"
             : "-left-24 -bottom-20 size-88 opacity-90 dark:opacity-70",
@@ -127,7 +129,9 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
       <OrbitRing
         spinClass={brand ? "login-spin-reverse" : "login-spin-slow"}
         className={cn(
-          "text-primary/30 dark:text-primary/12",
+          brand
+            ? "text-[#efd56a]/30 dark:text-[#efd56a]/15"
+            : "text-primary/25 dark:text-primary/12",
           brand
             ? "-bottom-16 -left-12 size-72 opacity-80"
             : "-right-16 top-10 size-64 opacity-70 dark:opacity-50",
@@ -138,47 +142,47 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
         <>
           <Diamond
             className="login-float top-20 right-[22%]"
-            tone="size-3 border-sidebar-primary/40 bg-sidebar-accent dark:bg-sidebar-primary/20"
+            tone="size-3 border-[#efd56a]/45 bg-[#efd56a]/15"
           />
           <Diamond
             className="login-float-diag top-[12%] left-[28%]"
-            tone="size-2.5 border-sidebar-primary/35 bg-sidebar-primary/15"
+            tone="size-2.5 border-[#efd56a]/40 bg-[#efd56a]/12"
           />
           <Diamond
             className="login-float-slow bottom-[22%] right-[12%]"
-            tone="size-2 border-sidebar-primary/30"
+            tone="size-2 border-[#efd56a]/35"
           />
           <Diamond
             className="login-float-drift top-[42%] left-[8%]"
-            tone="size-3.5 border-sidebar-primary/25 bg-sidebar-accent/80"
+            tone="size-3.5 border-[#efd56a]/30 bg-[#efd56a]/10"
           />
           <Diamond
             className="login-float-delayed bottom-[38%] left-[36%]"
-            tone="size-2 border-sidebar-primary/40"
+            tone="size-2 border-[#efd56a]/40"
           />
           <Dot
             className="login-float-delayed right-16 bottom-28 size-2"
-            tone="bg-sidebar-primary/50"
+            tone="bg-[#efd56a]/55"
           />
           <Dot
             className="login-float top-[58%] left-[18%] size-1.5"
-            tone="bg-sidebar-primary/40"
+            tone="bg-[#efd56a]/45"
           />
           <Dot
             className="login-float-diag top-[28%] right-[8%] size-2.5"
-            tone="bg-sidebar-primary/35"
+            tone="bg-[#efd56a]/40"
           />
           <Dot
             className="login-float-slow top-[72%] right-[32%] size-1.5"
-            tone="bg-sidebar-primary/30"
+            tone="bg-[#efd56a]/35"
           />
           <Dot
             className="login-float-drift bottom-[12%] left-[22%] size-3"
-            tone="border border-sidebar-primary/35"
+            tone="border border-[#efd56a]/40"
           />
           <Dot
             className="login-float-delayed top-[8%] left-[12%] size-1"
-            tone="bg-sidebar-primary/45"
+            tone="bg-[#efd56a]/50"
           />
         </>
       ) : (
@@ -189,11 +193,11 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
           />
           <Diamond
             className="login-float-diag top-[18%] right-[14%]"
-            tone="size-3 border-primary/25 bg-primary/10"
+            tone="size-3 border-primary/25 bg-accent/50"
           />
           <Diamond
             className="login-float-slow bottom-[16%] left-[22%]"
-            tone="size-2.5 border-info/35"
+            tone="size-2.5 border-accent/60"
           />
           <Diamond
             className="login-float-drift top-[48%] left-[6%]"
@@ -209,7 +213,7 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
           />
           <Dot
             className="login-float top-[14%] left-[42%] size-2"
-            tone="bg-info/30"
+            tone="bg-accent/70"
           />
           <Dot
             className="login-float-diag top-[62%] right-[28%] size-2.5"
@@ -225,7 +229,7 @@ export function LoginAtmosphere({ variant }: LoginAtmosphereProps) {
           />
           <Dot
             className="login-float-delayed top-[78%] left-[14%] size-1"
-            tone="bg-info/40"
+            tone="bg-accent/80"
           />
         </>
       )}

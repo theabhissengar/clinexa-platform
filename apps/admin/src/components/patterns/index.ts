@@ -1,3 +1,4 @@
+export { BrandLoader } from "@/components/patterns/brand-loader";
 export { ClearableSearchInput } from "@/components/patterns/clearable-search-input";
 export { ClinexaPage } from "@/components/patterns/clinexa-page";
 export type { ClinexaPageWidth } from "@/components/patterns/clinexa-page";

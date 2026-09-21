@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 
 import { BrandMark } from "@/components/layout/brand-mark";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { LoginApplicationSelector } from "@/features/auth/components/login-application-selector";
+import { LoginAtmosphere } from "@/features/auth/components/login-atmosphere";
 import { LoginForm } from "@/features/auth/components/login-form";
 import { LoginVisualPanel } from "@/features/auth/components/login-visual-panel";
 import {
   PlatformContexts,
   type PlatformContext,
 } from "@/lib/platform-context";
+import { cn } from "@/lib/utils";
 
 type LoginPageViewProps = {
   form?: ReactNode;
@@ -33,38 +35,80 @@ export function LoginPageView({ form }: LoginPageViewProps) {
   const [destination, setDestination] = useState<PlatformContext>(
     PlatformContexts.CRM,
   );
+  const [foldTo, setFoldTo] = useState<"crm" | "guardian" | null>(null);
+
+  const handleDestinationChange = useCallback(
+    (next: PlatformContext) => {
+      if (next === destination) {
+        return;
+      }
+
+      setDestination(next);
+      setFoldTo(
+        next === PlatformContexts.GUARDIAN ? "guardian" : "crm",
+      );
+    },
+    [destination],
+  );
 
   return (
     <main className="relative flex min-h-dvh flex-1 flex-col">
       <LoginThemeControl />
       <div className="grid min-h-dvh flex-1 lg:grid-cols-2">
         <LoginVisualPanel destination={destination} />
-        <div className="flex flex-col items-center justify-center px-4 py-12 sm:px-6 sm:py-16">
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
+        <div className="relative flex flex-col items-center justify-center overflow-visible bg-[color-mix(in_oklch,var(--muted)_58%,var(--info)_24%)] px-4 py-12 sm:px-6 sm:py-16 dark:bg-background">
+          <LoginAtmosphere variant="form" />
+          <div className="login-enter-brand relative z-10 mb-8 flex items-center gap-2.5 lg:hidden">
             <BrandMark size="sm" />
             <p className="text-sm font-semibold tracking-tight text-foreground">
               Clinexa
             </p>
           </div>
-          <Card className="w-full max-w-sm">
-            <CardHeader className="gap-4">
-              <div className="flex flex-col gap-1">
-                <h1 className="font-heading text-h1 font-semibold tracking-tight text-foreground">
-                  Sign in
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Internal Platform
-                </p>
-              </div>
-              <LoginApplicationSelector
-                value={destination}
-                onChange={setDestination}
-              />
-            </CardHeader>
-            <CardContent>
-              {form ?? <LoginForm destination={destination} />}
-            </CardContent>
-          </Card>
+          <div className="login-fold-stage login-enter-card relative z-10 w-full max-w-sm">
+            <div
+              className={cn(
+                "login-fold-sheet",
+                foldTo === "guardian" && "login-fold-to-guardian",
+                foldTo === "crm" && "login-fold-to-crm",
+              )}
+              onAnimationEnd={(event) => {
+                if (event.target !== event.currentTarget) {
+                  return;
+                }
+                const { animationName } = event;
+                setFoldTo((current) => {
+                  if (
+                    (current === "guardian" &&
+                      animationName === "login-fold-tr-bl") ||
+                    (current === "crm" &&
+                      animationName === "login-fold-bl-tr")
+                  ) {
+                    return null;
+                  }
+                  return current;
+                });
+              }}
+            >
+              <Card
+                className={cn(
+                  "w-full bg-[color-mix(in_oklch,var(--accent)_60%,var(--info)_22%)] shadow-sm ring-primary/15 dark:bg-card dark:ring-foreground/10",
+                )}
+              >
+                <CardHeader className="gap-4">
+                  <h1 className="font-heading text-h1 text-center font-semibold tracking-tight text-foreground">
+                    Welcome
+                  </h1>
+                  <LoginApplicationSelector
+                    value={destination}
+                    onChange={handleDestinationChange}
+                  />
+                </CardHeader>
+                <CardContent>
+                  {form ?? <LoginForm destination={destination} />}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -73,7 +117,7 @@ export function LoginPageView({ form }: LoginPageViewProps) {
 
 export function LoginLoadingView() {
   return (
-    <main className="relative flex min-h-dvh flex-1 flex-col items-center justify-center px-4 py-12 sm:px-6 sm:py-16">
+    <main className="relative flex min-h-dvh flex-1 flex-col items-center justify-center bg-[color-mix(in_oklch,var(--muted)_58%,var(--info)_24%)] px-4 py-12 sm:px-6 sm:py-16 dark:bg-background">
       <LoginThemeControl />
       <div className="flex flex-col items-center gap-3">
         <BrandMark />

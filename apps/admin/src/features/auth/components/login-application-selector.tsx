@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useId, useRef, type KeyboardEvent } from "react";
+import { useCallback, useRef, type KeyboardEvent } from "react";
 
 import {
   CONTEXT_LABEL,
@@ -20,7 +20,6 @@ export function LoginApplicationSelector({
   onChange,
   disabled = false,
 }: LoginApplicationSelectorProps) {
-  const labelId = useId();
   const groupRef = useRef<HTMLDivElement>(null);
 
   const focusOption = useCallback((context: PlatformContext) => {
@@ -88,44 +87,39 @@ export function LoginApplicationSelector({
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <p id={labelId} className="text-sm font-medium text-foreground">
-        Login to
-      </p>
-      <div
-        ref={groupRef}
-        role="radiogroup"
-        aria-labelledby={labelId}
-        aria-disabled={disabled || undefined}
-        onKeyDown={handleKeyDown}
-        className="grid grid-cols-2 rounded-lg bg-muted p-0.75"
-      >
-        {PLATFORM_CONTEXT_LIST.map((context) => {
-          const selected = context === value;
+    <div
+      ref={groupRef}
+      role="radiogroup"
+      aria-label="Application"
+      aria-disabled={disabled || undefined}
+      onKeyDown={handleKeyDown}
+      className="grid grid-cols-2 gap-0.5 rounded-lg bg-[color-mix(in_oklch,var(--primary)_14%,transparent)] p-1 ring-1 ring-primary/15 dark:bg-input/30 dark:ring-input"
+    >
+      {PLATFORM_CONTEXT_LIST.map((context) => {
+        const selected = context === value;
 
-          return (
-            <button
-              key={context}
-              type="button"
-              role="radio"
-              data-context={context}
-              aria-checked={selected}
-              disabled={disabled}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => onChange(context)}
-              className={cn(
-                "inline-flex h-7 items-center justify-center rounded-md px-2.5 text-sm font-medium whitespace-nowrap transition-colors outline-none select-none",
-                "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-                selected
-                  ? "bg-background text-foreground shadow-sm dark:bg-input/30"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {CONTEXT_LABEL[context]}
-            </button>
-          );
-        })}
-      </div>
+        return (
+          <button
+            key={context}
+            type="button"
+            role="radio"
+            data-context={context}
+            aria-checked={selected}
+            disabled={disabled}
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onChange(context)}
+            className={cn(
+              "inline-flex h-8 cursor-pointer items-center justify-center rounded-md px-2.5 text-sm font-medium whitespace-nowrap transition-colors outline-none select-none",
+              "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              selected
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-foreground/70 hover:bg-primary/10 hover:text-foreground",
+            )}
+          >
+            {CONTEXT_LABEL[context]}
+          </button>
+        );
+      })}
     </div>
   );
 }

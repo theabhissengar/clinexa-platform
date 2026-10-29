@@ -99,24 +99,33 @@ export function RoleEditorPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div>
-        <Link
-          href="/guardian/roles"
-          className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-        >
-          ← All roles
-        </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-          {role.name}
-        </h1>
-        <p className="mt-1 font-mono text-xs text-muted-foreground">
-          {role.code}
-        </p>
-        {role.description ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {role.description}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Link
+            href="/guardian/roles"
+            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+          >
+            ← All roles
+          </Link>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+            {role.name}
+          </h1>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
+            {role.code}
           </p>
-        ) : null}
+          {role.description ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {role.description}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          className="shrink-0"
+          disabled={saving}
+          onClick={() => void onSave()}
+        >
+          {saving ? "Saving…" : "Save permissions"}
+        </Button>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -172,12 +181,6 @@ export function RoleEditorPage() {
             </div>
           );
         })}
-      </div>
-
-      <div>
-        <Button disabled={saving} onClick={() => void onSave()}>
-          {saving ? "Saving…" : "Save permissions"}
-        </Button>
       </div>
     </main>
   );

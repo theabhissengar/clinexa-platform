@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClinexaPage,
   ConfirmDialog,
   DetailSection,
@@ -15,6 +16,7 @@ import {
   PageBody,
   PageHeaderActions,
   PageSkeleton,
+  crossAppNavButtonClassName,
 } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -251,7 +253,7 @@ export function CrmSubscriptionDetailPage() {
           <PageHeaderActions>
             <Button
               size="sm"
-              variant="outline"
+              className={crossAppNavButtonClassName}
               render={
                 <a
                   href={`/guardian/subscriptions/${row.id}`}
@@ -599,18 +601,23 @@ export function CrmSubscriptionDetailPage() {
                     <label className="text-xs text-muted-foreground">
                       Renewal action
                     </label>
-                    <select
-                      className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+                    <AppSelect
                       value={renewalMode}
-                      onChange={(event) =>
-                        setRenewalMode(
-                          event.target.value as "pending" | "process",
-                        )
+                      onValueChange={(next) =>
+                        setRenewalMode(next as "pending" | "process")
                       }
-                    >
-                      <option value="pending">Create pending renewal</option>
-                      <option value="process">Process renewal</option>
-                    </select>
+                      aria-label="Renewal action"
+                      options={[
+                        {
+                          value: "pending",
+                          label: "Create pending renewal",
+                        },
+                        {
+                          value: "process",
+                          label: "Process renewal",
+                        },
+                      ]}
+                    />
                   </div>
                   <Button
                     size="sm"

@@ -1,95 +1,264 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  CollapsibleFilterFields,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterFieldsToggle,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+  filterInlineCheckboxClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 import { listBalances } from "../api/inventory-api";
 import type { InventoryBalanceRow } from "../types";
 import { InventorySubnav } from "./inventory-subnav";
 
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
+
+function parsePage(value: string | null): number {
+  const n = Number(value ?? "1");
+  if (!Number.isFinite(n) || n < 1) return 0;
+  return Math.floor(n) - 1;
+}
+
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function InventoryStockListPage() {
-  const [q, setQ] = useState("");
-  const [draft, setDraft] = useState("");
-  const [lowOnly, setLowOnly] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const appliedQ = searchParams.get("q") ?? "";
+  const lowOnly = searchParams.get("lowStockOnly") === "1";
+  const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const [draftQ, setDraftQ] = useState(appliedQ);
+  const [syncedQ, setSyncedQ] = useState(appliedQ);
   const [items, setItems] = useState<InventoryBalanceRow[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  if (appliedQ !== syncedQ) {
+    setSyncedQ(appliedQ);
+    setDraftQ(appliedQ);
+  }
+
+  function writeParams(patch: Record<string, string | null | undefined>) {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value == null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  function applySearch() {
+    writeParams({ q: draftQ.trim() || null, page: "1" });
+  }
 
   useEffect(() => {
-    void listBalances({ q: q || undefined, lowStockOnly: lowOnly, take: 100 })
-      .then((res) => {
+    let cancelled = false;
+    async function run() {
+      setLoading(true);
+      try {
+        const res = await listBalances({
+          q: appliedQ || undefined,
+          lowStockOnly: lowOnly || undefined,
+          skip: page * pageSize,
+          take: pageSize,
+        });
+        if (cancelled) return;
         setItems(res.items);
         setTotal(res.total);
         setError(null);
-      })
-      .catch(() => setError("Unable to load stock."));
-  }, [q, lowOnly]);
+      } catch {
+        if (cancelled) return;
+        setError("Unable to load stock.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [appliedQ, lowOnly, page, pageSize]);
 
   return (
-    <main className="px-6 py-8">
-      <h1 className="text-2xl font-semibold">Stock</h1>
-      <InventorySubnav />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-xs"
-          placeholder="Search SKU or product"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-        />
-        <Button type="button" onClick={() => setQ(draft.trim())}>
-          Search
-        </Button>
-        <Button
-          type="button"
-          variant={lowOnly ? "default" : "outline"}
-          onClick={() => setLowOnly((v) => !v)}
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <InventorySubnav />
+
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search SKU or product"
+                className="w-full"
+                aria-label="Search stock"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
+
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className={filterInlineCheckboxClassName}>
+                <input
+                  type="checkbox"
+                  className="size-4 rounded border-border"
+                  checked={lowOnly}
+                  onChange={(event) =>
+                    writeParams({
+                      lowStockOnly: event.target.checked ? "1" : null,
+                      page: "1",
+                    })
+                  }
+                />
+                Low stock only
+              </label>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
+
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No stock balances"
+              description="Try a different search or clear the low-stock filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load stock">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
         >
-          Low stock only
-        </Button>
-      </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <p className="mb-2 text-xs text-muted-foreground">{total} balances</p>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b bg-muted/40">
-            <tr>
-              <th className="px-3 py-2">SKU</th>
-              <th className="px-3 py-2">Product</th>
-              <th className="px-3 py-2">On hand</th>
-              <th className="px-3 py-2">Reserved</th>
-              <th className="px-3 py-2">Available</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+          <TableHeader>
+            <TableRow>
+              <TableHead>SKU</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>On hand</TableHead>
+              <TableHead>Reserved</TableHead>
+              <TableHead>Available</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {items.map((row) => (
-              <tr key={row.productVariantId} className="border-b last:border-0">
-                <td className="px-3 py-2 font-mono text-xs">{row.sku}</td>
-                <td className="px-3 py-2">{row.productName}</td>
-                <td className="px-3 py-2">{row.quantityOnHand}</td>
-                <td className="px-3 py-2">{row.quantityReserved}</td>
-                <td className="px-3 py-2">
+              <ClickableTableRow
+                href={`/guardian/inventory/stock/${row.productVariantId}`}
+                key={row.productVariantId}
+              >
+                <TableCell className="font-mono text-xs">{row.sku}</TableCell>
+                <TableCell>{row.productName}</TableCell>
+                <TableCell>{row.quantityOnHand}</TableCell>
+                <TableCell>{row.quantityReserved}</TableCell>
+                <TableCell>
                   {row.available}
                   {row.lowStock ? (
                     <span className="ml-2 text-xs text-destructive">low</span>
                   ) : null}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   <Link
-                    className="text-primary underline"
+                    className="text-primary hover:underline"
                     href={`/guardian/inventory/stock/${row.productVariantId}`}
                   >
                     Open
                   </Link>
-                </td>
-              </tr>
+                </TableCell>
+              </ClickableTableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
-    </main>
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

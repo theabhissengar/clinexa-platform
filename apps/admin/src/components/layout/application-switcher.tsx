@@ -24,6 +24,27 @@ import { useAppSwitchLoader } from "@/providers/app-switch-loader-provider";
 const switcherTriggerClass =
   "h-8 gap-1.5 rounded-full border-black/8 bg-white/80 px-2.5 shadow-none hover:bg-white dark:border-white/12 dark:bg-white/8 dark:hover:bg-white/12";
 
+function ContextStatusDot({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "relative inline-flex size-2.5 shrink-0 items-center justify-center",
+        className,
+      )}
+      aria-hidden
+    >
+      <span className="absolute inset-0 rounded-full bg-emerald-400/35 blur-[2px]" />
+      <span
+        className={cn(
+          "relative size-2 rounded-full",
+          "bg-[radial-gradient(circle_at_30%_28%,#d1fae5_0%,#34d399_42%,#059669_100%)]",
+          "shadow-[inset_0_1px_1px_rgba(255,255,255,0.65),0_0_0_1px_rgba(5,150,105,0.35),0_0_6px_rgba(52,211,153,0.55)]",
+        )}
+      />
+    </span>
+  );
+}
+
 /**
  * Application Switcher — CRM | Guardian (NAV-100–104).
  * Replaces the Vendor Switcher placeholder. Same session; navigation + URL only.
@@ -54,10 +75,7 @@ export function ApplicationSwitcher() {
         className={cn(switcherTriggerClass, "pointer-events-none")}
         aria-label={`Application context: ${CONTEXT_LABEL[only]}`}
       >
-        <span
-          className="size-1.5 rounded-full bg-[#1c1c1c] dark:bg-[#efd56a]"
-          aria-hidden
-        />
+        <ContextStatusDot />
         <span className="text-sm font-medium">{CONTEXT_LABEL[only]}</span>
       </Button>
     );
@@ -78,10 +96,7 @@ export function ApplicationSwitcher() {
           />
         }
       >
-        <span
-          className="size-1.5 rounded-full bg-[#1c1c1c] dark:bg-[#efd56a]"
-          aria-hidden
-        />
+        <ContextStatusDot />
         <span className="text-sm font-medium">{currentLabel}</span>
         <ChevronsUpDown className="size-3.5 opacity-50" aria-hidden />
       </DropdownMenuTrigger>

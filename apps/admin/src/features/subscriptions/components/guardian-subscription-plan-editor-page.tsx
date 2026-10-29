@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -292,22 +293,18 @@ export function GuardianSubscriptionPlanEditorPage({
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <Label htmlFor="interval">Billing interval</Label>
-            <select
-              id="interval"
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            <AppSelect
               value={billingInterval}
-              onChange={(event) =>
-                setBillingInterval(
-                  event.target.value as SubscriptionBillingInterval,
-                )
+              onValueChange={(next) =>
+                setBillingInterval(next as SubscriptionBillingInterval)
               }
-            >
-              {INTERVALS.map((interval) => (
-                <option key={interval} value={interval}>
-                  {interval}
-                </option>
-              ))}
-            </select>
+              aria-label="Billing interval"
+              className="w-full"
+              options={INTERVALS.map((interval) => ({
+                value: interval,
+                label: interval,
+              }))}
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor="intervalCount">Interval count</Label>
@@ -428,29 +425,29 @@ export function GuardianSubscriptionPlanEditorPage({
                     )
                   }
                 />
-                <select
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                <AppSelect
                   value={row.variantId}
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     setBindings((prev) =>
                       prev.map((item, i) =>
                         i === index
-                          ? { ...item, variantId: event.target.value }
+                          ? { ...item, variantId: next }
                           : item,
                       ),
                     )
                   }
-                >
-                  <option value="">Variant</option>
-                  {(product?.variants ?? []).map((variant) => (
-                    <option key={variant.id} value={variant.id}>
-                      {variant.sku} ({variant.label ?? variant.id.slice(0, 8)})
-                    </option>
-                  ))}
-                  {!product && row.variantId ? (
-                    <option value={row.variantId}>{row.variantId}</option>
-                  ) : null}
-                </select>
+                  aria-label="Variant"
+                  options={[
+                    { value: "", label: "Variant" },
+                    ...(product?.variants ?? []).map((variant) => ({
+                      value: variant.id,
+                      label: `${variant.sku} (${variant.label ?? variant.id.slice(0, 8)})`,
+                    })),
+                    ...(!product && row.variantId
+                      ? [{ value: row.variantId, label: row.variantId }]
+                      : []),
+                  ]}
+                />
                 <Input
                   type="number"
                   min={1}

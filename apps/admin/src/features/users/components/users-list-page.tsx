@@ -6,26 +6,29 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClearableSearchInput,
   ClinexaPage,
+  CollapsibleFilterFields,
+  DEFAULT_LIST_PAGE_SIZE,
   DataTable,
+  DateField,
   EmptyState,
   ErrorState,
-  FilterBar,
-  FilterBarGroup,
-  FilterBarRow,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
   ListPaginationBar,
   PageBody,
-  PageHeader,
-  PageHeaderActions,
-  PageHeaderCopy,
-  PageHeaderDescription,
-  PageHeaderTitle,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
 } from "@/components/patterns";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
@@ -57,7 +60,7 @@ const STATUS_TABS: Array<{ key: UserStatus | "ALL"; label: string }> = [
   { key: "DELETED", label: "Deleted" },
 ];
 const STATUS_KEYS = new Set(STATUS_TABS.map((t) => t.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): UserStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as UserStatus | "ALL")) {
@@ -70,6 +73,12 @@ function parsePage(value: string | null): number {
   const n = Number(value ?? "1");
   if (!Number.isFinite(n) || n < 1) return 0;
   return Math.floor(n) - 1;
+}
+
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
 }
 
 function formatDate(value?: string | null) {
@@ -99,10 +108,35 @@ export function UsersListPage() {
   const appliedStatus = parseStatus(searchParams.get("status"));
   const appliedQ = searchParams.get("q") ?? "";
   const appliedRole = searchParams.get("role") ?? "";
+  const appliedCreatedFrom = searchParams.get("createdFrom") ?? "";
+  const appliedCreatedTo = searchParams.get("createdTo") ?? "";
+  const appliedUpdatedFrom = searchParams.get("updatedFrom") ?? "";
+  const appliedUpdatedTo = searchParams.get("updatedTo") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const appliedKey = [
+    appliedQ,
+    appliedCreatedFrom,
+    appliedCreatedTo,
+    appliedUpdatedFrom,
+    appliedUpdatedTo,
+  ].join("|");
 
   const [draftQ, setDraftQ] = useState(appliedQ);
-  const [syncedQ, setSyncedQ] = useState(appliedQ);
+  const [draftCreatedFrom, setDraftCreatedFrom] = useState(
+    appliedCreatedFrom.slice(0, 10),
+  );
+  const [draftCreatedTo, setDraftCreatedTo] = useState(
+    appliedCreatedTo.slice(0, 10),
+  );
+  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState(
+    appliedUpdatedFrom.slice(0, 10),
+  );
+  const [draftUpdatedTo, setDraftUpdatedTo] = useState(
+    appliedUpdatedTo.slice(0, 10),
+  );
+  const [syncedKey, setSyncedKey] = useState(appliedKey);
   const [items, setItems] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [statusCounts, setStatusCounts] = useState<UserStatusCounts | null>(
@@ -114,13 +148,18 @@ export function UsersListPage() {
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  // Sync the draft search box when the URL applied filter changes (back/forward/clear).
-  if (appliedQ !== syncedQ) {
-    setSyncedQ(appliedQ);
+  // Sync draft fields when URL applied filters change (back/forward/clear).
+  if (appliedKey !== syncedKey) {
+    setSyncedKey(appliedKey);
     setDraftQ(appliedQ);
+    setDraftCreatedFrom(appliedCreatedFrom.slice(0, 10));
+    setDraftCreatedTo(appliedCreatedTo.slice(0, 10));
+    setDraftUpdatedFrom(appliedUpdatedFrom.slice(0, 10));
+    setDraftUpdatedTo(appliedUpdatedTo.slice(0, 10));
   }
 
   function writeParams(patch: Record<string, string | null | undefined>) {
@@ -145,8 +184,12 @@ export function UsersListPage() {
           q: appliedQ || undefined,
           status: appliedStatus === "ALL" ? undefined : appliedStatus,
           role: appliedRole || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          createdFrom: appliedCreatedFrom || undefined,
+          createdTo: appliedCreatedTo || undefined,
+          updatedFrom: appliedUpdatedFrom || undefined,
+          updatedTo: appliedUpdatedTo || undefined,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -164,7 +207,18 @@ export function UsersListPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedQ, appliedStatus, appliedRole, page, reloadToken]);
+  }, [
+    appliedQ,
+    appliedStatus,
+    appliedRole,
+    appliedCreatedFrom,
+    appliedCreatedTo,
+    appliedUpdatedFrom,
+    appliedUpdatedTo,
+    page,
+    pageSize,
+    reloadToken,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,8 +232,23 @@ export function UsersListPage() {
     };
   }, []);
 
-  function applySearch() {
-    writeParams({ q: draftQ.trim() || null, page: "1" });
+  function applyFilters() {
+    writeParams({
+      q: draftQ.trim() || null,
+      createdFrom: draftCreatedFrom
+        ? new Date(draftCreatedFrom).toISOString()
+        : null,
+      createdTo: draftCreatedTo
+        ? new Date(`${draftCreatedTo}T23:59:59.999Z`).toISOString()
+        : null,
+      updatedFrom: draftUpdatedFrom
+        ? new Date(draftUpdatedFrom).toISOString()
+        : null,
+      updatedTo: draftUpdatedTo
+        ? new Date(`${draftUpdatedTo}T23:59:59.999Z`).toISOString()
+        : null,
+      page: "1",
+    });
   }
 
   async function onArchive(id: string) {
@@ -223,19 +292,6 @@ export function UsersListPage() {
 
   return (
     <ClinexaPage width="wide" className="gap-6">
-      <PageHeader>
-        <PageHeaderCopy>
-          <PageHeaderTitle>Users</PageHeaderTitle>
-          <PageHeaderDescription>
-            Administrative user lifecycle. Destructive actions are Class D gated
-            and never appear in CRM.
-          </PageHeaderDescription>
-        </PageHeaderCopy>
-        <PageHeaderActions>
-          <Button render={<Link href="/guardian/users/new" />}>Add user</Button>
-        </PageHeaderActions>
-      </PageHeader>
-
       <PageBody>
         {message ? (
           <p className="text-sm text-success" role="status">
@@ -243,99 +299,149 @@ export function UsersListPage() {
           </p>
         ) : null}
 
-        <FilterBar>
-          <FilterBarRow>
-            <FilterBarGroup className="flex-wrap gap-x-3 gap-y-1 text-sm">
-              {STATUS_TABS.map((tab, index) => {
-                const count = statusCounts?.[tab.key];
-                const active = appliedStatus === tab.key;
-                return (
-                  <span
-                    key={tab.key}
-                    className="inline-flex items-center gap-3"
-                  >
-                    {index > 0 ? (
-                      <span className="text-muted-foreground/40">|</span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        writeParams({
-                          status: tab.key === "ALL" ? null : tab.key,
-                          page: "1",
-                        })
-                      }
-                      className={cn(
-                        active
-                          ? "font-medium text-foreground"
-                          : "text-primary hover:underline",
-                      )}
-                    >
-                      {tab.label}
-                      {count !== undefined ? (
-                        <span className="text-muted-foreground"> ({count})</span>
-                      ) : null}
-                    </button>
-                  </span>
-                );
-              })}
-            </FilterBarGroup>
-            <FilterBarGroup>
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  applySearch();
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyFilters();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
                 }}
+                placeholder="Search users"
+                className="w-full"
+                aria-label="Search users"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applyFilters()}
               >
-                <ClearableSearchInput
-                  value={draftQ}
-                  onChange={setDraftQ}
-                  onClear={() => {
-                    setDraftQ("");
-                    if (appliedQ) writeParams({ q: null, page: "1" });
-                  }}
-                  placeholder="Search users"
-                  className="w-52"
-                  aria-label="Search users"
+                Apply
+              </Button>
+              <Button render={<Link href="/guardian/users/new" />}>
+                Add user
+              </Button>
+            </div>
+          </div>
+
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className={filterFieldsRowClassName}>
+              <FilterControl label="Status" className={filterControlCompactClassName}>
+                <AppSelect
+                  value={appliedStatus}
+                  onValueChange={(next) =>
+                    writeParams({
+                      status: next === "ALL" ? null : next,
+                      page: "1",
+                    })
+                  }
+                  aria-label="Filter by status"
+                  options={STATUS_TABS.map((tab) => {
+                    const count = statusCounts?.[tab.key];
+                    return {
+                      value: tab.key,
+                      label:
+                        count !== undefined
+                          ? `${tab.label} (${count})`
+                          : tab.label,
+                    };
+                  })}
                 />
-                <Button type="submit" size="sm" variant="outline">
-                  Search users
-                </Button>
-              </form>
-            </FilterBarGroup>
-          </FilterBarRow>
-          <FilterBarRow>
-            <FilterBarGroup className="flex flex-wrap items-center gap-2">
-              <select
-                className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-                value={appliedRole}
-                onChange={(e) =>
-                  writeParams({ role: e.target.value || null, page: "1" })
-                }
-                aria-label="Filter by role"
+              </FilterControl>
+              <FilterControl label="Role" className={filterControlCompactClassName}>
+                <AppSelect
+                  value={appliedRole}
+                  onValueChange={(next) =>
+                    writeParams({ role: next || null, page: "1" })
+                  }
+                  aria-label="Filter by role"
+                  placeholder="All roles"
+                  options={[
+                    { value: "", label: "All roles" },
+                    ...roles.map((role) => ({
+                      value: role.code,
+                      label: role.name,
+                    })),
+                  ]}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created from"
+                className={filterControlCompactClassName}
               >
-                <option value="">All roles</option>
-                {roles.map((role) => (
-                  <option key={role.code} value={role.code}>
-                    {role.name}
-                  </option>
-                ))}
-              </select>
+                <DateField
+                  value={draftCreatedFrom}
+                  onChange={setDraftCreatedFrom}
+                  aria-label="Created from"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftCreatedTo}
+                  onChange={setDraftCreatedTo}
+                  aria-label="Created to"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Updated from"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftUpdatedFrom}
+                  onChange={setDraftUpdatedFrom}
+                  aria-label="Updated from"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Updated to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftUpdatedTo}
+                  onChange={setDraftUpdatedTo}
+                  aria-label="Updated to"
+                />
+              </FilterControl>
               {appliedRole ? (
                 <Button
+                  type="button"
                   size="sm"
                   variant="ghost"
+                  className="h-9 shrink-0"
                   onClick={() => writeParams({ role: null, page: "1" })}
                 >
-                  Clear role filter
+                  Clear role
                 </Button>
               ) : null}
-            </FilterBarGroup>
-          </FilterBarRow>
-        </FilterBar>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
 
         <DataTable
+          framed
           stickyFirstColumn
           loading={loading}
           empty={!loading && !error && items.length === 0}
@@ -343,7 +449,7 @@ export function UsersListPage() {
             <EmptyState
               icon={<Inbox />}
               title="No users found"
-              description="Try a different search, status, or role filter."
+              description="Try a different search, status, role, or date filter."
             />
           }
           error={
@@ -356,6 +462,14 @@ export function UsersListPage() {
               total={total}
               page={page}
               pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
               onPrev={() =>
                 writeParams({ page: page <= 0 ? null : String(page) })
               }
@@ -372,7 +486,8 @@ export function UsersListPage() {
               <TableHead>Roles</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>2FA</TableHead>
-              <TableHead>Registered</TableHead>
+              <TableHead>Created At</TableHead>
+              <TableHead>Updated At</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -389,72 +504,70 @@ export function UsersListPage() {
                   onMouseLeave={() => setHoveredId(null)}
                 >
                   <TableCell>
-                    <Link
-                      href={editHref}
-                      className="font-semibold text-primary hover:underline"
-                    >
-                      {userName(user)}
-                    </Link>
-                    <div
-                      className={cn(
-                        "mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity",
-                        hoveredId === user.id
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100",
-                      )}
-                    >
-                      <Link href={editHref} className="hover:underline">
-                        Edit
-                      </Link>
-                      <span className="text-muted-foreground">|</span>
-                      {canRestore ? (
-                        <RequirePermission
-                          permission={Permissions.ADM_RESTORE_USER}
-                        >
-                          <button
-                            type="button"
-                            className="hover:underline"
-                            onClick={() => void onRestore(user.id)}
-                          >
-                            Restore
-                          </button>
-                          <span className="text-muted-foreground">|</span>
-                        </RequirePermission>
-                      ) : (
-                        <RequirePermission
-                          permission={Permissions.ADM_ARCHIVE_USER}
-                        >
-                          <button
-                            type="button"
-                            className="hover:underline"
-                            onClick={() => void onArchive(user.id)}
-                          >
-                            Archive
-                          </button>
-                          <span className="text-muted-foreground">|</span>
-                        </RequirePermission>
-                      )}
-                      {!isDeleted ? (
-                        <RequirePermission
-                          permission={Permissions.ADM_DELETE_USER}
-                        >
-                          <button
-                            type="button"
-                            className="text-destructive hover:underline"
-                            onClick={() => void onDelete(user.id)}
-                          >
-                            Delete
-                          </button>
-                          <span className="text-muted-foreground">|</span>
-                        </RequirePermission>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="hover:underline"
-                        onClick={() => void onSendReset(user.id)}
+                    <div className="min-w-0">
+                      <Link
+                        href={editHref}
+                        className="font-semibold text-primary hover:underline"
                       >
-                        Send reset
-                      </button>
+                        {userName(user)}
+                      </Link>
+                      <div
+                        className={cn(
+                          "mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity",
+                          hoveredId === user.id
+                            ? "opacity-100"
+                            : "opacity-0 group-hover:opacity-100",
+                        )}
+                      >
+                        {canRestore ? (
+                          <RequirePermission
+                            permission={Permissions.ADM_RESTORE_USER}
+                          >
+                            <button
+                              type="button"
+                              className="hover:underline"
+                              onClick={() => void onRestore(user.id)}
+                            >
+                              Restore
+                            </button>
+                            <span className="text-muted-foreground">|</span>
+                          </RequirePermission>
+                        ) : (
+                          <RequirePermission
+                            permission={Permissions.ADM_ARCHIVE_USER}
+                          >
+                            <button
+                              type="button"
+                              className="hover:underline"
+                              onClick={() => void onArchive(user.id)}
+                            >
+                              Archive
+                            </button>
+                            <span className="text-muted-foreground">|</span>
+                          </RequirePermission>
+                        )}
+                        {!isDeleted ? (
+                          <RequirePermission
+                            permission={Permissions.ADM_DELETE_USER}
+                          >
+                            <button
+                              type="button"
+                              className="text-destructive hover:underline"
+                              onClick={() => void onDelete(user.id)}
+                            >
+                              Delete
+                            </button>
+                            <span className="text-muted-foreground">|</span>
+                          </RequirePermission>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="hover:underline"
+                          onClick={() => void onSendReset(user.id)}
+                        >
+                          Send reset
+                        </button>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell className="max-w-48 truncate text-muted-foreground">
@@ -471,6 +584,9 @@ export function UsersListPage() {
                   <TableCell className="text-muted-foreground">—</TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(user.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(user.updatedAt)}
                   </TableCell>
                 </TableRow>
               );

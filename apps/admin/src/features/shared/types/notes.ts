@@ -5,6 +5,7 @@ export type TimelineNote = {
   body: string;
   visibility: NoteVisibility;
   authorUserId: string;
+  authorName?: string | null;
   createdAt: string;
 };
 

@@ -48,6 +48,10 @@ export class AdminUsersController {
     @Query('status') status?: UserStatus | 'ALL',
     @Query('role') role?: string,
     @Query('kind') kind?: 'staff' | 'patient',
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
+    @Query('updatedFrom') updatedFrom?: string,
+    @Query('updatedTo') updatedTo?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
   ) {
@@ -56,6 +60,10 @@ export class AdminUsersController {
       status,
       role,
       kind,
+      createdFrom,
+      createdTo,
+      updatedFrom,
+      updatedTo,
       skip: skip ? Number(skip) : 0,
       take: take ? Number(take) : 50,
     });
@@ -252,5 +260,12 @@ export class AdminUsersController {
       body: dto.body,
       visibility: dto.visibility ?? NoteVisibility.PRIVATE,
     });
+  }
+
+  @Delete(':id/notes/:noteId')
+  @RequirePermissions(Permissions.ADM_MANAGE_USERS)
+  @ApiOperation({ summary: 'Delete user note (Guardian)' })
+  deleteNote(@Param('id') id: string, @Param('noteId') noteId: string) {
+    return this.users.deleteNote(id, noteId);
   }
 }

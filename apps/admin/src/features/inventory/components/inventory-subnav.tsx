@@ -15,7 +15,7 @@ const LINKS = [
 export function InventorySubnav() {
   const pathname = usePathname();
   return (
-    <nav className="mb-6 flex flex-wrap gap-2 border-b border-border pb-3">
+    <nav className="mt-5 mb-6 flex flex-wrap gap-2 border-b border-border pb-3">
       {LINKS.map((link) => {
         const active = link.exact
           ? pathname === link.href

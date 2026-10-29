@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  AppSelect,
   ClinexaPage,
   ConfirmDialog,
   DetailSection,
@@ -931,26 +932,41 @@ export function GuardianOrderDetailPage() {
         </DetailSection>
 
         {canEdit && order.allowedNextStatuses.length > 0 ? (
-          <DetailSection title="Normal status transition">
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={onTransition}>
+          <DetailSection
+            title="Normal status transition"
+            actions={
+              <Button
+                type="submit"
+                form="guardian-order-transition-form"
+                size="sm"
+                disabled={busy || !transitionTo}
+              >
+                Apply transition
+              </Button>
+            }
+          >
+            <form
+              id="guardian-order-transition-form"
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={onTransition}
+            >
               <div className="space-y-1">
                 <Label htmlFor="transitionTo">Next status</Label>
-                <select
-                  id="transitionTo"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                <AppSelect
                   value={transitionTo}
-                  onChange={(event) =>
-                    setTransitionTo(event.target.value as OrderStatus | "")
+                  onValueChange={(next) =>
+                    setTransitionTo(next as OrderStatus | "")
                   }
-                  required
-                >
-                  <option value="">Select…</option>
-                  {order.allowedNextStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {productStatusLabel(status)}
-                    </option>
-                  ))}
-                </select>
+                  aria-label="Next status"
+                  className="w-full"
+                  options={[
+                    { value: "", label: "Select…" },
+                    ...order.allowedNextStatuses.map((status) => ({
+                      value: status,
+                      label: productStatusLabel(status),
+                    })),
+                  ]}
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="transitionReason">Reason (optional)</Label>
@@ -960,11 +976,6 @@ export function GuardianOrderDetailPage() {
                   onChange={(event) => setTransitionReason(event.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" size="sm" disabled={busy || !transitionTo}>
-                  Apply transition
-                </Button>
-              </div>
             </form>
           </DetailSection>
         ) : null}
@@ -973,8 +984,19 @@ export function GuardianOrderDetailPage() {
           <DetailSection
             title="Financial correction"
             description="Does not execute Payments. Records an order adjustment only."
+            actions={
+              <Button
+                type="submit"
+                form="guardian-order-correct-form"
+                size="sm"
+                disabled={busy}
+              >
+                Apply correction
+              </Button>
+            }
           >
             <form
+              id="guardian-order-correct-form"
               className="grid gap-3 sm:grid-cols-2"
               onSubmit={requestCorrectConfirm}
             >
@@ -996,11 +1018,6 @@ export function GuardianOrderDetailPage() {
                   onChange={(event) => setCorrectReason(event.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" size="sm" disabled={busy}>
-                  Apply correction
-                </Button>
-              </div>
             </form>
           </DetailSection>
         ) : null}
@@ -1009,29 +1026,40 @@ export function GuardianOrderDetailPage() {
           <DetailSection
             title="Administrative override (Class D)"
             description="Bypasses normal lifecycle transitions. Use only with a documented reason."
+            actions={
+              <Button
+                type="submit"
+                form="guardian-order-override-form"
+                size="sm"
+                variant="destructive"
+                disabled={busy || !overrideTo || !overrideReason.trim()}
+              >
+                Apply override
+              </Button>
+            }
           >
             <form
+              id="guardian-order-override-form"
               className="grid gap-3 sm:grid-cols-2"
               onSubmit={requestOverrideConfirm}
             >
               <div className="space-y-1">
                 <Label htmlFor="overrideTo">To status</Label>
-                <select
-                  id="overrideTo"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                <AppSelect
                   value={overrideTo}
-                  onChange={(event) =>
-                    setOverrideTo(event.target.value as OrderStatus | "")
+                  onValueChange={(next) =>
+                    setOverrideTo(next as OrderStatus | "")
                   }
-                  required
-                >
-                  <option value="">Select…</option>
-                  {ALL_STATUSES.map((status) => (
-                    <option key={status} value={status}>
-                      {productStatusLabel(status)}
-                    </option>
-                  ))}
-                </select>
+                  aria-label="Override to status"
+                  className="w-full"
+                  options={[
+                    { value: "", label: "Select…" },
+                    ...ALL_STATUSES.map((status) => ({
+                      value: status,
+                      label: productStatusLabel(status),
+                    })),
+                  ]}
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="overrideReason">Reason (required)</Label>
@@ -1041,16 +1069,6 @@ export function GuardianOrderDetailPage() {
                   onChange={(event) => setOverrideReason(event.target.value)}
                   required
                 />
-              </div>
-              <div className="sm:col-span-2">
-                <Button
-                  type="submit"
-                  size="sm"
-                  variant="destructive"
-                  disabled={busy || !overrideTo || !overrideReason.trim()}
-                >
-                  Apply override
-                </Button>
               </div>
             </form>
           </DetailSection>

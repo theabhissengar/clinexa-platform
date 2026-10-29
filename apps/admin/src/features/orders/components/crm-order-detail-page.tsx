@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClinexaPage,
   ConfirmDialog,
   DetailSection,
@@ -15,6 +16,7 @@ import {
   PageBody,
   PageHeaderActions,
   PageSkeleton,
+  crossAppNavButtonClassName,
 } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -326,7 +328,7 @@ export function CrmOrderDetailPage() {
           <PageHeaderActions>
             <Button
               size="sm"
-              variant="outline"
+              className={crossAppNavButtonClassName}
               render={
                 <a
                   href={`/guardian/orders/${order.id}`}
@@ -762,26 +764,41 @@ export function CrmOrderDetailPage() {
         </DetailSection>
 
         {canEdit && order.allowedNextStatuses.length > 0 ? (
-          <DetailSection title="Status transition">
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={onTransition}>
+          <DetailSection
+            title="Status transition"
+            actions={
+              <Button
+                type="submit"
+                form="crm-order-transition-form"
+                size="sm"
+                disabled={busy || !transitionTo}
+              >
+                Apply transition
+              </Button>
+            }
+          >
+            <form
+              id="crm-order-transition-form"
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={onTransition}
+            >
               <div className="space-y-1">
                 <Label htmlFor="transitionTo">Next status</Label>
-                <select
-                  id="transitionTo"
-                  className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                <AppSelect
                   value={transitionTo}
-                  onChange={(event) =>
-                    setTransitionTo(event.target.value as OrderStatus | "")
+                  onValueChange={(next) =>
+                    setTransitionTo(next as OrderStatus | "")
                   }
-                  required
-                >
-                  <option value="">Select…</option>
-                  {order.allowedNextStatuses.map((status) => (
-                    <option key={status} value={status}>
-                      {productStatusLabel(status)}
-                    </option>
-                  ))}
-                </select>
+                  aria-label="Next status"
+                  className="w-full"
+                  options={[
+                    { value: "", label: "Select…" },
+                    ...order.allowedNextStatuses.map((status) => ({
+                      value: status,
+                      label: productStatusLabel(status),
+                    })),
+                  ]}
+                />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="transitionReason">Reason (optional)</Label>
@@ -791,11 +808,6 @@ export function CrmOrderDetailPage() {
                   onChange={(event) => setTransitionReason(event.target.value)}
                 />
               </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" size="sm" disabled={busy || !transitionTo}>
-                  Apply transition
-                </Button>
-              </div>
             </form>
           </DetailSection>
         ) : null}
@@ -804,8 +816,22 @@ export function CrmOrderDetailPage() {
           <DetailSection
             title="Operational fulfillment fields"
             description="Domain lifecycle rules still apply — invalid status edits are rejected by the API."
+            actions={
+              <Button
+                type="submit"
+                form="crm-order-ops-form"
+                size="sm"
+                disabled={busy}
+              >
+                Save operational fields
+              </Button>
+            }
           >
-            <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSaveOps}>
+            <form
+              id="crm-order-ops-form"
+              className="grid gap-3 sm:grid-cols-2"
+              onSubmit={onSaveOps}
+            >
               <div className="space-y-1">
                 <Label htmlFor="tracking">Tracking number</Label>
                 <Input
@@ -829,11 +855,6 @@ export function CrmOrderDetailPage() {
                   value={shippingPhone}
                   onChange={(event) => setShippingPhone(event.target.value)}
                 />
-              </div>
-              <div className="sm:col-span-2">
-                <Button type="submit" size="sm" disabled={busy}>
-                  Save operational fields
-                </Button>
               </div>
             </form>
           </DetailSection>

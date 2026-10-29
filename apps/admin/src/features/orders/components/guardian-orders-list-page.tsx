@@ -6,26 +6,31 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClearableSearchInput,
+  ClickableTableRow,
   ClinexaPage,
+  CollapsibleFilterFields,
   DataTable,
+  DateField,
   EmptyState,
   ErrorState,
-  FilterBar,
-  FilterBarGroup,
-  FilterBarRow,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  DEFAULT_LIST_PAGE_SIZE,
+  LIST_PAGE_SIZE_OPTIONS,
   ListPaginationBar,
   PageBody,
-  PageHeader,
-  PageHeaderActions,
-  PageHeaderCopy,
-  PageHeaderDescription,
-  PageHeaderTitle,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
+  filterInlineCheckboxClassName,
+  filterApplyButtonClassName,
 } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -43,7 +48,6 @@ import type {
   OrderStatus,
   OrderType,
 } from "@/features/orders/types";
-import { cn } from "@/lib/utils";
 
 const STATUS_TABS: Array<{ key: OrderStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "All" },
@@ -75,7 +79,7 @@ const ARCHIVED_OPTIONS: Array<{
 const STATUS_KEYS = new Set(STATUS_TABS.map((t) => t.key));
 const TYPE_KEYS = new Set(TYPE_OPTIONS.map((t) => t.key));
 const ARCHIVED_KEYS = new Set(ARCHIVED_OPTIONS.map((t) => t.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): OrderStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as OrderStatus | "ALL")) {
@@ -104,6 +108,12 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function GuardianOrdersListPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -118,6 +128,7 @@ export function GuardianOrdersListPage() {
   const appliedArchived = parseArchived(searchParams.get("archived"));
   const includeDeleted = searchParams.get("includeDeleted") === "1";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
   const [syncedQ, setSyncedQ] = useState(appliedQ);
@@ -126,8 +137,9 @@ export function GuardianOrdersListPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const canCreate = can(Permissions.ORD_CREATE);
 
   if (appliedQ !== syncedQ) {
@@ -160,8 +172,8 @@ export function GuardianOrdersListPage() {
           createdTo: appliedTo || undefined,
           archived: appliedArchived,
           includeDeleted: includeDeleted || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -188,6 +200,7 @@ export function GuardianOrdersListPage() {
     appliedArchived,
     includeDeleted,
     page,
+    pageSize,
   ]);
 
   function applySearch() {
@@ -196,167 +209,152 @@ export function GuardianOrdersListPage() {
 
   return (
     <ClinexaPage width="wide" className="gap-6">
-      <PageHeader>
-        <PageHeaderCopy>
-          <PageHeaderTitle>Orders</PageHeaderTitle>
-          <PageHeaderDescription>
-            Administrative order management (Class D): create, archive, restore,
-            soft-delete, financial corrections, and overrides.
-          </PageHeaderDescription>
-        </PageHeaderCopy>
-        {canCreate ? (
-          <PageHeaderActions>
-            <Button size="sm" render={<Link href="/guardian/orders/new" />}>
-              Create order
-            </Button>
-          </PageHeaderActions>
-        ) : null}
-      </PageHeader>
-
       <PageBody>
-        <FilterBar>
-          <FilterBarRow>
-            <FilterBarGroup className="flex-wrap gap-x-3 gap-y-1 text-sm">
-              {STATUS_TABS.map((tab, index) => {
-                const active = appliedStatus === tab.key;
-                const count =
-                  tab.key === "ALL" ? statusCounts.ALL : statusCounts[tab.key];
-                return (
-                  <span
-                    key={tab.key}
-                    className="inline-flex items-center gap-3"
-                  >
-                    {index > 0 ? (
-                      <span className="text-muted-foreground/40">|</span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        writeParams({
-                          status: tab.key === "ALL" ? null : tab.key,
-                          page: "1",
-                        })
-                      }
-                      className={cn(
-                        active
-                          ? "font-medium text-foreground"
-                          : "text-primary hover:underline",
-                      )}
-                    >
-                      {tab.label}
-                      {typeof count === "number" ? (
-                        <span className="ml-1 text-muted-foreground">
-                          ({count})
-                        </span>
-                      ) : null}
-                    </button>
-                  </span>
-                );
-              })}
-            </FilterBarGroup>
-            <FilterBarGroup>
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  applySearch();
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
                 }}
+                placeholder="Search orders"
+                className="w-full"
+                aria-label="Search orders"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
               >
-                <ClearableSearchInput
-                  value={draftQ}
-                  onChange={setDraftQ}
-                  onClear={() => {
-                    setDraftQ("");
-                    if (appliedQ) writeParams({ q: null, page: "1" });
-                  }}
-                  placeholder="Search orders"
-                  className="w-52"
-                  aria-label="Search orders"
-                />
-                <Button type="submit" size="sm" variant="outline">
-                  Search
+                Apply
+              </Button>
+              {canCreate ? (
+                <Button size="sm" render={<Link href="/guardian/orders/new" />}>
+                  Create order
                 </Button>
-              </form>
-            </FilterBarGroup>
-          </FilterBarRow>
-          <FilterBarRow>
-            <FilterBarGroup className="flex flex-wrap items-end gap-3 text-sm">
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Order type</span>
-                <select
-                  className="h-9 rounded-md border border-input bg-background px-2"
+              ) : null}
+            </div>
+          </div>
+
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className={filterFieldsRowClassName}>
+              <FilterControl label="Status" className={filterControlCompactClassName}>
+                <AppSelect
+                  value={appliedStatus}
+                  onValueChange={(next) =>
+                    writeParams({
+                      status: next === "ALL" ? null : next,
+                      page: "1",
+                    })
+                  }
+                  aria-label="Filter by status"
+                  options={STATUS_TABS.map((tab) => {
+                    const count =
+                      tab.key === "ALL"
+                        ? statusCounts.ALL
+                        : statusCounts[tab.key];
+                    return {
+                      value: tab.key,
+                      label:
+                        typeof count === "number"
+                          ? `${tab.label} (${count})`
+                          : tab.label,
+                    };
+                  })}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Order type"
+                className={filterControlCompactClassName}
+              >
+                <AppSelect
                   value={appliedType}
-                  onChange={(event) =>
+                  onValueChange={(next) =>
                     writeParams({
-                      orderType:
-                        event.target.value === "ALL" ? null : event.target.value,
+                      orderType: next === "ALL" ? null : next,
                       page: "1",
                     })
                   }
-                >
-                  {TYPE_OPTIONS.map((opt) => (
-                    <option key={opt.key} value={opt.key}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Archived</span>
-                <select
-                  className="h-9 rounded-md border border-input bg-background px-2"
+                  options={TYPE_OPTIONS.map((opt) => ({
+                    value: opt.key,
+                    label: opt.label,
+                  }))}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Archived"
+                className={filterControlCompactClassName}
+              >
+                <AppSelect
                   value={appliedArchived}
-                  onChange={(event) =>
-                    writeParams({
-                      archived: event.target.value,
-                      page: "1",
-                    })
+                  onValueChange={(next) =>
+                    writeParams({ archived: next, page: "1" })
                   }
-                >
-                  {ARCHIVED_OPTIONS.map((opt) => (
-                    <option key={opt.key} value={opt.key}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Created from</span>
-                <input
-                  type="date"
-                  className="h-9 rounded-md border border-input bg-background px-2"
+                  options={ARCHIVED_OPTIONS.map((opt) => ({
+                    value: opt.key,
+                    label: opt.label,
+                  }))}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created from"
+                className={filterControlCompactClassName}
+              >
+                <DateField
                   value={appliedFrom.slice(0, 10)}
-                  onChange={(event) =>
+                  onChange={(day) =>
                     writeParams({
-                      createdFrom: event.target.value
-                        ? new Date(event.target.value).toISOString()
+                      createdFrom: day
+                        ? new Date(day).toISOString()
                         : null,
                       page: "1",
                     })
                   }
+                  aria-label="Created from"
                 />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Created to</span>
-                <input
-                  type="date"
-                  className="h-9 rounded-md border border-input bg-background px-2"
+              </FilterControl>
+              <FilterControl
+                label="Created to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
                   value={appliedTo.slice(0, 10)}
-                  onChange={(event) =>
+                  onChange={(day) =>
                     writeParams({
-                      createdTo: event.target.value
-                        ? new Date(
-                            `${event.target.value}T23:59:59.999Z`,
-                          ).toISOString()
+                      createdTo: day
+                        ? new Date(`${day}T23:59:59.999Z`).toISOString()
                         : null,
                       page: "1",
                     })
                   }
+                  aria-label="Created to"
                 />
-              </label>
-              <label className="flex items-center gap-2 pb-2">
+              </FilterControl>
+              <label className={filterInlineCheckboxClassName}>
                 <input
                   type="checkbox"
+                  className="size-4 rounded border-border"
                   checked={includeDeleted}
                   onChange={(event) =>
                     writeParams({
@@ -365,13 +363,14 @@ export function GuardianOrdersListPage() {
                     })
                   }
                 />
-                <span className="text-muted-foreground">Include deleted</span>
+                Include deleted
               </label>
-            </FilterBarGroup>
-          </FilterBarRow>
-        </FilterBar>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
 
         <DataTable
+          framed
           stickyFirstColumn
           loading={loading}
           empty={!loading && !error && items.length === 0}
@@ -392,6 +391,14 @@ export function GuardianOrdersListPage() {
               total={total}
               page={page}
               pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
               onPrev={() =>
                 writeParams({ page: page <= 0 ? null : String(page) })
               }
@@ -420,7 +427,7 @@ export function GuardianOrdersListPage() {
                   : ""
               }`;
               return (
-                <TableRow key={order.id} className="align-top">
+                <ClickableTableRow href={href} key={order.id} className="align-top">
                   <TableCell>
                     <Link
                       href={href}
@@ -460,7 +467,7 @@ export function GuardianOrdersListPage() {
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(order.updatedAt)}
                   </TableCell>
-                </TableRow>
+                </ClickableTableRow>
               );
             })}
           </TableBody>

@@ -1,9 +1,30 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+} from "@/components/patterns";
+import { Button } from "@/components/ui/button";
 import { listAdminPayments } from "@/features/payments/api/admin-payments-api";
 import type { PaymentListItem } from "@/features/payments/types";
 import {
@@ -11,10 +32,8 @@ import {
   formatMoneyCents,
   statusLabel,
 } from "@/features/orders/lib/format";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parsePage(value: string | null): number {
   const n = Number(value ?? "1");
@@ -22,17 +41,34 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function GuardianPaymentsListPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const q = searchParams.get("q") ?? "";
+
+  const appliedQ = searchParams.get("q") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const [draftQ, setDraftQ] = useState(appliedQ);
+  const [syncedQ, setSyncedQ] = useState(appliedQ);
   const [items, setItems] = useState<PaymentListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  if (appliedQ !== syncedQ) {
+    setSyncedQ(appliedQ);
+    setDraftQ(appliedQ);
+  }
 
   function writeParams(patch: Record<string, string | null | undefined>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -44,15 +80,19 @@ export function GuardianPaymentsListPage() {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
+  function applySearch() {
+    writeParams({ q: draftQ.trim() || null, page: "1" });
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       try {
         const result = await listAdminPayments({
-          q: q || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          q: appliedQ || undefined,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -69,94 +109,137 @@ export function GuardianPaymentsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, page]);
+  }, [appliedQ, page, pageSize]);
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Operational payment history. Refunds execute in Payments, not here.
-        </p>
-      </div>
-      <ClearableSearchInput
-        value={q}
-        onChange={(value) => writeParams({ q: value, page: "1" })}
-        onClear={() => writeParams({ q: null, page: "1" })}
-        placeholder="Search payment id, order, or provider ref"
-      />
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[800px] text-left text-sm">
-          <thead className="border-b border-border bg-muted/40">
-            <tr>
-              <th className="px-3 py-2 font-medium">Payment</th>
-              <th className="px-3 py-2 font-medium">Order</th>
-              <th className="px-3 py-2 font-medium">Amount</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Lifecycle</th>
-              <th className="px-3 py-2 font-medium">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td className="px-3 py-6 text-muted-foreground" colSpan={6}>
-                  Loading…
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-muted-foreground" colSpan={6}>
-                  No payments.
-                </td>
-              </tr>
-            ) : (
-              items.map((row) => (
-                <tr key={row.id} className="border-t border-border">
-                  <td className="px-3 py-2 font-mono text-xs">
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 md:order-1" />
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search payment id, order, or provider ref"
+                className="w-full"
+                aria-label="Search payments"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
+        </FilterPanel>
+
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No payments found"
+              description="Try a different search."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load payments">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead>Payment</TableHead>
+              <TableHead>Order</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Lifecycle</TableHead>
+              <TableHead>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((row) => (
+              <ClickableTableRow
+                href={`/guardian/payments/${row.id}`}
+                key={row.id}
+              >
+                <TableCell className="font-mono text-xs">
+                  <Link
+                    href={`/guardian/payments/${row.id}`}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    {row.id.slice(0, 8)}…
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  {row.order ? (
                     <Link
-                      href={`/guardian/payments/${row.id}`}
-                      className="underline-offset-4 hover:underline"
+                      href={`/guardian/orders/${row.orderId}`}
+                      className="text-primary hover:underline"
                     >
-                      {row.id.slice(0, 8)}…
+                      {row.order.orderNumber}
                     </Link>
-                  </td>
-                  <td className="px-3 py-2">
-                    {row.order ? (
-                      <Link
-                        href={`/guardian/orders/${row.orderId}`}
-                        className="underline-offset-4 hover:underline"
-                      >
-                        {row.order.orderNumber}
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">
-                    {formatMoneyCents(row.amountCents, row.currency)}
-                  </td>
-                  <td className="px-3 py-2">{statusLabel(row.status)}</td>
-                  <td className="px-3 py-2">
-                    {statusLabel(row.lifecycleState)}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {formatDateTime(row.createdAt)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: String(page) })}
-        onNext={() => writeParams({ page: String(page + 2) })}
-      />
-    </main>
+                  ) : (
+                    "—"
+                  )}
+                </TableCell>
+                <TableCell className="tabular-nums">
+                  {formatMoneyCents(row.amountCents, row.currency)}
+                </TableCell>
+                <TableCell>{statusLabel(row.status)}</TableCell>
+                <TableCell>{statusLabel(row.lifecycleState)}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatDateTime(row.createdAt)}
+                </TableCell>
+              </ClickableTableRow>
+            ))}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

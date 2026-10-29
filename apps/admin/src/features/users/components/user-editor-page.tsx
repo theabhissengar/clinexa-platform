@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import {
+  AppSelect,
   ClinexaPage,
-  EntityDetailHeader,
-  EntityDetailLeading,
+  DetailSection,
   ErrorState,
-  PageHeaderActions,
+  FieldGrid,
   PageSkeleton,
+  crossAppNavButtonClassName,
+  filterApplyButtonClassName,
 } from "@/components/patterns";
 import { RequirePermission } from "@/components/auth/require-permission";
 import { Button } from "@/components/ui/button";
@@ -18,10 +22,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Permissions } from "@/features/auth/permissions";
+import { NotesTimeline } from "@/features/shared/components/notes-timeline";
 import {
   archiveUser,
   addAdminUserNote,
   deactivateUser,
+  deleteAdminUserNote,
   deleteUser,
   getAdminUser,
   getUserActivity,
@@ -36,9 +42,23 @@ import {
   suspendUser,
   updateAdminUser,
 } from "@/features/users/api/users-api";
-import { NotesTimeline } from "@/features/shared/components/notes-timeline";
+import { AddressFieldsEditor } from "@/features/users/components/address-fields-editor";
+import {
+  addressFromJson,
+  addressToJson,
+  ADDRESS_REGION_OPTIONS,
+  EMPTY_USER_ADDRESS,
+  type UserAddressForm,
+} from "@/features/users/lib/address";
+import {
+  sanitizeDisplayName,
+  sanitizePersonName,
+  sanitizePlainText,
+  validateAddressFields,
+  validateUserProfileFields,
+} from "@/features/users/lib/user-field-validation";
+import { formatPhoneMask, toPhoneDigits } from "@/features/users/lib/phone";
 import type {
-  AddressSnapshot,
   AdminUser,
   Role,
   UserActivityEntry,
@@ -46,6 +66,7 @@ import type {
   UserHistoryEntry,
   UserNote,
 } from "@/features/users/types";
+import { cn } from "@/lib/utils";
 
 export type UserTab =
   | "general"
@@ -54,7 +75,6 @@ export type UserTab =
   | "addresses"
   | "security"
   | "preferences"
-  | "notes"
   | "history"
   | "activity"
   | "future";
@@ -66,79 +86,335 @@ const TABS: Array<{ id: UserTab; label: string }> = [
   { id: "addresses", label: "Addresses" },
   { id: "security", label: "Security" },
   { id: "preferences", label: "Preferences" },
-  { id: "notes", label: "Notes" },
   { id: "history", label: "History" },
   { id: "activity", label: "Activity" },
   { id: "future", label: "More" },
 ];
 
+const TAB_IDS = new Set<string>(TABS.map((t) => t.id));
+
+function parseTab(value: string | null | undefined): UserTab {
+  if (value && TAB_IDS.has(value)) return value as UserTab;
+  return "general";
+}
+
 const GENDERS: UserGender[] = ["UNSPECIFIED", "MALE", "FEMALE", "OTHER"];
 
-type Address = {
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postalCode: string;
-  country: string;
-};
-
-const EMPTY_ADDRESS: Address = {
-  line1: "",
-  line2: "",
-  city: "",
-  region: "",
-  postalCode: "",
-  country: "",
-};
-
-function addressFromJson(
-  value: AddressSnapshot | Record<string, unknown> | null | undefined,
-): Address {
-  if (!value) return { ...EMPTY_ADDRESS };
-  const record = value as Record<string, unknown>;
-  return {
-    line1: String(record.line1 ?? ""),
-    line2: String(record.line2 ?? ""),
-    city: String(record.city ?? ""),
-    region: String(record.region ?? ""),
-    postalCode: String(record.postalCode ?? ""),
-    country: String(record.country ?? ""),
-  };
-}
-
-function addressToJson(address: Address): AddressSnapshot | null {
-  const entries = Object.entries(address).filter(([, v]) => v.trim() !== "");
-  if (!entries.length) return null;
-  return Object.fromEntries(entries) as AddressSnapshot;
-}
+type Address = UserAddressForm;
+const EMPTY_ADDRESS = EMPTY_USER_ADDRESS;
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString();
 }
 
-function userName(user: AdminUser): string {
+function Field({
+  label,
+  htmlFor,
+  children,
+  className,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    user.displayName ||
-    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-    user.email
+    <div className={cn("space-y-1.5", className)}>
+      <Label htmlFor={htmlFor}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function PillTabs({
+  value,
+  onChange,
+}: {
+  value: UserTab;
+  onChange: (tab: UserTab) => void;
+}) {
+  return (
+    <nav
+      aria-label="User sections"
+      className="max-w-full overflow-x-auto"
+    >
+      <div className="inline-flex w-max max-w-full gap-1 rounded-xl border border-border/80 bg-muted/30 p-1 dark:border-white/10 dark:bg-white/3">
+        {TABS.map((t) => {
+          const active = value === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onChange(t.id)}
+              className={cn(
+                "shrink-0 rounded-lg px-2.5 py-1.5 text-sm whitespace-nowrap transition-colors",
+                active
+                  ? "bg-[#efd56a] font-medium text-[#1c1c1c] shadow-sm dark:text-[#121417]"
+                  : "text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/8",
+              )}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+function CrmNotesRail({
+  notes,
+  internalNotes,
+  notesCollapsed,
+  onToggleCollapsed,
+  addingNote,
+  deletingNoteId,
+  onAddNote,
+  onDeleteNote,
+}: {
+  notes: UserNote[];
+  internalNotes: string;
+  notesCollapsed: boolean;
+  onToggleCollapsed: () => void;
+  addingNote: boolean;
+  deletingNoteId: string | null;
+  onAddNote: (
+    body: string,
+    visibility: "PRIVATE" | "USER_VISIBLE",
+  ) => Promise<void>;
+  onDeleteNote: (noteId: string) => Promise<void>;
+}) {
+  return (
+    <aside
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl shadow-sm",
+        notesCollapsed
+          ? "border-0 bg-slate-800 dark:bg-slate-900"
+          : cn(
+              "h-112 border border-slate-200/90 bg-[linear-gradient(180deg,#eef4fb_0%,#e7eef8_55%,#e2ebf5_100%)] ring-1 ring-slate-900/5",
+              "dark:border-slate-700 dark:bg-[linear-gradient(180deg,#1a2332_0%,#172033_100%)] dark:ring-slate-900/40",
+            ),
+      )}
+    >
+      <button
+        type="button"
+        className={cn(
+          "flex w-full shrink-0 items-start gap-2 bg-slate-800 px-4 py-3 text-left transition-colors hover:bg-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
+          !notesCollapsed && "border-b border-slate-700/80",
+        )}
+        aria-expanded={!notesCollapsed}
+        onClick={onToggleCollapsed}
+      >
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold tracking-tight text-white">
+            Notes
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-300">
+            Shared across every section on this patient
+          </p>
+        </div>
+        <span
+          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-white"
+          aria-hidden
+        >
+          {notesCollapsed ? (
+            <ChevronDown className="size-4" />
+          ) : (
+            <ChevronUp className="size-4" />
+          )}
+        </span>
+      </button>
+      {!notesCollapsed ? (
+        <div className="flex min-h-0 flex-1 flex-col p-4 pt-3">
+          {internalNotes ? (
+            <div className="mb-3 shrink-0 rounded-xl border border-dashed border-slate-300 bg-white/70 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/50">
+              <div className="text-[0.65rem] font-medium tracking-[0.06em] text-slate-500 uppercase dark:text-slate-400">
+                Legacy internal notes
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-100">
+                {internalNotes}
+              </p>
+            </div>
+          ) : null}
+          <NotesTimeline
+            notes={notes}
+            activities={[]}
+            onAddNote={onAddNote}
+            onDeleteNote={onDeleteNote}
+            addingNote={addingNote}
+            deletingNoteId={deletingNoteId}
+            variant="cool"
+            className="min-h-0 flex-1"
+          />
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function LifecycleRail({
+  user,
+  userId,
+  collapsed,
+  onToggleCollapsed,
+  onTransition,
+  onDeleted,
+}: {
+  user: AdminUser;
+  userId: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  onTransition: (
+    action: (id: string) => Promise<AdminUser>,
+    label: string,
+  ) => void;
+  onDeleted: () => void;
+}) {
+  const isArchived = user.status === "ARCHIVED";
+  const isDeleted = user.status === "DELETED";
+  const canRestore = isArchived || isDeleted;
+  const actionBtn =
+    "h-8 min-w-0 flex-1 px-2 text-xs justify-center sm:text-[0.8rem]";
+
+  return (
+    <aside className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm dark:border-white/10">
+      <button
+        type="button"
+        className={cn(
+          "flex w-full items-start gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/40",
+          !collapsed && "border-b border-border dark:border-white/10",
+        )}
+        aria-expanded={!collapsed}
+        onClick={onToggleCollapsed}
+      >
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold tracking-tight">
+              Account status
+            </h2>
+            <StatusBadge status={user.status} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Lifecycle controls for this account
+          </p>
+        </div>
+        <span
+          className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground"
+          aria-hidden
+        >
+          {collapsed ? (
+            <ChevronDown className="size-4" />
+          ) : (
+            <ChevronUp className="size-4" />
+          )}
+        </span>
+      </button>
+      {!collapsed ? (
+        <div className="space-y-3 p-4 text-sm">
+          <div className="flex flex-row flex-wrap gap-1.5">
+            {user.status !== "ACTIVE" ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={actionBtn}
+                onClick={() =>
+                  void onTransition(reactivateUser, "Reactivated")
+                }
+              >
+                Reactivate
+              </Button>
+            ) : null}
+            {user.status === "ACTIVE" ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={actionBtn}
+                  onClick={() => void onTransition(suspendUser, "Suspended")}
+                >
+                  Suspend
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={actionBtn}
+                  onClick={() =>
+                    void onTransition(deactivateUser, "Deactivated")
+                  }
+                >
+                  Deactivate
+                </Button>
+              </>
+            ) : null}
+            {canRestore ? (
+              <RequirePermission permission={Permissions.ADM_RESTORE_USER}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={actionBtn}
+                  onClick={() => void onTransition(restoreUser, "Restored")}
+                >
+                  Restore
+                </Button>
+              </RequirePermission>
+            ) : (
+              <RequirePermission permission={Permissions.ADM_ARCHIVE_USER}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className={actionBtn}
+                  onClick={() => void onTransition(archiveUser, "Archived")}
+                >
+                  Archive
+                </Button>
+              </RequirePermission>
+            )}
+          </div>
+          {!isDeleted ? (
+            <RequirePermission permission={Permissions.ADM_DELETE_USER}>
+              <button
+                type="button"
+                className="rounded-md px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
+                onClick={() =>
+                  void deleteUser(userId)
+                    .then(onDeleted)
+                    .catch(() =>
+                      toast.error(
+                        "Delete failed. Last-admin safeguard may apply.",
+                      ),
+                    )
+                }
+              >
+                Delete permanently
+              </button>
+            </RequirePermission>
+          ) : null}
+        </div>
+      ) : null}
+    </aside>
   );
 }
 
 type Props = {
   userId: string;
-  initialTab?: UserTab;
 };
 
-export function UserEditorPage({ userId, initialTab }: Props) {
+export function UserEditorPage({ userId }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseTab(searchParams.get("tab"));
+
   const [user, setUser] = useState<AdminUser | null>(null);
-  const [tab, setTab] = useState<UserTab>(initialTab ?? "general");
   const [roles, setRoles] = useState<Role[]>([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -147,11 +423,9 @@ export function UserEditorPage({ userId, initialTab }: Props) {
   const [bio, setBio] = useState("");
   const [staffTitle, setStaffTitle] = useState("");
   const [staffCredentials, setStaffCredentials] = useState("");
-  const [avatarMediaAssetId, setAvatarMediaAssetId] = useState("");
 
   const [gender, setGender] = useState<UserGender>("UNSPECIFIED");
   const [region, setRegion] = useState("");
-  const [healthCardMediaAssetId, setHealthCardMediaAssetId] = useState("");
   const [stripeCustomerIdLive, setStripeCustomerIdLive] = useState("");
   const [stripeCustomerIdTest, setStripeCustomerIdTest] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
@@ -171,21 +445,22 @@ export function UserEditorPage({ userId, initialTab }: Props) {
   const [historyRows, setHistoryRows] = useState<UserHistoryEntry[]>([]);
   const [activityRows, setActivityRows] = useState<UserActivityEntry[]>([]);
   const [userNotes, setUserNotes] = useState<UserNote[]>([]);
-  const [notesBusy, setNotesBusy] = useState(false);
+  const [notesCollapsed, setNotesCollapsed] = useState(true);
+  const [statusCollapsed, setStatusCollapsed] = useState(true);
+  const [addingNote, setAddingNote] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const hydrate = useCallback((next: AdminUser) => {
     setUser(next);
     setFirstName(next.firstName ?? "");
     setLastName(next.lastName ?? "");
     setDisplayName(next.displayName ?? "");
-    setPhone(next.phone ?? "");
+    setPhone(toPhoneDigits(next.phone ?? ""));
     setBio(next.bio ?? "");
     setStaffTitle(next.staffProfile?.title ?? "");
     setStaffCredentials(next.staffProfile?.credentialsDisplay ?? "");
-    setAvatarMediaAssetId(next.avatarMediaAssetId ?? "");
     setGender(next.gender);
     setRegion(next.region ?? "");
-    setHealthCardMediaAssetId(next.healthCardMediaAssetId ?? "");
     setStripeCustomerIdLive(next.stripeCustomerIdLive ?? "");
     setStripeCustomerIdTest(next.stripeCustomerIdTest ?? "");
     setBillingAddress(addressFromJson(next.billingAddress));
@@ -198,45 +473,112 @@ export function UserEditorPage({ userId, initialTab }: Props) {
   useEffect(() => {
     void getAdminUser(userId)
       .then(hydrate)
-      .catch(() => setError("Unable to load user."));
+      .catch(() => setLoadError("Unable to load user."));
     void listRoles()
       .then(setRoles)
       .catch(() => undefined);
+    void listAdminUserNotes(userId)
+      .then(setUserNotes)
+      .catch(() => setUserNotes([]));
   }, [userId, hydrate]);
 
   useEffect(() => {
-    if (tab !== "history" || historyRows.length) return;
+    const raw = searchParams.get("tab");
+    if (!raw || !TAB_IDS.has(raw)) {
+      router.replace(`${pathname}?tab=general`, { scroll: false });
+    }
+  }, [searchParams, pathname, router]);
+
+  useEffect(() => {
+    if (tab !== "history") return;
     void getUserHistory(userId)
       .then(setHistoryRows)
-      .catch(() => undefined);
-  }, [tab, userId, historyRows.length]);
+      .catch(() => setHistoryRows([]));
+  }, [tab, userId]);
 
   useEffect(() => {
-    if (tab !== "activity" || activityRows.length) return;
+    if (tab !== "activity") return;
     void getUserActivity(userId)
       .then(setActivityRows)
-      .catch(() => undefined);
-  }, [tab, userId, activityRows.length]);
+      .catch(() => setActivityRows([]));
+  }, [tab, userId]);
 
-  useEffect(() => {
-    if (tab !== "notes" || userNotes.length) return;
-    void listAdminUserNotes(userId)
-      .then(setUserNotes)
-      .catch(() => undefined);
-  }, [tab, userId, userNotes.length]);
+  function goToTab(next: UserTab) {
+    if (next === tab) return;
+    router.replace(`${pathname}?tab=${next}`, { scroll: false });
+  }
+
+  async function onAddNote(
+    body: string,
+    visibility: "PRIVATE" | "USER_VISIBLE",
+  ) {
+    setAddingNote(true);
+    try {
+      await addAdminUserNote(userId, body, visibility);
+      const refreshed = await listAdminUserNotes(userId);
+      setUserNotes(refreshed);
+      toast.success("Note added.");
+    } catch {
+      toast.error("Unable to add note.");
+    } finally {
+      setAddingNote(false);
+    }
+  }
+
+  async function onDeleteNote(noteId: string) {
+    setDeletingNoteId(noteId);
+    try {
+      await deleteAdminUserNote(userId, noteId);
+      setUserNotes((prev) => prev.filter((note) => note.id !== noteId));
+      toast.success("Note deleted.");
+    } catch {
+      toast.error("Unable to delete note.");
+    } finally {
+      setDeletingNoteId(null);
+    }
+  }
 
   async function onSave(event: React.FormEvent) {
     event.preventDefault();
+
+    const profileError = validateUserProfileFields({
+      firstName,
+      lastName,
+      displayName,
+      phone,
+      bio,
+      staffTitle,
+      staffCredentials,
+      region,
+      stripeCustomerIdLive,
+      stripeCustomerIdTest,
+    });
+    if (profileError) {
+      toast.error(profileError);
+      return;
+    }
+    const billingError = validateAddressFields("Billing address", billingAddress);
+    if (billingError) {
+      toast.error(billingError);
+      return;
+    }
+    const shippingError = validateAddressFields(
+      "Shipping address",
+      shippingAddress,
+    );
+    if (shippingError) {
+      toast.error(shippingError);
+      return;
+    }
+
     setSaving(true);
-    setError(null);
-    setMessage(null);
     let preferences: Record<string, unknown> | null = null;
     try {
       preferences = preferencesText.trim()
         ? JSON.parse(preferencesText)
         : null;
     } catch {
-      setError("Preferences must be valid JSON.");
+      toast.error("Preferences must be valid JSON.");
       setSaving(false);
       return;
     }
@@ -247,10 +589,8 @@ export function UserEditorPage({ userId, initialTab }: Props) {
         displayName: displayName || null,
         phone: phone || null,
         bio: bio || null,
-        avatarMediaAssetId: avatarMediaAssetId || null,
         gender,
         region: region || null,
-        healthCardMediaAssetId: healthCardMediaAssetId || null,
         billingAddress: addressToJson(billingAddress),
         shippingAddress: addressToJson(shippingAddress),
         stripeCustomerIdLive: stripeCustomerIdLive || null,
@@ -263,9 +603,9 @@ export function UserEditorPage({ userId, initialTab }: Props) {
         },
       });
       hydrate(updated);
-      setMessage("User updated.");
+      toast.success("User updated.");
     } catch {
-      setError("Unable to save user.");
+      toast.error("Unable to save user.");
     } finally {
       setSaving(false);
     }
@@ -273,13 +613,12 @@ export function UserEditorPage({ userId, initialTab }: Props) {
 
   async function onSaveRoles() {
     setRolesSaving(true);
-    setError(null);
     try {
       const updated = await replaceUserRoles(userId, selectedRoleCodes);
       hydrate(updated);
-      setMessage("Roles updated.");
+      toast.success("Roles updated.");
     } catch {
-      setError("Unable to update roles.");
+      toast.error("Unable to update roles.");
     } finally {
       setRolesSaving(false);
     }
@@ -287,13 +626,12 @@ export function UserEditorPage({ userId, initialTab }: Props) {
 
   async function onSetPassword() {
     setPasswordSaving(true);
-    setError(null);
     try {
       await setUserPassword(userId, newPassword);
       setNewPassword("");
-      setMessage("Password set.");
+      toast.success("Password set.");
     } catch {
-      setError("Unable to set password. Minimum length is 12 characters.");
+      toast.error("Unable to set password. Minimum length is 12 characters.");
     } finally {
       setPasswordSaving(false);
     }
@@ -303,21 +641,32 @@ export function UserEditorPage({ userId, initialTab }: Props) {
     action: (id: string) => Promise<AdminUser>,
     label: string,
   ) {
-    setError(null);
     try {
       const updated = await action(userId);
       hydrate(updated);
-      setMessage(label);
+      toast.success(label);
     } catch {
-      setError(`Unable to ${label.toLowerCase()}.`);
+      toast.error(`Unable to ${label.toLowerCase()}.`);
     }
   }
 
+  const updateButton = (
+    <Button
+      type="submit"
+      form="guardian-user-editor-form"
+      size="sm"
+      disabled={saving}
+      className={cn(filterApplyButtonClassName, "h-9")}
+    >
+      {saving ? "Saving…" : "Update user"}
+    </Button>
+  );
+
   if (!user) {
-    if (error) {
+    if (loadError) {
       return (
         <ClinexaPage width="wide">
-          <ErrorState title="Unable to load user">{error}</ErrorState>
+          <ErrorState title="Unable to load user">{loadError}</ErrorState>
         </ClinexaPage>
       );
     }
@@ -328,348 +677,381 @@ export function UserEditorPage({ userId, initialTab }: Props) {
     );
   }
 
-  const isArchived = user.status === "ARCHIVED";
-  const isDeleted = user.status === "DELETED";
-  const canRestore = isArchived || isDeleted;
+  const sectionMeta: Record<
+    UserTab,
+    { title: string; description: string; actions?: React.ReactNode }
+  > = {
+    general: {
+      title: "Identity",
+      description: "Name, contact, and staff profile details.",
+      actions: updateButton,
+    },
+    roles: {
+      title: "Access & roles",
+      description: "Assign platform roles. Saving revokes active sessions.",
+      actions: (
+        <Button
+          type="button"
+          size="sm"
+          disabled={rolesSaving}
+          className={cn(filterApplyButtonClassName, "h-9")}
+          onClick={() => void onSaveRoles()}
+        >
+          {rolesSaving ? "Saving…" : "Save roles"}
+        </Button>
+      ),
+    },
+    patient: {
+      title: "Patient info",
+      description: "Demographics and billing identifiers.",
+      actions: updateButton,
+    },
+    addresses: {
+      title: "Addresses",
+      description: "Billing and shipping snapshots for this account.",
+      actions: updateButton,
+    },
+    security: {
+      title: "Security",
+      description: "Authentication status and password controls.",
+    },
+    preferences: {
+      title: "Preferences",
+      description: "Raw preference JSON and legacy internal notes.",
+      actions: updateButton,
+    },
+    history: {
+      title: "History",
+      description: "Administrative change log for this user.",
+    },
+    activity: {
+      title: "Activity",
+      description: "Recent account activity events.",
+    },
+    future: {
+      title: "More",
+      description: "Additional management tools will land here.",
+    },
+  };
+
+  const meta = sectionMeta[tab];
 
   return (
-    <ClinexaPage width="wide" className="gap-6">
-      <EntityDetailHeader
-        leading={
-          <EntityDetailLeading>
-            <Link
-              href="/guardian/users"
-              className="underline-offset-4 hover:underline"
-            >
-              ← All users
-            </Link>
-          </EntityDetailLeading>
-        }
-        title={userName(user)}
-        identifier={`${user.email} · ID: ${user.id}`}
-        status={<StatusBadge status={user.status} />}
-        actions={
-          <PageHeaderActions>
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link href={`/guardian/users/${userId}/history`} />}
-            >
-              History
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link href={`/guardian/users/${userId}/activity`} />}
-            >
-              Activity
-            </Button>
-          </PageHeaderActions>
-        }
-      />
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
-        <form
-          onSubmit={onSave}
-          className="overflow-hidden rounded-xl border border-border bg-card"
+    <ClinexaPage width="wide" className="gap-4 sm:gap-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <Link
+          href="/guardian/users"
+          className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
         >
-          <div className="grid md:grid-cols-[160px_1fr]">
-            <nav className="border-b border-border md:border-b-0 md:border-r">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTab(t.id)}
-                  className={`block w-full border-l-2 px-3 py-2.5 text-left text-sm ${
-                    tab === t.id
-                      ? "border-l-primary bg-muted/40 font-medium"
-                      : "border-l-transparent text-muted-foreground hover:bg-muted/20"
-                  }`}
+          ← All users
+        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {user.roles.length ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {user.roles.map((role) => (
+                <span
+                  key={role.code}
+                  className="rounded-full border border-[#efd56a]/35 bg-[#efd56a]/15 px-2.5 py-0.5 text-xs font-medium text-[#5a4a12] dark:text-[#efd56a]"
                 >
-                  {t.label}
-                </button>
+                  {role.name}
+                </span>
               ))}
-            </nav>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">No roles</span>
+          )}
+          <Button
+            size="sm"
+            className={cn(crossAppNavButtonClassName, "h-9")}
+            render={<Link href={`/crm/users/${userId}`} />}
+          >
+            Open in CRM
+          </Button>
+        </div>
+      </div>
 
-            <div className="space-y-4 p-4 text-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-0 truncate font-heading text-lg font-semibold tracking-tight sm:text-xl">
+              {user.displayName ||
+                [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+                user.email}
+            </h1>
+            <StatusBadge status={user.status} />
+          </div>
+          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+        </div>
+        <PillTabs value={tab} onChange={goToTab} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)] lg:items-start lg:gap-5">
+        <div className="min-w-0 perspective-[1400px]">
+          <form id="guardian-user-editor-form" onSubmit={onSave}>
+            <div key={tab} className="crm-section-flip min-w-0">
+              <DetailSection
+                title={meta.title}
+                description={meta.description}
+                actions={meta.actions}
+                className="rounded-2xl shadow-sm dark:border-white/10"
+              >
               {tab === "general" ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="firstName">First name</Label>
+                <FieldGrid>
+                  <Field label="First name" htmlFor="firstName">
                     <Input
                       id="firstName"
                       value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
+                      onChange={(e) =>
+                        setFirstName(sanitizePersonName(e.target.value))
+                      }
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="lastName">Last name</Label>
+                  </Field>
+                  <Field label="Last name" htmlFor="lastName">
                     <Input
                       id="lastName"
                       value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      onChange={(e) =>
+                        setLastName(sanitizePersonName(e.target.value))
+                      }
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="displayName">Display name</Label>
+                  </Field>
+                  <Field label="Display name" htmlFor="displayName">
                     <Input
                       id="displayName"
                       value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
+                      onChange={(e) =>
+                        setDisplayName(sanitizeDisplayName(e.target.value))
+                      }
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="phone">Phone</Label>
+                  </Field>
+                  <Field label="Phone" htmlFor="phone">
                     <Input
                       id="phone"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="(555) 123-4567"
+                      value={formatPhoneMask(phone)}
+                      onChange={(e) => setPhone(toPhoneDigits(e.target.value))}
                     />
-                  </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="bio">Bio</Label>
+                  </Field>
+                  <Field label="Bio" htmlFor="bio" className="sm:col-span-2">
                     <textarea
                       id="bio"
                       value={bio}
-                      onChange={(e) => setBio(e.target.value)}
+                      onChange={(e) =>
+                        setBio(sanitizePlainText(e.target.value, 2000))
+                      }
                       rows={3}
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                      className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm dark:border-white/12"
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="staffTitle">Staff title</Label>
+                  </Field>
+                  <Field label="Staff title" htmlFor="staffTitle">
                     <Input
                       id="staffTitle"
                       value={staffTitle}
-                      onChange={(e) => setStaffTitle(e.target.value)}
+                      maxLength={120}
+                      onChange={(e) =>
+                        setStaffTitle(sanitizePlainText(e.target.value, 120))
+                      }
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="staffCredentials">
-                      Credentials display
-                    </Label>
+                  </Field>
+                  <Field label="Credentials display" htmlFor="staffCredentials">
                     <Input
                       id="staffCredentials"
                       value={staffCredentials}
-                      onChange={(e) => setStaffCredentials(e.target.value)}
+                      maxLength={120}
+                      onChange={(e) =>
+                        setStaffCredentials(
+                          sanitizePlainText(e.target.value, 120),
+                        )
+                      }
                     />
-                  </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <Label htmlFor="avatar">Avatar media asset id</Label>
-                    <Input
-                      id="avatar"
-                      value={avatarMediaAssetId}
-                      onChange={(e) => setAvatarMediaAssetId(e.target.value)}
-                    />
-                  </div>
-                </div>
+                  </Field>
+                </FieldGrid>
               ) : null}
 
               {tab === "roles" ? (
-                <div className="space-y-3">
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    {roles.map((role) => (
-                      <label
-                        key={role.code}
-                        className="flex items-center gap-2"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedRoleCodes.includes(role.code)}
-                          onChange={() =>
-                            setSelectedRoleCodes((prev) =>
-                              prev.includes(role.code)
-                                ? prev.filter((c) => c !== role.code)
-                                : [...prev, role.code],
-                            )
-                          }
-                        />
-                        {role.name}
-                      </label>
-                    ))}
+                <div className="space-y-4">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {roles.map((role) => {
+                      const checked = selectedRoleCodes.includes(role.code);
+                      return (
+                        <label
+                          key={role.code}
+                          className={cn(
+                            "flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 transition-colors",
+                            checked
+                              ? "border-[#efd56a]/60 bg-[#efd56a]/12 dark:bg-[#efd56a]/10"
+                              : "border-border hover:bg-muted/30 dark:border-white/10",
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-1 accent-[#efd56a]"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedRoleCodes((prev) =>
+                                prev.includes(role.code)
+                                  ? prev.filter((c) => c !== role.code)
+                                  : [...prev, role.code],
+                              )
+                            }
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium">
+                              {role.name}
+                            </span>
+                            <span className="mt-0.5 block font-mono text-[11px] text-muted-foreground">
+                              {role.code}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={rolesSaving}
-                    onClick={() => void onSaveRoles()}
-                  >
-                    {rolesSaving ? "Saving…" : "Save roles"}
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-xs text-muted-foreground">
                     Replacing roles revokes all active sessions for this user.
                   </p>
                 </div>
               ) : null}
 
               {tab === "patient" ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <Label htmlFor="gender">Gender</Label>
-                    <select
-                      id="gender"
-                      className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                <FieldGrid>
+                  <Field label="Gender">
+                    <AppSelect
                       value={gender}
-                      onChange={(e) =>
-                        setGender(e.target.value as UserGender)
-                      }
-                    >
-                      {GENDERS.map((g) => (
-                        <option key={g} value={g}>
-                          {g}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="region">Region</Label>
-                    <Input
-                      id="region"
+                      onValueChange={(next) => setGender(next as UserGender)}
+                      aria-label="Gender"
+                      className="w-full"
+                      options={GENDERS.map((g) => ({
+                        value: g,
+                        label: g,
+                      }))}
+                    />
+                  </Field>
+                  <Field label="Region" htmlFor="region">
+                    <AppSelect
                       value={region}
-                      onChange={(e) => setRegion(e.target.value)}
+                      onValueChange={setRegion}
+                      aria-label="Region"
+                      className="w-full"
+                      options={[...ADDRESS_REGION_OPTIONS]}
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label>Date of birth</Label>
+                  </Field>
+                  <Field label="Date of birth">
                     <Input value={user.dateOfBirth ?? "—"} disabled />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="healthCard">
-                      Health card media asset id
-                    </Label>
-                    <Input
-                      id="healthCard"
-                      value={healthCardMediaAssetId}
-                      onChange={(e) =>
-                        setHealthCardMediaAssetId(e.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="stripeLive">
-                      Stripe customer id (live)
-                    </Label>
+                  </Field>
+                  <Field
+                    label="Stripe customer id (live)"
+                    htmlFor="stripeLive"
+                  >
                     <Input
                       id="stripeLive"
                       value={stripeCustomerIdLive}
-                      onChange={(e) =>
-                        setStripeCustomerIdLive(e.target.value)
-                      }
+                      onChange={(e) => setStripeCustomerIdLive(e.target.value)}
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="stripeTest">
-                      Stripe customer id (test)
-                    </Label>
+                  </Field>
+                  <Field
+                    label="Stripe customer id (test)"
+                    htmlFor="stripeTest"
+                  >
                     <Input
                       id="stripeTest"
                       value={stripeCustomerIdTest}
-                      onChange={(e) =>
-                        setStripeCustomerIdTest(e.target.value)
-                      }
+                      onChange={(e) => setStripeCustomerIdTest(e.target.value)}
                     />
-                  </div>
-                </div>
+                  </Field>
+                </FieldGrid>
               ) : null}
 
               {tab === "addresses" ? (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <div className="font-medium">Billing address</div>
-                    {(
-                      Object.keys(EMPTY_ADDRESS) as Array<keyof Address>
-                    ).map((field) => (
-                      <Input
-                        key={field}
-                        placeholder={field}
-                        value={billingAddress[field]}
-                        onChange={(e) =>
-                          setBillingAddress((prev) => ({
-                            ...prev,
-                            [field]: e.target.value,
-                          }))
-                        }
-                      />
-                    ))}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="font-medium">Shipping address</div>
-                    {(
-                      Object.keys(EMPTY_ADDRESS) as Array<keyof Address>
-                    ).map((field) => (
-                      <Input
-                        key={field}
-                        placeholder={field}
-                        value={shippingAddress[field]}
-                        onChange={(e) =>
-                          setShippingAddress((prev) => ({
-                            ...prev,
-                            [field]: e.target.value,
-                          }))
-                        }
-                      />
-                    ))}
-                  </div>
+                  <AddressFieldsEditor
+                    label="Billing address"
+                    value={billingAddress}
+                    onChange={setBillingAddress}
+                  />
+                  <AddressFieldsEditor
+                    label="Shipping address"
+                    value={shippingAddress}
+                    onChange={setShippingAddress}
+                  />
                 </div>
               ) : null}
 
               {tab === "security" ? (
                 <div className="space-y-4">
-                  <div>
-                    <div className="font-medium">Two-factor authentication</div>
-                    <p className="text-muted-foreground capitalize">
-                      {user.securitySummary.twoFactorStatus}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="font-medium">Failed login count</div>
-                    <p className="text-muted-foreground">
-                      {user.securitySummary.failedLoginCount}
-                    </p>
-                  </div>
-                  {user.securitySummary.lockedUntil ? (
-                    <div className="space-y-1">
-                      <div className="font-medium">Locked until</div>
-                      <p className="text-muted-foreground">
-                        {formatDate(user.securitySummary.lockedUntil)}
-                      </p>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-3 dark:border-white/10">
+                      <div className="text-xs text-muted-foreground">
+                        Two-factor
+                      </div>
+                      <div className="mt-1 text-sm font-medium capitalize">
+                        {user.securitySummary.twoFactorStatus}
+                      </div>
                     </div>
-                  ) : null}
-                  <div className="space-y-1 border-t border-border pt-3">
-                    <div className="font-medium">Password reset</div>
-                    <p className="text-muted-foreground">
+                    <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-3 dark:border-white/10">
+                      <div className="text-xs text-muted-foreground">
+                        Failed logins
+                      </div>
+                      <div className="mt-1 text-sm font-medium">
+                        {user.securitySummary.failedLoginCount}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border/80 bg-muted/20 px-3 py-3 dark:border-white/10">
+                      <div className="text-xs text-muted-foreground">
+                        Locked until
+                      </div>
+                      <div className="mt-1 text-sm font-medium">
+                        {user.securitySummary.lockedUntil
+                          ? formatDate(user.securitySummary.lockedUntil)
+                          : "—"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-border/80 p-4 dark:border-white/10">
+                    <div className="text-sm font-medium">Password reset</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
                       Send a password reset email to the user.
                     </p>
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
+                      className="mt-3"
                       onClick={() =>
                         void requestUserPasswordReset(userId)
-                          .then(() => setMessage("Password reset email sent."))
+                          .then(() =>
+                            toast.success("Password reset email sent."),
+                          )
                           .catch(() =>
-                            setError("Unable to send password reset."),
+                            toast.error("Unable to send password reset."),
                           )
                       }
                     >
                       Send reset email
                     </Button>
                   </div>
-                  <div className="space-y-1 border-t border-border pt-3">
-                    <div className="font-medium">Set password</div>
-                    <div className="flex gap-2">
+
+                  <div className="rounded-xl border border-border/80 p-4 dark:border-white/10">
+                    <div className="text-sm font-medium">Set password</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Minimum 12 characters.
+                    </p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                       <Input
                         type="password"
-                        placeholder="New password (12+ chars)"
+                        placeholder="New password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
+                        className="sm:flex-1"
                       />
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
                         disabled={passwordSaving || newPassword.length < 12}
+                        className={cn(filterApplyButtonClassName, "h-9")}
                         onClick={() => void onSetPassword()}
                       >
                         {passwordSaving ? "Saving…" : "Set password"}
@@ -680,55 +1062,32 @@ export function UserEditorPage({ userId, initialTab }: Props) {
               ) : null}
 
               {tab === "preferences" ? (
-                <div className="space-y-1">
-                  <Label htmlFor="preferences">Preferences (JSON)</Label>
-                  <textarea
-                    id="preferences"
-                    value={preferencesText}
-                    onChange={(e) => setPreferencesText(e.target.value)}
-                    rows={10}
-                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 font-mono text-xs"
-                  />
-                </div>
-              ) : null}
-
-              {tab === "notes" ? (
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <Label htmlFor="internalNotes">Internal notes (legacy blob)</Label>
+                <div className="space-y-5">
+                  <div className="space-y-2">
+                    <Label htmlFor="preferences">Preferences (JSON)</Label>
+                    <textarea
+                      id="preferences"
+                      value={preferencesText}
+                      onChange={(e) => setPreferencesText(e.target.value)}
+                      rows={12}
+                      className="w-full rounded-xl border border-border bg-muted/25 px-3 py-3 font-mono text-xs leading-relaxed dark:border-white/12 dark:bg-black/20"
+                    />
+                  </div>
+                  <div className="space-y-2 border-t border-border pt-4 dark:border-white/10">
+                    <Label htmlFor="internalNotes">
+                      Internal notes (legacy blob)
+                    </Label>
                     <textarea
                       id="internalNotes"
                       value={internalNotes}
                       onChange={(e) => setInternalNotes(e.target.value)}
-                      rows={6}
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                      rows={5}
+                      className="w-full rounded-xl border border-border bg-transparent px-3 py-2 text-sm dark:border-white/12"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Class D field — visible to staff with appropriate access.
-                      Structured UserNote timeline is below.
+                      Class D field — also shown in the Notes rail. Same data as
+                      CRM.
                     </p>
-                  </div>
-                  <div className="border-t border-border pt-4">
-                    <div className="mb-2 text-sm font-medium">User notes</div>
-                    <NotesTimeline
-                      notes={userNotes}
-                      activities={[]}
-                      addingNote={notesBusy}
-                      onAddNote={async (body, visibility) => {
-                        setNotesBusy(true);
-                        setError(null);
-                        try {
-                          await addAdminUserNote(userId, body, visibility);
-                          const rows = await listAdminUserNotes(userId);
-                          setUserNotes(rows);
-                          setMessage("Note added.");
-                        } catch {
-                          setError("Unable to add note.");
-                        } finally {
-                          setNotesBusy(false);
-                        }
-                      }}
-                    />
                   </div>
                 </div>
               ) : null}
@@ -738,16 +1097,20 @@ export function UserEditorPage({ userId, initialTab }: Props) {
                   {historyRows.map((row) => (
                     <li
                       key={row.id}
-                      className="rounded border border-border px-3 py-2"
+                      className="flex items-start justify-between gap-3 rounded-xl border border-border/80 px-3 py-2.5 dark:border-white/10"
                     >
-                      <div className="font-medium">{row.action}</div>
-                      <div className="text-muted-foreground">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{row.action}</div>
+                      </div>
+                      <div className="shrink-0 text-xs text-muted-foreground">
                         {formatDate(row.createdAt)}
                       </div>
                     </li>
                   ))}
                   {!historyRows.length ? (
-                    <li className="text-muted-foreground">No history yet.</li>
+                    <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground dark:border-white/10">
+                      No history yet.
+                    </li>
                   ) : null}
                 </ul>
               ) : null}
@@ -757,151 +1120,61 @@ export function UserEditorPage({ userId, initialTab }: Props) {
                   {activityRows.map((row) => (
                     <li
                       key={row.id}
-                      className="rounded border border-border px-3 py-2"
+                      className="rounded-xl border border-border/80 px-3 py-2.5 dark:border-white/10"
                     >
-                      <div className="font-medium">{row.summary}</div>
-                      <div className="text-muted-foreground">
-                        {row.kind} · {formatDate(row.createdAt)}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 text-sm font-medium">
+                          {row.summary}
+                        </div>
+                        <div className="shrink-0 text-xs text-muted-foreground">
+                          {formatDate(row.createdAt)}
+                        </div>
+                      </div>
+                      <div className="mt-1 text-xs capitalize text-muted-foreground">
+                        {row.kind}
                       </div>
                     </li>
                   ))}
                   {!activityRows.length ? (
-                    <li className="text-muted-foreground">No activity yet.</li>
+                    <li className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground dark:border-white/10">
+                      No activity yet.
+                    </li>
                   ) : null}
                 </ul>
               ) : null}
 
               {tab === "future" ? (
-                <p className="text-muted-foreground">
-                  More user management features are coming soon.
-                </p>
+                <div className="rounded-xl border border-dashed border-border px-4 py-8 text-center dark:border-white/10">
+                  <p className="text-sm text-muted-foreground">
+                    More user management features are coming soon.
+                  </p>
+                </div>
               ) : null}
+              </DetailSection>
             </div>
-          </div>
+          </form>
+        </div>
 
-          <div className="border-t border-border p-3">
-            {error ? (
-              <p className="mb-2 text-xs text-destructive">{error}</p>
-            ) : null}
-            {message ? (
-              <p className="mb-2 text-xs text-success" role="status">
-                {message}
-              </p>
-            ) : null}
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Update User"}
-            </Button>
-          </div>
-        </form>
-
-        <aside className="flex flex-col gap-4">
-          <div className="rounded-xl border border-border bg-card">
-            <div className="border-b border-border px-3 py-2 text-sm font-medium">
-              Status
-            </div>
-            <div className="space-y-2 p-3 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground">Current</span>
-                <StatusBadge status={user.status} />
-              </div>
-              <div className="flex flex-col gap-1 pt-1">
-                {user.status !== "ACTIVE" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void runTransition(reactivateUser, "Reactivated")
-                    }
-                  >
-                    Reactivate
-                  </Button>
-                ) : null}
-                {user.status === "ACTIVE" ? (
-                  <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void runTransition(suspendUser, "Suspended")
-                      }
-                    >
-                      Suspend
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void runTransition(deactivateUser, "Deactivated")
-                      }
-                    >
-                      Deactivate
-                    </Button>
-                  </>
-                ) : null}
-                {canRestore ? (
-                  <RequirePermission permission={Permissions.ADM_RESTORE_USER}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void runTransition(restoreUser, "Restored")
-                      }
-                    >
-                      Restore
-                    </Button>
-                  </RequirePermission>
-                ) : (
-                  <RequirePermission permission={Permissions.ADM_ARCHIVE_USER}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void runTransition(archiveUser, "Archived")
-                      }
-                    >
-                      Archive
-                    </Button>
-                  </RequirePermission>
-                )}
-                {!isDeleted ? (
-                  <RequirePermission permission={Permissions.ADM_DELETE_USER}>
-                    <button
-                      type="button"
-                      className="pt-1 text-left text-sm text-destructive hover:underline"
-                      onClick={() =>
-                        void deleteUser(userId)
-                          .then(() => router.push("/guardian/users"))
-                          .catch(() =>
-                            setError(
-                              "Delete failed. Last-admin safeguard may apply.",
-                            ),
-                          )
-                      }
-                    >
-                      Delete permanently
-                    </button>
-                  </RequirePermission>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border bg-card">
-            <div className="border-b border-border px-3 py-2 text-sm font-medium">
-              Roles
-            </div>
-            <div className="space-y-1 p-3 text-sm text-muted-foreground">
-              {user.roles.length
-                ? user.roles.map((r) => r.name).join(", ")
-                : "No roles assigned."}
-            </div>
-          </div>
-        </aside>
+        <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
+          <LifecycleRail
+            user={user}
+            userId={userId}
+            collapsed={statusCollapsed}
+            onToggleCollapsed={() => setStatusCollapsed((open) => !open)}
+            onTransition={runTransition}
+            onDeleted={() => router.push("/guardian/users")}
+          />
+          <CrmNotesRail
+            notes={userNotes}
+            internalNotes={internalNotes}
+            notesCollapsed={notesCollapsed}
+            onToggleCollapsed={() => setNotesCollapsed((open) => !open)}
+            addingNote={addingNote}
+            deletingNoteId={deletingNoteId}
+            onAddNote={onAddNote}
+            onDeleteNote={onDeleteNote}
+          />
+        </div>
       </div>
     </ClinexaPage>
   );

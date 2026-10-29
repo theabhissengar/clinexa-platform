@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClinexaPage,
   ConfirmDialog,
   DetailSection,
@@ -862,7 +863,28 @@ export function GuardianSubscriptionDetailPage() {
         )}
 
         {canCorrect ? (
-          <DetailSection title="Customer snapshot correction">
+          <DetailSection
+            title="Customer snapshot correction"
+            actions={
+              <Button
+                size="sm"
+                disabled={busy || correctReason.trim().length < 3}
+                onClick={() =>
+                  void runAction("Customer snapshot corrected.", () =>
+                    correctAdminSubscription(row.id, {
+                      reason: correctReason.trim(),
+                      firstName: correctFirstName || null,
+                      lastName: correctLastName || null,
+                      email: correctEmail || null,
+                      phone: correctPhone || null,
+                    }),
+                  )
+                }
+              >
+                Apply correction
+              </Button>
+            }
+          >
             <p className="mb-3 text-xs text-muted-foreground">
               Corrects the bound customer snapshot. Does not rewrite historical
               product snapshots or execute Payments.
@@ -909,24 +931,6 @@ export function GuardianSubscriptionDetailPage() {
                 />
               </div>
             </div>
-            <Button
-              className="mt-3"
-              size="sm"
-              disabled={busy || correctReason.trim().length < 3}
-              onClick={() =>
-                void runAction("Customer snapshot corrected.", () =>
-                  correctAdminSubscription(row.id, {
-                    reason: correctReason.trim(),
-                    firstName: correctFirstName || null,
-                    lastName: correctLastName || null,
-                    email: correctEmail || null,
-                    phone: correctPhone || null,
-                  }),
-                )
-              }
-            >
-              Apply correction
-            </Button>
           </DetailSection>
         ) : null}
 
@@ -937,22 +941,22 @@ export function GuardianSubscriptionDetailPage() {
               gates.
             </p>
             <div className="flex flex-wrap items-end gap-2">
-              <select
-                className="h-9 rounded-lg border border-input bg-background px-2 text-sm"
+              <AppSelect
                 value={overrideTo}
-                onChange={(event) =>
-                  setOverrideTo(event.target.value as SubscriptionStatus | "")
+                onValueChange={(next) =>
+                  setOverrideTo(next as SubscriptionStatus | "")
                 }
-              >
-                <option value="">Target status</option>
-                {ALL_STATUSES.filter((status) => status !== row.status).map(
-                  (status) => (
-                    <option key={status} value={status}>
-                      {productStatusLabel(status)}
-                    </option>
-                  ),
-                )}
-              </select>
+                aria-label="Target status"
+                options={[
+                  { value: "", label: "Target status" },
+                  ...ALL_STATUSES.filter(
+                    (status) => status !== row.status,
+                  ).map((status) => ({
+                    value: status,
+                    label: productStatusLabel(status),
+                  })),
+                ]}
+              />
               <Input
                 className="w-64"
                 placeholder="Override reason"

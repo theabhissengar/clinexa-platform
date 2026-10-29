@@ -326,6 +326,20 @@ export class AssetsService {
     const data: Prisma.AssetUpdateInput = {};
     const changes: Record<string, { from: string | null; to: string | null }> =
       {};
+    if (dto.originalFilename !== undefined) {
+      const nextName = dto.originalFilename.trim();
+      if (!nextName) {
+        throw new BadRequestException({
+          code: ErrorCodes.VAL_MISSING_FIELD,
+          message: 'Asset name cannot be empty',
+        });
+      }
+      data.originalFilename = nextName;
+      changes.originalFilename = {
+        from: existing.originalFilename,
+        to: nextName,
+      };
+    }
     if (dto.altText !== undefined) {
       data.altText = dto.altText;
       changes.altText = { from: existing.altText, to: dto.altText };

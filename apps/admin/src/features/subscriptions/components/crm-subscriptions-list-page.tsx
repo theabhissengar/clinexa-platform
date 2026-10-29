@@ -6,25 +6,30 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  AppSelect,
   ClearableSearchInput,
+  ClickableTableRow,
   ClinexaPage,
+  CollapsibleFilterFields,
   DataTable,
+  DateField,
   EmptyState,
   ErrorState,
-  FilterBar,
-  FilterBarGroup,
-  FilterBarRow,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  DEFAULT_LIST_PAGE_SIZE,
+  LIST_PAGE_SIZE_OPTIONS,
   ListPaginationBar,
   PageBody,
-  PageHeader,
-  PageHeaderCopy,
-  PageHeaderDescription,
-  PageHeaderTitle,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
 } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -50,7 +55,7 @@ const STATUS_TABS: Array<{ key: SubscriptionStatus | "ALL"; label: string }> = [
 ];
 
 const STATUS_KEYS = new Set(STATUS_TABS.map((tab) => tab.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): SubscriptionStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as SubscriptionStatus | "ALL")) {
@@ -65,6 +70,12 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function CrmSubscriptionsListPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -77,6 +88,7 @@ export function CrmSubscriptionsListPage() {
   const appliedFrom = searchParams.get("nextRenewalFrom") ?? "";
   const appliedTo = searchParams.get("nextRenewalTo") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
   const [syncedQ, setSyncedQ] = useState(appliedQ);
@@ -88,8 +100,9 @@ export function CrmSubscriptionsListPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   if (appliedQ !== syncedQ) {
     setSyncedQ(appliedQ);
@@ -118,8 +131,8 @@ export function CrmSubscriptionsListPage() {
           patientUserId: appliedPatient || undefined,
           nextRenewalFrom: appliedFrom || undefined,
           nextRenewalTo: appliedTo || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -146,6 +159,7 @@ export function CrmSubscriptionsListPage() {
     appliedFrom,
     appliedTo,
     page,
+    pageSize,
   ]);
 
   const hasFilters =
@@ -162,157 +176,173 @@ export function CrmSubscriptionsListPage() {
 
   return (
     <ClinexaPage width="wide" className="gap-6">
-      <PageHeader>
-        <PageHeaderCopy>
-          <PageHeaderTitle>Subscriptions</PageHeaderTitle>
-          <PageHeaderDescription>
-            Operational subscription assist. Create, delete, archive, restore,
-            corrections, and overrides are Guardian-only.
-          </PageHeaderDescription>
-        </PageHeaderCopy>
-      </PageHeader>
-
       <PageBody>
-        <FilterBar>
-          <FilterBarRow>
-            <FilterBarGroup className="flex-wrap gap-x-3 gap-y-1 text-sm">
-              {STATUS_TABS.map((tab, index) => {
-                const active = appliedStatus === tab.key;
-                const count =
-                  tab.key === "ALL" ? statusCounts.ALL : statusCounts[tab.key];
-                return (
-                  <span
-                    key={tab.key}
-                    className="inline-flex items-center gap-3"
-                  >
-                    {index > 0 ? (
-                      <span className="text-muted-foreground/40">|</span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        writeParams({
-                          status: tab.key === "ALL" ? null : tab.key,
-                          page: "1",
-                        })
-                      }
-                      className={
-                        active
-                          ? "font-medium text-foreground"
-                          : "text-primary hover:underline"
-                      }
-                    >
-                      {tab.label}
-                      {typeof count === "number" ? (
-                        <span className="ml-1 text-muted-foreground">
-                          ({count})
-                        </span>
-                      ) : null}
-                    </button>
-                  </span>
-                );
-              })}
-            </FilterBarGroup>
-            <FilterBarGroup>
-              <form
-                className="flex flex-wrap gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  applySearch();
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
                 }}
+                placeholder="Search subscriptions"
+                className="w-full"
+                aria-label="Search subscriptions"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
               >
-                <ClearableSearchInput
-                  value={draftQ}
-                  onChange={setDraftQ}
-                  onClear={() => {
-                    setDraftQ("");
-                    if (appliedQ) writeParams({ q: null, page: "1" });
-                  }}
-                  placeholder="Search subscriptions"
-                  className="w-52"
-                  aria-label="Search subscriptions"
-                />
-                <Button type="submit" size="sm" variant="outline">
-                  Search
-                </Button>
-              </form>
-            </FilterBarGroup>
-          </FilterBarRow>
-          <FilterBarRow>
-            <FilterBarGroup className="flex flex-wrap items-end gap-3 text-sm">
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Plan</span>
-                <select
-                  className="h-9 rounded-lg border border-input bg-background px-2"
-                  value={appliedPlan}
-                  onChange={(event) =>
-                    writeParams({
-                      planId: event.target.value || null,
-                      page: "1",
-                    })
-                  }
-                >
-                  <option value="">All plans</option>
-                  {plans.map((plan) => (
-                    <option key={plan.id} value={plan.id}>
-                      {plan.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Next renewal from</span>
-                <input
-                  type="date"
-                  className="h-9 rounded-lg border border-input bg-background px-2"
-                  value={appliedFrom.slice(0, 10)}
-                  onChange={(event) =>
-                    writeParams({
-                      nextRenewalFrom: event.target.value
-                        ? new Date(event.target.value).toISOString()
-                        : null,
-                      page: "1",
-                    })
-                  }
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="text-muted-foreground">Next renewal to</span>
-                <input
-                  type="date"
-                  className="h-9 rounded-lg border border-input bg-background px-2"
-                  value={appliedTo.slice(0, 10)}
-                  onChange={(event) =>
-                    writeParams({
-                      nextRenewalTo: event.target.value
-                        ? new Date(
-                            `${event.target.value}T23:59:59.999Z`,
-                          ).toISOString()
-                        : null,
-                      page: "1",
-                    })
-                  }
-                />
-              </label>
+                Apply
+              </Button>
+            </div>
+          </div>
+
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className="flex flex-col gap-3">
               {hasFilters ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    setDraftQ("");
-                    router.push(pathname);
-                  }}
-                >
-                  Clear filters
-                </Button>
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    onClick={() => {
+                      setDraftQ("");
+                      router.push(pathname);
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                </div>
               ) : null}
-            </FilterBarGroup>
-          </FilterBarRow>
-        </FilterBar>
+              <div className={filterFieldsRowClassName}>
+                <FilterControl
+                  label="Status"
+                  className={filterControlCompactClassName}
+                >
+                  <AppSelect
+                    value={appliedStatus}
+                    onValueChange={(next) =>
+                      writeParams({
+                        status: next === "ALL" ? null : next,
+                        page: "1",
+                      })
+                    }
+                    aria-label="Filter by status"
+                    options={STATUS_TABS.map((tab) => {
+                      const count =
+                        tab.key === "ALL"
+                          ? statusCounts.ALL
+                          : statusCounts[tab.key];
+                      return {
+                        value: tab.key,
+                        label:
+                          typeof count === "number"
+                            ? `${tab.label} (${count})`
+                            : tab.label,
+                      };
+                    })}
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Plan"
+                  className={filterControlCompactClassName}
+                >
+                  <AppSelect
+                    value={appliedPlan}
+                    onValueChange={(next) =>
+                      writeParams({
+                        planId: next || null,
+                        page: "1",
+                      })
+                    }
+                    aria-label="Filter by plan"
+                    placeholder="All plans"
+                    options={[
+                      { value: "", label: "All plans" },
+                      ...plans.map((plan) => ({
+                        value: plan.id,
+                        label: plan.name,
+                      })),
+                    ]}
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Next renewal from"
+                  className={filterControlCompactClassName}
+                >
+                  <DateField
+                    value={appliedFrom.slice(0, 10)}
+                    onChange={(day) =>
+                      writeParams({
+                        nextRenewalFrom: day
+                          ? new Date(day).toISOString()
+                          : null,
+                        page: "1",
+                      })
+                    }
+                    aria-label="Next renewal from"
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Next renewal to"
+                  className={filterControlCompactClassName}
+                >
+                  <DateField
+                    value={appliedTo.slice(0, 10)}
+                    onChange={(day) =>
+                      writeParams({
+                        nextRenewalTo: day
+                          ? new Date(`${day}T23:59:59.999Z`).toISOString()
+                          : null,
+                        page: "1",
+                      })
+                    }
+                    aria-label="Next renewal to"
+                  />
+                </FilterControl>
+                {appliedPatient ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-9 shrink-0"
+                    onClick={() =>
+                      writeParams({ patientUserId: null, page: "1" })
+                    }
+                  >
+                    Clear patient filter
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
 
         <DataTable
+          framed
           stickyFirstColumn
-          density="dense"
           loading={loading}
           empty={!loading && !error && items.length === 0}
           emptyState={
@@ -334,6 +364,14 @@ export function CrmSubscriptionsListPage() {
               total={total}
               page={page}
               pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
               onPrev={() =>
                 writeParams({ page: page <= 0 ? null : String(page) })
               }
@@ -350,9 +388,6 @@ export function CrmSubscriptionsListPage() {
               <TableHead>Plan</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Period / renewal</TableHead>
-              <TableHead>Cycle</TableHead>
-              <TableHead>Payment</TableHead>
-              <TableHead>Clinical</TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>
@@ -364,7 +399,7 @@ export function CrmSubscriptionsListPage() {
                   : ""
               }`;
               return (
-                <TableRow key={row.id} className="align-top">
+                <ClickableTableRow href={href} key={row.id} className="align-top">
                   <TableCell>
                     <Link
                       href={href}
@@ -389,15 +424,10 @@ export function CrmSubscriptionsListPage() {
                       Next {formatDateTime(row.nextRenewalAt)}
                     </div>
                   </TableCell>
-                  <TableCell className="tabular-nums">{row.cycleNumber}</TableCell>
-                  <TableCell>{row.paymentStatusSummary ?? "—"}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={row.clinicalRequirement} />
-                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(row.createdAt)}
                   </TableCell>
-                </TableRow>
+                </ClickableTableRow>
               );
             })}
           </TableBody>

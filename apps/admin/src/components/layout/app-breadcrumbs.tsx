@@ -13,7 +13,6 @@ import {
   Breadcrumb,
   BreadcrumbEllipsis,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -23,6 +22,7 @@ import {
   CONTEXT_LANDING,
   resolveContextFromPathname,
 } from "@/lib/platform-context";
+import { cn } from "@/lib/utils";
 
 type BreadcrumbSegment = { label: string; href?: string; kind?: "group" };
 
@@ -47,8 +47,9 @@ export function AppBreadcrumbs() {
   const contextHref = CONTEXT_LANDING[context];
   const isContextRoot = pathname === contextHref;
 
+  // Context root (CRM / Guardian) always links to that context's dashboard.
   const segments: BreadcrumbSegment[] = [
-    { label: contextLabel, href: isContextRoot ? undefined : contextHref },
+    { label: contextLabel, href: contextHref },
   ];
 
   if (isContextRoot) {
@@ -82,6 +83,7 @@ export function AppBreadcrumbs() {
           const isLast = index === segments.length - 1;
           const isCollapsibleGroup =
             segment.kind === "group" && canCollapseMiddle;
+          const isContextRootLink = index === 0 && Boolean(segment.href);
 
           return (
             <Fragment key={`${segment.label}-${index}`}>
@@ -106,12 +108,15 @@ export function AppBreadcrumbs() {
                       {segment.label}
                     </BreadcrumbPage>
                   ) : (
-                    <BreadcrumbLink
-                      className="truncate font-medium text-foreground/70"
-                      render={<Link href={segment.href} />}
+                    <Link
+                      href={segment.href}
+                      className={cn(
+                        "truncate font-medium text-foreground/70 transition-colors hover:text-foreground",
+                        isContextRootLink && "underline-offset-4 hover:underline",
+                      )}
                     >
                       {segment.label}
-                    </BreadcrumbLink>
+                    </Link>
                   )}
                 </BreadcrumbItem>
               )}

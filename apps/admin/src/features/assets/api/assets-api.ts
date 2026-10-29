@@ -63,11 +63,11 @@ export async function uploadSessionContent(
 ): Promise<{ id: string; status: string; byteSize: number }> {
   const form = new FormData();
   form.append("file", file);
+  // Do not set Content-Type — apiClient strips it for FormData so the browser
+  // can attach the multipart boundary Multer requires.
   const { data } = await apiClient.put<
     ApiEnvelope<{ id: string; status: string; byteSize: number }>
-  >(`/v1/admin/assets/upload-sessions/${sessionId}/content`, form, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  >(`/v1/admin/assets/upload-sessions/${sessionId}/content`, form);
   return data.data;
 }
 
@@ -80,7 +80,11 @@ export async function finalizeUploadSession(sessionId: string): Promise<Asset> {
 
 export async function updateAsset(
   id: string,
-  payload: { altText?: string | null; caption?: string | null },
+  payload: {
+    originalFilename?: string;
+    altText?: string | null;
+    caption?: string | null;
+  },
 ): Promise<Asset> {
   const { data } = await apiClient.patch<ApiEnvelope<Asset>>(
     `/v1/admin/assets/${id}`,

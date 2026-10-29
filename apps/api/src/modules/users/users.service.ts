@@ -65,6 +65,10 @@ export class UsersService {
     status?: UserStatus | 'ALL';
     role?: string;
     kind?: 'staff' | 'patient';
+    createdFrom?: string;
+    createdTo?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
     skip?: number;
     take?: number;
   }) {
@@ -93,6 +97,12 @@ export class UsersService {
   async listCrm(params: {
     q?: string;
     status?: UserStatus | 'ALL';
+    role?: string;
+    tag?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
     skip?: number;
     take?: number;
   }) {
@@ -114,8 +124,49 @@ export class UsersService {
             deletedAt: null,
           };
 
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (params.createdFrom) {
+      createdAt.gte = new Date(params.createdFrom);
+    }
+    if (params.createdTo) {
+      createdAt.lte = new Date(params.createdTo);
+    }
+
+    const updatedAt: Prisma.DateTimeFilter = {};
+    if (params.updatedFrom) {
+      updatedAt.gte = new Date(params.updatedFrom);
+    }
+    if (params.updatedTo) {
+      updatedAt.lte = new Date(params.updatedTo);
+    }
+
+    const roleWhere: Prisma.UserWhereInput = params.role
+      ? {
+          roleAssignments: {
+            some: {
+              revokedAt: null,
+              role: { code: params.role },
+            },
+          },
+        }
+      : {};
+
+    const tag = params.tag?.trim();
+    const tagWhere: Prisma.UserWhereInput = tag
+      ? {
+          preferences: {
+            path: ['tags'],
+            array_contains: tag,
+          },
+        }
+      : {};
+
     const where: Prisma.UserWhereInput = {
       ...statusFilter,
+      ...roleWhere,
+      ...tagWhere,
+      ...(Object.keys(createdAt).length > 0 ? { createdAt } : {}),
+      ...(Object.keys(updatedAt).length > 0 ? { updatedAt } : {}),
       ...(params.q
         ? {
             OR: [
@@ -344,7 +395,45 @@ export class UsersService {
   }
 
   async updateCrm(id: string, dto: CrmUpdateUserDto, actorId?: string) {
-    await this.getCrmById(id);
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        id,
+        deletedAt: null,
+        status: { notIn: [UserStatus.DELETED] },
+      },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'User not found',
+      });
+    }
+
+    let preferencesPatch: Prisma.InputJsonValue | undefined;
+    if (
+      dto.profileImageMediaAssetId !== undefined ||
+      dto.tags !== undefined
+    ) {
+      const currentPrefs =
+        existing.preferences &&
+        typeof existing.preferences === 'object' &&
+        !Array.isArray(existing.preferences)
+          ? (existing.preferences as Record<string, unknown>)
+          : {};
+      const nextPrefs: Record<string, unknown> = { ...currentPrefs };
+      if (dto.profileImageMediaAssetId !== undefined) {
+        const profileId = dto.profileImageMediaAssetId?.trim() || null;
+        if (profileId) nextPrefs.profileImageMediaAssetId = profileId;
+        else delete nextPrefs.profileImageMediaAssetId;
+      }
+      if (dto.tags !== undefined) {
+        const cleaned = dto.tags
+          .map((tag) => tag.trim())
+          .filter((tag) => tag.length > 0);
+        nextPrefs.tags = [...new Set(cleaned)];
+      }
+      preferencesPatch = nextPrefs as Prisma.InputJsonValue;
+    }
 
     const updated = await this.prisma.user.update({
       where: { id },
@@ -364,6 +453,20 @@ export class UsersService {
         ...(dto.region !== undefined ? { region: dto.region } : {}),
         ...(dto.internalNotes !== undefined
           ? { internalNotes: dto.internalNotes }
+          : {}),
+        ...(dto.avatarMediaAssetId !== undefined
+          ? {
+              avatarMediaAssetId: dto.avatarMediaAssetId?.trim() || null,
+            }
+          : {}),
+        ...(dto.healthCardMediaAssetId !== undefined
+          ? {
+              healthCardMediaAssetId:
+                dto.healthCardMediaAssetId?.trim() || null,
+            }
+          : {}),
+        ...(preferencesPatch !== undefined
+          ? { preferences: preferencesPatch }
           : {}),
         ...(dto.medicalProfile !== undefined
           ? {
@@ -411,11 +514,38 @@ export class UsersService {
 
   async listNotes(userId: string) {
     await this.getRawById(userId);
-    return this.prisma.userNote.findMany({
+    const notes = await this.prisma.userNote.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
+    const authorIds = [...new Set(notes.map((note) => note.authorUserId))];
+    const authors =
+      authorIds.length === 0
+        ? []
+        : await this.prisma.user.findMany({
+            where: { id: { in: authorIds } },
+            select: {
+              id: true,
+              displayName: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          });
+    const authorNameById = new Map(
+      authors.map((author) => {
+        const name =
+          author.displayName?.trim() ||
+          [author.firstName, author.lastName].filter(Boolean).join(' ').trim() ||
+          author.email;
+        return [author.id, name] as const;
+      }),
+    );
+    return notes.map((note) => ({
+      ...note,
+      authorName: authorNameById.get(note.authorUserId) ?? 'Unknown',
+    }));
   }
 
   async addNote(input: {
@@ -432,7 +562,7 @@ export class UsersService {
       });
     }
     await this.getRawById(input.userId);
-    return this.prisma.userNote.create({
+    const created = await this.prisma.userNote.create({
       data: {
         userId: input.userId,
         authorUserId: input.authorUserId,
@@ -440,6 +570,35 @@ export class UsersService {
         visibility: input.visibility ?? NoteVisibility.PRIVATE,
       },
     });
+    const author = await this.prisma.user.findFirst({
+      where: { id: created.authorUserId },
+      select: {
+        displayName: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+      },
+    });
+    const authorName =
+      author?.displayName?.trim() ||
+      [author?.firstName, author?.lastName].filter(Boolean).join(' ').trim() ||
+      author?.email ||
+      'Unknown';
+    return { ...created, authorName };
+  }
+
+  async deleteNote(userId: string, noteId: string) {
+    const note = await this.prisma.userNote.findFirst({
+      where: { id: noteId, userId },
+    });
+    if (!note) {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Note not found',
+      });
+    }
+    await this.prisma.userNote.delete({ where: { id: noteId } });
+    return { id: noteId, deleted: true };
   }
 
   async getOwnProfile(userId: string) {
@@ -849,6 +1008,10 @@ export class UsersService {
     status?: UserStatus | 'ALL';
     role?: string;
     kind?: 'staff' | 'patient';
+    createdFrom?: string;
+    createdTo?: string;
+    updatedFrom?: string;
+    updatedTo?: string;
   }): Prisma.UserWhereInput {
     const statusWhere: Prisma.UserWhereInput =
       !params.status || params.status === 'ALL'
@@ -891,10 +1054,28 @@ export class UsersService {
         }
       : {};
 
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (params.createdFrom) {
+      createdAt.gte = new Date(params.createdFrom);
+    }
+    if (params.createdTo) {
+      createdAt.lte = new Date(params.createdTo);
+    }
+
+    const updatedAt: Prisma.DateTimeFilter = {};
+    if (params.updatedFrom) {
+      updatedAt.gte = new Date(params.updatedFrom);
+    }
+    if (params.updatedTo) {
+      updatedAt.lte = new Date(params.updatedTo);
+    }
+
     return {
       ...statusWhere,
       ...kindWhere,
       ...roleWhere,
+      ...(Object.keys(createdAt).length > 0 ? { createdAt } : {}),
+      ...(Object.keys(updatedAt).length > 0 ? { updatedAt } : {}),
       ...(params.q
         ? {
             OR: [
@@ -1030,6 +1211,24 @@ export class UsersService {
 
   private toCrmDto(user: Parameters<UsersService['toAdminDto']>[0]) {
     const full = this.toAdminDto(user);
+    const prefs =
+      full.preferences &&
+      typeof full.preferences === 'object' &&
+      !Array.isArray(full.preferences)
+        ? (full.preferences as Record<string, unknown>)
+        : {};
+    const profileImageRaw = prefs.profileImageMediaAssetId;
+    const profileImageMediaAssetId =
+      typeof profileImageRaw === 'string' && profileImageRaw.trim()
+        ? profileImageRaw.trim()
+        : null;
+    const tagsRaw = prefs.tags;
+    const tags = Array.isArray(tagsRaw)
+      ? tagsRaw
+          .filter((tag): tag is string => typeof tag === 'string')
+          .map((tag) => tag.trim())
+          .filter(Boolean)
+      : [];
     return {
       id: full.id,
       email: full.email,
@@ -1041,6 +1240,10 @@ export class UsersService {
       dateOfBirth: full.dateOfBirth,
       gender: full.gender,
       region: full.region,
+      avatarMediaAssetId: full.avatarMediaAssetId,
+      profileImageMediaAssetId,
+      healthCardMediaAssetId: full.healthCardMediaAssetId,
+      tags,
       billingAddress: full.billingAddress,
       shippingAddress: full.shippingAddress,
       internalNotes: full.internalNotes,

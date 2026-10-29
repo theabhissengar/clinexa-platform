@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -578,19 +579,20 @@ export function GuardianOrderCreatePage() {
             </div>
             <div className="space-y-1">
               <Label htmlFor="initialStatus">Initial status</Label>
-              <select
-                id="initialStatus"
-                className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              <AppSelect
                 value={initialStatus}
-                onChange={(event) =>
+                onValueChange={(next) =>
                   setInitialStatus(
-                    event.target.value as "DRAFT" | "PAYMENT_PENDING",
+                    next as "DRAFT" | "PAYMENT_PENDING",
                   )
                 }
-              >
-                <option value="DRAFT">DRAFT</option>
-                <option value="PAYMENT_PENDING">PAYMENT_PENDING</option>
-              </select>
+                aria-label="Initial status"
+                className="w-full"
+                options={[
+                  { value: "DRAFT", label: "DRAFT" },
+                  { value: "PAYMENT_PENDING", label: "PAYMENT_PENDING" },
+                ]}
+              />
             </div>
           </div>
         </section>

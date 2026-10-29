@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -220,20 +221,19 @@ export function CategoryEditorPage({ mode }: Props) {
 
           <div className="space-y-1">
             <Label htmlFor="parent">Parent category</Label>
-            <select
-              id="parent"
-              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            <AppSelect
               value={parentId}
-              onChange={(e) => setParentId(e.target.value)}
-            >
-              <option value="">None</option>
-              {parents.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {"— ".repeat(p.depth ?? 0)}
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onValueChange={setParentId}
+              aria-label="Parent category"
+              className="w-full"
+              options={[
+                { value: "", label: "None" },
+                ...parents.map((p) => ({
+                  value: p.id,
+                  label: `${"— ".repeat(p.depth ?? 0)}${p.name}`,
+                })),
+              ]}
+            />
             <p className="text-xs text-muted-foreground">
               Assign a parent term to create a hierarchy.
             </p>
@@ -293,18 +293,16 @@ export function CategoryEditorPage({ mode }: Props) {
 
           <div className="space-y-1">
             <Label htmlFor="displayType">Display type</Label>
-            <select
-              id="displayType"
-              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            <AppSelect
               value={displayType}
-              onChange={(e) => setDisplayType(e.target.value)}
-            >
-              {DISPLAY_TYPES.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+              onValueChange={setDisplayType}
+              aria-label="Display type"
+              className="w-full"
+              options={DISPLAY_TYPES.map((d) => ({
+                value: d,
+                label: d,
+              }))}
+            />
           </div>
 
           <div className="space-y-1">
@@ -326,34 +324,30 @@ export function CategoryEditorPage({ mode }: Props) {
             <Label htmlFor="headerContentAlign">
               Category header content align
             </Label>
-            <select
-              id="headerContentAlign"
-              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            <AppSelect
               value={headerContentAlign}
-              onChange={(e) => setHeaderContentAlign(e.target.value)}
-            >
-              {ALIGN_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+              onValueChange={setHeaderContentAlign}
+              aria-label="Category header content align"
+              className="w-full"
+              options={ALIGN_OPTIONS.map((d) => ({
+                value: d,
+                label: d,
+              }))}
+            />
           </div>
 
           <div className="space-y-1">
             <Label htmlFor="headerTextAlign">Category header text align</Label>
-            <select
-              id="headerTextAlign"
-              className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
+            <AppSelect
               value={headerTextAlign}
-              onChange={(e) => setHeaderTextAlign(e.target.value)}
-            >
-              {ALIGN_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
+              onValueChange={setHeaderTextAlign}
+              aria-label="Category header text align"
+              className="w-full"
+              options={ALIGN_OPTIONS.map((d) => ({
+                value: d,
+                label: d,
+              }))}
+            />
           </div>
 
           <div className="space-y-1">

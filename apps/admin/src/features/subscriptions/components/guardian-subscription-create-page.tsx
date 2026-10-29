@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -192,19 +193,20 @@ export function GuardianSubscriptionCreatePage() {
 
         <section className="space-y-3 rounded-md border border-border p-4">
           <h2 className="text-sm font-semibold">Published plan</h2>
-          <select
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+          <AppSelect
             value={planId}
-            onChange={(event) => setPlanId(event.target.value)}
-            required
-          >
-            <option value="">Select a published plan</option>
-            {plans.map((plan) => (
-              <option key={plan.id} value={plan.id}>
-                {plan.name} · {formatMoneyCents(plan.priceCents, plan.currency)}
-              </option>
-            ))}
-          </select>
+            onValueChange={setPlanId}
+            aria-label="Published plan"
+            className="w-full"
+            placeholder="Select a published plan"
+            options={[
+              { value: "", label: "Select a published plan" },
+              ...plans.map((plan) => ({
+                value: plan.id,
+                label: `${plan.name} · ${formatMoneyCents(plan.priceCents, plan.currency)}`,
+              })),
+            ]}
+          />
           {selectedPlan ? (
             <div className="grid gap-2 text-sm sm:grid-cols-2">
               <div>

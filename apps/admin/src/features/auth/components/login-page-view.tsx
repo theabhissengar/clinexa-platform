@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { BrandMark } from "@/components/layout/brand-mark";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
@@ -14,7 +14,6 @@ import {
   PlatformContexts,
   type PlatformContext,
 } from "@/lib/platform-context";
-import { cn } from "@/lib/utils";
 
 type LoginPageViewProps = {
   form?: ReactNode;
@@ -36,21 +35,6 @@ export function LoginPageView({ form }: LoginPageViewProps) {
   const [destination, setDestination] = useState<PlatformContext>(
     PlatformContexts.CRM,
   );
-  const [foldTo, setFoldTo] = useState<"crm" | "guardian" | null>(null);
-
-  const handleDestinationChange = useCallback(
-    (next: PlatformContext) => {
-      if (next === destination) {
-        return;
-      }
-
-      setDestination(next);
-      setFoldTo(
-        next === PlatformContexts.GUARDIAN ? "guardian" : "crm",
-      );
-    },
-    [destination],
-  );
 
   return (
     <main className="relative flex min-h-dvh flex-1 flex-col">
@@ -65,50 +49,21 @@ export function LoginPageView({ form }: LoginPageViewProps) {
               Clinexa
             </p>
           </div>
-          <div className="login-fold-stage login-enter-card relative z-10 w-full max-w-sm">
-            <div
-              className={cn(
-                "login-fold-sheet",
-                foldTo === "guardian" && "login-fold-to-guardian",
-                foldTo === "crm" && "login-fold-to-crm",
-              )}
-              onAnimationEnd={(event) => {
-                if (event.target !== event.currentTarget) {
-                  return;
-                }
-                const { animationName } = event;
-                setFoldTo((current) => {
-                  if (
-                    (current === "guardian" &&
-                      animationName === "login-fold-tr-bl") ||
-                    (current === "crm" &&
-                      animationName === "login-fold-bl-tr")
-                  ) {
-                    return null;
-                  }
-                  return current;
-                });
-              }}
-            >
-              <Card
-                className={cn(
-                  "w-full bg-[color-mix(in_oklch,white_76%,var(--accent)_24%)] shadow-sm ring-black/6 dark:bg-card dark:ring-white/10",
-                )}
-              >
-                <CardHeader className="gap-4">
-                  <h1 className="font-heading text-h1 text-center font-semibold tracking-tight text-foreground">
-                    Welcome
-                  </h1>
-                  <LoginApplicationSelector
-                    value={destination}
-                    onChange={handleDestinationChange}
-                  />
-                </CardHeader>
-                <CardContent>
-                  {form ?? <LoginForm destination={destination} />}
-                </CardContent>
-              </Card>
-            </div>
+          <div className="login-enter-card relative z-10 w-full max-w-sm">
+            <Card className="w-full bg-[color-mix(in_oklch,white_76%,var(--accent)_24%)] shadow-sm ring-black/6 dark:bg-card dark:ring-white/10">
+              <CardHeader className="gap-4">
+                <h1 className="font-heading text-h1 text-center font-semibold tracking-tight text-foreground">
+                  Welcome
+                </h1>
+                <LoginApplicationSelector
+                  value={destination}
+                  onChange={setDestination}
+                />
+              </CardHeader>
+              <CardContent>
+                {form ?? <LoginForm destination={destination} />}
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>

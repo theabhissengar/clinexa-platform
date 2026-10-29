@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -250,10 +251,24 @@ export function GuardianCouponFormPage({
       >
         ← Back
       </Link>
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {mode === "create" ? "New coupon" : "Edit coupon"}
-      </h1>
-      <form className="grid gap-4" onSubmit={(event) => void onSubmit(event)}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {mode === "create" ? "New coupon" : "Edit coupon"}
+        </h1>
+        <Button
+          type="submit"
+          form="guardian-coupon-form"
+          className="shrink-0"
+          disabled={busy}
+        >
+          {busy ? "Saving…" : "Save coupon"}
+        </Button>
+      </div>
+      <form
+        id="guardian-coupon-form"
+        className="grid gap-4"
+        onSubmit={(event) => void onSubmit(event)}
+      >
         <div className="grid gap-1">
           <Label htmlFor="code">Code</Label>
           <Input
@@ -284,17 +299,17 @@ export function GuardianCouponFormPage({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-1">
             <Label htmlFor="discountType">Discount type</Label>
-            <select
-              id="discountType"
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            <AppSelect
               value={discountType}
-              onChange={(e) =>
-                setDiscountType(e.target.value as CouponDiscountType)
+              onValueChange={(next) =>
+                setDiscountType(next as CouponDiscountType)
               }
-            >
-              <option value="PERCENT">Percent</option>
-              <option value="FIXED">Fixed cents</option>
-            </select>
+              aria-label="Discount type"
+              options={[
+                { value: "PERCENT", label: "Percent" },
+                { value: "FIXED", label: "Fixed cents" },
+              ]}
+            />
           </div>
           <div className="grid gap-1">
             <Label htmlFor="discountValue">
@@ -334,16 +349,16 @@ export function GuardianCouponFormPage({
         </div>
         <div className="grid gap-1">
           <Label htmlFor="scopeType">Scope</Label>
-          <select
-            id="scopeType"
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          <AppSelect
             value={scopeType}
-            onChange={(e) => setScopeType(e.target.value as CouponScopeType)}
-          >
-            <option value="ALL">All products</option>
-            <option value="PRODUCT">Product</option>
-            <option value="CATEGORY">Category</option>
-          </select>
+            onValueChange={(next) => setScopeType(next as CouponScopeType)}
+            aria-label="Scope"
+            options={[
+              { value: "ALL", label: "All products" },
+              { value: "PRODUCT", label: "Product" },
+              { value: "CATEGORY", label: "Category" },
+            ]}
+          />
         </div>
         {scopeType === "PRODUCT" ? (
           <div className="grid gap-2 rounded-md border border-border p-3">
@@ -482,11 +497,6 @@ export function GuardianCouponFormPage({
           </div>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <div>
-          <Button type="submit" disabled={busy}>
-            {busy ? "Saving…" : "Save coupon"}
-          </Button>
-        </div>
       </form>
     </main>
   );

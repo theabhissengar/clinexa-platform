@@ -1,16 +1,22 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-import { RequirePagePermission } from "@/components/auth/require-page-permission";
-import { Permissions } from "@/features/auth/permissions";
-import { UserEditorPage } from "@/features/users/components/user-editor-page";
-
+/**
+ * Legacy history URL — open the editor on the History tab.
+ */
 export default function GuardianUserHistoryPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace(`/guardian/users/${params.id}/edit?tab=history`);
+  }, [params.id, router]);
+
   return (
-    <RequirePagePermission permission={Permissions.ADM_MANAGE_USERS}>
-      <UserEditorPage userId={params.id} initialTab="history" />
-    </RequirePagePermission>
+    <main className="px-6 py-10 text-sm text-muted-foreground">
+      Opening history…
+    </main>
   );
 }

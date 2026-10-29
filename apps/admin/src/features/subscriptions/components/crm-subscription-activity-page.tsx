@@ -4,6 +4,17 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClinexaPage,
+  EntityDetailLeading,
+  ErrorState,
+  PageBody,
+  PageHeader,
+  PageHeaderCopy,
+  PageHeaderDescription,
+  PageHeaderTitle,
+  PageSkeleton,
+} from "@/components/patterns";
 import { listCrmSubscriptionActivity } from "@/features/subscriptions/api/subscriptions-api";
 import {
   formatDateTime,
@@ -27,35 +38,45 @@ export function CrmSubscriptionActivityPage() {
   }, [params.id]);
 
   return (
-    <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <Link
-        href={`/crm/subscriptions/${params.id}`}
-        className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-      >
-        ← Subscription
-      </Link>
-      <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-      <p className="text-sm text-muted-foreground">
-        Operational events. Note bodies and platform audit are not stored here.
-      </p>
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading activity…</p>
-      ) : error ? (
-        <p className="text-sm text-destructive">{error}</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No activity.</p>
-      ) : (
-        <ul className="space-y-3 text-sm">
-          {rows.map((row) => (
-            <li key={row.id} className="border-b border-border pb-2">
-              <div className="text-xs text-muted-foreground">
-                {formatDateTime(row.createdAt)} · {row.kind}
-              </div>
-              {row.summary}
-            </li>
-          ))}
-        </ul>
-      )}
-    </main>
+    <ClinexaPage width="standard" className="gap-6">
+      <PageHeader>
+        <PageHeaderCopy>
+          <EntityDetailLeading>
+            <Link
+              href={`/crm/subscriptions/${params.id}`}
+              className="underline-offset-4 hover:underline"
+            >
+              ← Subscription
+            </Link>
+          </EntityDetailLeading>
+          <PageHeaderTitle>Activity</PageHeaderTitle>
+          <PageHeaderDescription>
+            Operational events. Note bodies and platform audit are not stored
+            here.
+          </PageHeaderDescription>
+        </PageHeaderCopy>
+      </PageHeader>
+
+      <PageBody>
+        {loading ? (
+          <PageSkeleton />
+        ) : error ? (
+          <ErrorState title="Unable to load activity">{error}</ErrorState>
+        ) : rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No activity.</p>
+        ) : (
+          <ul className="space-y-3 text-sm">
+            {rows.map((row) => (
+              <li key={row.id} className="border-b border-border pb-2">
+                <div className="text-xs text-muted-foreground">
+                  {formatDateTime(row.createdAt)} · {row.kind}
+                </div>
+                {row.summary}
+              </li>
+            ))}
+          </ul>
+        )}
+      </PageBody>
+    </ClinexaPage>
   );
 }

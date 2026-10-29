@@ -21,6 +21,11 @@ export class CreateUploadSessionDto {
 export class UpdateAssetDto {
   @IsOptional()
   @IsString()
+  @MaxLength(512)
+  originalFilename?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(500)
   altText?: string | null;
 

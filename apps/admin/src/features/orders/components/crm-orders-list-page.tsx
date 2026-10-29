@@ -1,12 +1,38 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  AppSelect,
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  CollapsibleFilterFields,
+  DataTable,
+  DateField,
+  EmptyState,
+  ErrorState,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  DEFAULT_LIST_PAGE_SIZE,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { listCrmOrders } from "@/features/orders/api/orders-api";
 import {
   customerLabel,
@@ -39,7 +65,7 @@ const TYPE_OPTIONS: Array<{ key: OrderType | "ALL"; label: string }> = [
 
 const STATUS_KEYS = new Set(STATUS_TABS.map((t) => t.key));
 const TYPE_KEYS = new Set(TYPE_OPTIONS.map((t) => t.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): OrderStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as OrderStatus | "ALL")) {
@@ -61,6 +87,12 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function CrmOrdersListPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -73,6 +105,7 @@ export function CrmOrdersListPage() {
   const appliedFrom = searchParams.get("createdFrom") ?? "";
   const appliedTo = searchParams.get("createdTo") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
   const [syncedQ, setSyncedQ] = useState(appliedQ);
@@ -81,9 +114,9 @@ export function CrmOrdersListPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   if (appliedQ !== syncedQ) {
     setSyncedQ(appliedQ);
@@ -112,8 +145,8 @@ export function CrmOrdersListPage() {
           patientUserId: appliedPatient || undefined,
           createdFrom: appliedFrom || undefined,
           createdTo: appliedTo || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -139,6 +172,7 @@ export function CrmOrdersListPage() {
     appliedFrom,
     appliedTo,
     page,
+    pageSize,
   ]);
 
   function applySearch() {
@@ -146,236 +180,247 @@ export function CrmOrdersListPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Orders</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Operational order queues. Create, delete, archive, restore, financial
-          corrections, and overrides are Guardian-only.
-        </p>
-      </div>
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search orders"
+                className="w-full"
+                aria-label="Search orders"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
+              >
+                Apply
+              </Button>
+            </div>
+          </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const active = appliedStatus === tab.key;
-            const count =
-              tab.key === "ALL"
-                ? statusCounts.ALL
-                : statusCounts[tab.key];
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className={filterFieldsRowClassName}>
+              <FilterControl
+                label="Status"
+                className={filterControlCompactClassName}
+              >
+                <AppSelect
+                  value={appliedStatus}
+                  onValueChange={(next) =>
                     writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
+                      status: next === "ALL" ? null : next,
                       page: "1",
                     })
                   }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
+                  aria-label="Filter by status"
+                  options={STATUS_TABS.map((tab) => {
+                    const count =
+                      tab.key === "ALL"
+                        ? statusCounts.ALL
+                        : statusCounts[tab.key];
+                    return {
+                      value: tab.key,
+                      label:
+                        typeof count === "number"
+                          ? `${tab.label} (${count})`
+                          : tab.label,
+                    };
+                  })}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Order type"
+                className={filterControlCompactClassName}
+              >
+                <AppSelect
+                  value={appliedType}
+                  onValueChange={(next) =>
+                    writeParams({
+                      orderType: next === "ALL" ? null : next,
+                      page: "1",
+                    })
+                  }
+                  aria-label="Filter by order type"
+                  options={TYPE_OPTIONS.map((opt) => ({
+                    value: opt.key,
+                    label: opt.label,
+                  }))}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created from"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={appliedFrom.slice(0, 10)}
+                  onChange={(day) =>
+                    writeParams({
+                      createdFrom: day
+                        ? new Date(day).toISOString()
+                        : null,
+                      page: "1",
+                    })
+                  }
+                  aria-label="Created from"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={appliedTo.slice(0, 10)}
+                  onChange={(day) =>
+                    writeParams({
+                      createdTo: day
+                        ? new Date(`${day}T23:59:59.999Z`).toISOString()
+                        : null,
+                      page: "1",
+                    })
+                  }
+                  aria-label="Created to"
+                />
+              </FilterControl>
+              {appliedPatient ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-9 shrink-0"
+                  onClick={() =>
+                    writeParams({ patientUserId: null, page: "1" })
                   }
                 >
-                  {tab.label}
-                  {typeof count === "number" ? (
-                    <span className="ml-1 text-muted-foreground">({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applySearch();
-          }}
+                  Clear patient filter
+                </Button>
+              ) : null}
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
+
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No orders found"
+              description="Try a different search or status filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load orders">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
         >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search orders"
-            className="w-52"
-            aria-label="Search orders"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search
-          </Button>
-        </form>
-      </div>
-
-      <div className="flex flex-wrap items-end gap-3 text-sm">
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Order type</span>
-          <select
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedType}
-            onChange={(event) =>
-              writeParams({
-                orderType:
-                  event.target.value === "ALL" ? null : event.target.value,
-                page: "1",
-              })
-            }
-          >
-            {TYPE_OPTIONS.map((opt) => (
-              <option key={opt.key} value={opt.key}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Created from</span>
-          <input
-            type="date"
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedFrom.slice(0, 10)}
-            onChange={(event) =>
-              writeParams({
-                createdFrom: event.target.value
-                  ? new Date(event.target.value).toISOString()
-                  : null,
-                page: "1",
-              })
-            }
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="text-muted-foreground">Created to</span>
-          <input
-            type="date"
-            className="h-9 rounded-md border border-input bg-background px-2"
-            value={appliedTo.slice(0, 10)}
-            onChange={(event) =>
-              writeParams({
-                createdTo: event.target.value
-                  ? new Date(`${event.target.value}T23:59:59.999Z`).toISOString()
-                  : null,
-                page: "1",
-              })
-            }
-          />
-        </label>
-        {appliedPatient ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => writeParams({ patientUserId: null, page: "1" })}
-          >
-            Clear patient filter
-          </Button>
-        ) : null}
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading orders…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No orders found.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Order</th>
-                <th className="px-3 py-2 font-medium">Customer</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Payment</th>
-                <th className="px-3 py-2 font-medium">Clinical</th>
-                <th className="px-3 py-2 font-medium">Fulfillment</th>
-                <th className="px-3 py-2 font-medium">Total</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((order) => {
-                const href = `/crm/orders/${order.id}${
-                  searchParams.toString()
-                    ? `?return=${encodeURIComponent(`?${searchParams.toString()}`)}`
-                    : ""
-                }`;
-                return (
-                  <tr
-                    key={order.id}
-                    className={
-                      hoveredId === order.id
-                        ? "border-b border-border bg-muted/30"
-                        : "border-b border-border"
-                    }
-                    onMouseEnter={() => setHoveredId(order.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  >
-                    <td className="px-3 py-2">
-                      <Link
-                        href={href}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {order.orderNumber}
-                      </Link>
-                      {order.subscriptionId ? (
-                        <div className="text-xs text-muted-foreground">
-                          Sub ref
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div>{customerLabel(order)}</div>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Order</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Type</TableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Total</TableHead>
+              <TableHead>Created</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((order) => {
+              const href = `/crm/orders/${order.id}${
+                searchParams.toString()
+                  ? `?return=${encodeURIComponent(`?${searchParams.toString()}`)}`
+                  : ""
+              }`;
+              return (
+                <ClickableTableRow href={href} key={order.id} className="align-top">
+                  <TableCell>
+                    <Link
+                      href={href}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      {order.orderNumber}
+                    </Link>
+                    {order.subscriptionId ? (
                       <div className="text-xs text-muted-foreground">
-                        {order.customerEmail ?? "—"}
+                        Sub ref
                       </div>
-                    </td>
-                    <td className="px-3 py-2">{statusLabel(order.status)}</td>
-                    <td className="px-3 py-2">{statusLabel(order.orderType)}</td>
-                    <td className="px-3 py-2">
-                      {order.paymentStatusSummary ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {order.isRxOrder
-                        ? order.requiresClinicalReview
-                          ? "Rx · review"
-                          : "Rx"
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      {order.shippedAt
-                        ? `Shipped ${formatDateTime(order.shippedAt)}`
-                        : order.trackingNumber ?? "—"}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums">
-                      {formatMoneyCents(order.totalCents, order.currency)}
-                    </td>
-                    <td className="px-3 py-2">
-                      {formatDateTime(order.createdAt)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: String(page) })}
-        onNext={() => writeParams({ page: String(page + 2) })}
-      />
-    </main>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    <div>{customerLabel(order)}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {order.customerEmail ?? "—"}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={order.status} />
+                  </TableCell>
+                  <TableCell>{statusLabel(order.orderType)}</TableCell>
+                  <TableCell>
+                    {order.paymentStatusSummary ?? "—"}
+                  </TableCell>
+                  <TableCell className="tabular-nums">
+                    {formatMoneyCents(order.totalCents, order.currency)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(order.createdAt)}
+                  </TableCell>
+                </ClickableTableRow>
+              );
+            })}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

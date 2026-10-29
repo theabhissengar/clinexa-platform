@@ -1,9 +1,35 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  AppSelect,
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  CollapsibleFilterFields,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listAdminCategories } from "@/features/categories/api/categories-api";
@@ -20,8 +46,7 @@ import type {
   ProductStatusCounts,
   ProductType,
 } from "@/features/products/types";
-import { ClearableSearchInput } from "./clearable-search-input";
-import { ListPaginationBar } from "./list-pagination-bar";
+import { cn } from "@/lib/utils";
 
 function formatPrice(product: Product): string {
   if (!product.variants.length) return "—";
@@ -72,9 +97,9 @@ const PRODUCT_TYPES: ProductType[] = [
   "KIT",
   "DIGITAL",
 ];
-const PAGE_SIZE = 20;
 
 const STATUS_KEYS = new Set(STATUS_TABS.map((t) => t.key));
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): ProductLifecycleStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as ProductLifecycleStatus | "ALL")) {
@@ -89,6 +114,12 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function ProductsListPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -100,6 +131,7 @@ export function ProductsListPage() {
   const appliedProductType = searchParams.get("productType") ?? "";
   const appliedBrandName = searchParams.get("brand") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
   const [draftCategoryId, setDraftCategoryId] = useState(appliedCategoryId);
@@ -123,14 +155,14 @@ export function ProductsListPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   const appliedFiltersActive = Boolean(
     appliedQ || appliedCategoryId || appliedProductType || appliedBrandName,
   );
 
-  // Sync draft filters when URL applied filters change (back/forward/clear).
   if (
     appliedQ !== syncedFilters.q ||
     appliedCategoryId !== syncedFilters.categoryId ||
@@ -170,8 +202,8 @@ export function ProductsListPage() {
       categoryId: appliedCategoryId || undefined,
       productType: (appliedProductType as ProductType) || undefined,
       brandName: appliedBrandName || undefined,
-      skip: page * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: page * pageSize,
+      take: pageSize,
     });
     setItems(result.items);
     setTotal(result.total);
@@ -186,6 +218,7 @@ export function ProductsListPage() {
     appliedProductType,
     appliedBrandName,
     page,
+    pageSize,
   ]);
 
   useEffect(() => {
@@ -198,8 +231,8 @@ export function ProductsListPage() {
           categoryId: appliedCategoryId || undefined,
           productType: (appliedProductType as ProductType) || undefined,
           brandName: appliedBrandName || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -225,6 +258,7 @@ export function ProductsListPage() {
     appliedProductType,
     appliedBrandName,
     page,
+    pageSize,
   ]);
 
   useEffect(() => {
@@ -255,13 +289,6 @@ export function ProductsListPage() {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
-    });
-  }
-
-  function applySearch() {
-    writeParams({
-      q: draftQ.trim() || null,
-      page: "1",
     });
   }
 
@@ -336,363 +363,402 @@ export function ProductsListPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Products</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Catalog master data. Store consumes published products only.
-          </p>
-        </div>
-        <Button render={<Link href="/guardian/products/new" />}>
-          Add product
-        </Button>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const count =
-              statusCounts?.[tab.key] ??
-              (tab.key === "ALL" ? statusCounts?.ALL : undefined);
-            const active = appliedStatus === tab.key;
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
-                    writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
-                      page: "1",
-                    })
-                  }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
-                  }
-                >
-                  {tab.label}
-                  {count !== undefined ? (
-                    <span className="text-muted-foreground"> ({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applySearch();
-          }}
-        >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search products"
-            className="w-52"
-            aria-label="Search products"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search products
-          </Button>
-        </form>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          value={bulkAction}
-          onChange={(e) => setBulkAction(e.target.value)}
-        >
-          <option value="">Bulk actions</option>
-          <option value="publish">Publish</option>
-          <option value="unpublish">Move to private</option>
-          <option value="trash">Move to trash</option>
-        </select>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!bulkAction || selected.size === 0}
-          onClick={() => void applyBulk()}
-        >
-          Apply
-        </Button>
-
-        <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          value={draftCategoryId}
-          onChange={(e) => setDraftCategoryId(e.target.value)}
-        >
-          <option value="">Select a category</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {"— ".repeat(c.depth ?? 0)}
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          value={draftProductType}
-          onChange={(e) => setDraftProductType(e.target.value)}
-        >
-          <option value="">Filter by product type</option>
-          {PRODUCT_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <div className="relative">
-          <Input
-            value={draftBrandName}
-            onChange={(e) => setDraftBrandName(e.target.value)}
-            placeholder="Filter by brand"
-            className="h-8 w-40 pr-8"
-          />
-          {draftBrandName ? (
-            <button
-              type="button"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="Clear brand filter"
-              onClick={() => setDraftBrandName("")}
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyFilters();
+              }}
             >
-              ×
-            </button>
-          ) : null}
-        </div>
-        <Button size="sm" variant="outline" onClick={applyFilters}>
-          Filter
-        </Button>
-        {appliedFiltersActive ? (
-          <Button size="sm" variant="ghost" onClick={clearFilters}>
-            Clear
-          </Button>
-        ) : null}
-      </div>
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search products"
+                className="w-full"
+                aria-label="Search products"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applyFilters()}
+              >
+                Apply
+              </Button>
+              <Button render={<Link href="/guardian/products/new" />}>
+                Add product
+              </Button>
+            </div>
+          </div>
 
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-300 text-left text-sm">
-            <thead className="bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="w-10 px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleAll}
-                    aria-label="Select all"
-                  />
-                </th>
-                <th className="w-12 px-2 py-2" aria-label="Image" />
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">ID</th>
-                <th className="px-3 py-2 font-medium">SKU</th>
-                <th className="px-3 py-2 font-medium">Price</th>
-                <th className="px-3 py-2 font-medium">Categories</th>
-                <th className="px-3 py-2 font-medium">Tags</th>
-                <th className="px-3 py-2 font-medium">Brands</th>
-                <th className="w-16 px-3 py-2 font-medium text-center">★</th>
-                <th className="px-3 py-2 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((product) => {
-                const primarySku = product.variants[0]?.sku ?? "—";
-                const featuredSrc =
-                  product.featuredMediaAssetId ||
-                  product.media[0]?.mediaAssetId;
-                const editHref = `/guardian/products/${product.id}/edit`;
-                return (
-                  <tr
-                    key={product.id}
-                    className="group border-t border-border align-top hover:bg-muted/20"
-                    onMouseEnter={() => setHoveredId(product.id)}
-                    onMouseLeave={() => setHoveredId(null)}
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className="flex flex-col gap-3">
+              {appliedFiltersActive ? (
+                <div className="flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    type="button"
+                    onClick={clearFilters}
                   >
-                    <td className="px-3 py-3">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(product.id)}
-                        onChange={() => toggleOne(product.id)}
-                        aria-label={`Select ${product.name}`}
-                      />
-                    </td>
-                    <td className="px-2 py-3">
-                      <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded border border-border bg-muted/30 text-[10px] text-muted-foreground">
-                        {featuredSrc ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={featuredSrc}
-                            alt=""
-                            className="h-full w-full object-cover"
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display =
-                                "none";
-                            }}
-                          />
-                        ) : (
-                          "—"
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <Link
-                        href={editHref}
-                        className="font-semibold text-primary hover:underline"
-                      >
-                        {product.name}
-                      </Link>
-                      <div
-                        className={`mt-1 text-xs leading-relaxed transition-opacity ${
-                          hoveredId === product.id
-                            ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-center gap-x-1 text-primary">
-                          <Link href={editHref} className="hover:underline">
-                            Edit
-                          </Link>
-                          <span className="text-muted-foreground">|</span>
-                          <Link
-                            href={`${editHref}?quick=1`}
-                            className="hover:underline"
-                          >
-                            Quick Edit
-                          </Link>
-                          <span className="text-muted-foreground">|</span>
-                          <button
-                            type="button"
-                            className="text-destructive hover:underline"
-                            onClick={() => void onTrash(product.id)}
-                          >
-                            Trash
-                          </button>
-                          <span className="text-muted-foreground">|</span>
-                          <Link
-                            href={`/guardian/products/${product.id}/history`}
-                            className="hover:underline"
-                          >
-                            View
-                          </Link>
-                          <span className="text-muted-foreground">|</span>
-                          <button
-                            type="button"
-                            className="hover:underline"
-                            onClick={() => void onDuplicate(product.id)}
-                          >
-                            Duplicate
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="max-w-55 px-3 py-3">
-                      <code
-                        className="block truncate text-xs text-muted-foreground"
-                        title={product.id}
-                      >
-                        {product.id}
-                      </code>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {primarySku}
-                    </td>
-                    <td className="px-3 py-3">{formatPrice(product)}</td>
-                    <td className="px-3 py-3">
-                      {product.categoryLinks.length
-                        ? product.categoryLinks.map((link, i) => (
-                            <span key={link.category.id}>
-                              {i > 0 ? ", " : null}
-                              <Link
-                                href={`/guardian/categories/${link.category.id}/edit`}
-                                className="text-primary hover:underline"
-                              >
-                                {link.category.name}
-                              </Link>
-                            </span>
-                          ))
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {product.tags.length ? product.tags.join(", ") : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {product.brandName || "—"}
-                    </td>
-                    <td className="px-3 py-3 text-center">
+                    Clear filters
+                  </Button>
+                </div>
+              ) : null}
+              <div className={filterFieldsRowClassName}>
+                <FilterControl
+                  label="Status"
+                  className={filterControlCompactClassName}
+                >
+                  <AppSelect
+                    value={appliedStatus}
+                    onValueChange={(next) =>
+                      writeParams({
+                        status: next === "ALL" ? null : next,
+                        page: "1",
+                      })
+                    }
+                    aria-label="Filter by status"
+                    options={STATUS_TABS.map((tab) => {
+                      const count =
+                        statusCounts?.[tab.key] ??
+                        (tab.key === "ALL" ? statusCounts?.ALL : undefined);
+                      return {
+                        value: tab.key,
+                        label:
+                          count !== undefined
+                            ? `${tab.label} (${count})`
+                            : tab.label,
+                      };
+                    })}
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Category"
+                  className={filterControlCompactClassName}
+                >
+                  <AppSelect
+                    value={draftCategoryId}
+                    onValueChange={setDraftCategoryId}
+                    aria-label="Select a category"
+                    options={[
+                      { value: "", label: "All categories" },
+                      ...categories.map((c) => ({
+                        value: c.id,
+                        label: `${"— ".repeat(c.depth ?? 0)}${c.name}`,
+                      })),
+                    ]}
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Product type"
+                  className={filterControlCompactClassName}
+                >
+                  <AppSelect
+                    value={draftProductType}
+                    onValueChange={setDraftProductType}
+                    aria-label="Filter by product type"
+                    options={[
+                      { value: "", label: "All types" },
+                      ...PRODUCT_TYPES.map((t) => ({
+                        value: t,
+                        label: t,
+                      })),
+                    ]}
+                  />
+                </FilterControl>
+                <FilterControl
+                  label="Brand"
+                  className={filterControlCompactClassName}
+                >
+                  <div className="relative">
+                    <Input
+                      value={draftBrandName}
+                      onChange={(e) => setDraftBrandName(e.target.value)}
+                      placeholder="Filter by brand"
+                      className="h-9 w-full pr-8"
+                    />
+                    {draftBrandName ? (
                       <button
                         type="button"
-                        title="Toggle featured"
-                        className={
-                          product.isFeatured
-                            ? "text-amber-500"
-                            : "text-muted-foreground/40 hover:text-amber-400"
-                        }
-                        onClick={() =>
-                          void toggleProductFeatured(product.id).then(
-                            refreshList,
-                          )
-                        }
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label="Clear brand filter"
+                        onClick={() => setDraftBrandName("")}
                       >
-                        ★
+                        ×
                       </button>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      <div className="capitalize">
-                        {product.lifecycleStatus === "UNPUBLISHED"
-                          ? "Private"
-                          : product.lifecycleStatus === "ARCHIVED"
-                            ? "Trash"
-                            : product.lifecycleStatus.toLowerCase()}
-                      </div>
-                      <div className="text-xs">
-                        {formatDate(product.updatedAt ?? product.createdAt)}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!items.length ? (
-                <tr>
-                  <td
-                    colSpan={11}
-                    className="px-4 py-8 text-center text-muted-foreground"
-                  >
-                    No products found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    ) : null}
+                  </div>
+                </FilterControl>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <AppSelect
+                  size="default"
+                  value={bulkAction}
+                  onValueChange={setBulkAction}
+                  aria-label="Bulk actions"
+                  options={[
+                    { value: "", label: "Bulk actions" },
+                    { value: "publish", label: "Publish" },
+                    { value: "unpublish", label: "Move to private" },
+                    { value: "trash", label: "Move to trash" },
+                  ]}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!bulkAction || selected.size === 0}
+                  onClick={() => void applyBulk()}
+                >
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
 
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() =>
-          writeParams({ page: page <= 0 ? null : String(page) })
-        }
-        onNext={() =>
-          writeParams({ page: String(Math.min(pageCount, page + 2)) })
-        }
-      />
-    </main>
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No products found"
+              description="Try a different search or filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load products">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  aria-label="Select all"
+                />
+              </TableHead>
+              <TableHead className="w-12" aria-label="Image" />
+              <TableHead>Name</TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>SKU</TableHead>
+              <TableHead>Price</TableHead>
+              <TableHead>Categories</TableHead>
+              <TableHead>Tags</TableHead>
+              <TableHead>Brands</TableHead>
+              <TableHead className="w-16 text-center">★</TableHead>
+              <TableHead>Date</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((product) => {
+              const primarySku = product.variants[0]?.sku ?? "—";
+              const featuredSrc =
+                product.featuredMediaAssetId ||
+                product.media[0]?.mediaAssetId;
+              const editHref = `/guardian/products/${product.id}/edit`;
+              return (
+                <ClickableTableRow
+                  href={editHref}
+                  key={product.id}
+                  className="group align-top"
+                  onMouseEnter={() => setHoveredId(product.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(product.id)}
+                      onChange={() => toggleOne(product.id)}
+                      aria-label={`Select ${product.name}`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded border border-border bg-muted/30 text-[10px] text-muted-foreground">
+                      {featuredSrc ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={featuredSrc}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
+                      ) : (
+                        "—"
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={editHref}
+                      className="font-semibold text-primary hover:underline"
+                    >
+                      {product.name}
+                    </Link>
+                    <div
+                      className={cn(
+                        "mt-1 text-xs leading-relaxed transition-opacity",
+                        hoveredId === product.id
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-center gap-x-1 text-primary">
+                        <Link href={editHref} className="hover:underline">
+                          Edit
+                        </Link>
+                        <span className="text-muted-foreground">|</span>
+                        <Link
+                          href={`${editHref}?quick=1`}
+                          className="hover:underline"
+                        >
+                          Quick Edit
+                        </Link>
+                        <span className="text-muted-foreground">|</span>
+                        <button
+                          type="button"
+                          className="text-destructive hover:underline"
+                          onClick={() => void onTrash(product.id)}
+                        >
+                          Trash
+                        </button>
+                        <span className="text-muted-foreground">|</span>
+                        <Link
+                          href={`/guardian/products/${product.id}/history`}
+                          className="hover:underline"
+                        >
+                          View
+                        </Link>
+                        <span className="text-muted-foreground">|</span>
+                        <button
+                          type="button"
+                          className="hover:underline"
+                          onClick={() => void onDuplicate(product.id)}
+                        >
+                          Duplicate
+                        </button>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-55">
+                    <code
+                      className="block truncate text-xs text-muted-foreground"
+                      title={product.id}
+                    >
+                      {product.id}
+                    </code>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {primarySku}
+                  </TableCell>
+                  <TableCell>{formatPrice(product)}</TableCell>
+                  <TableCell>
+                    {product.categoryLinks.length
+                      ? product.categoryLinks.map((link, i) => (
+                          <span key={link.category.id}>
+                            {i > 0 ? ", " : null}
+                            <Link
+                              href={`/guardian/categories/${link.category.id}/edit`}
+                              className="text-primary hover:underline"
+                            >
+                              {link.category.name}
+                            </Link>
+                          </span>
+                        ))
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {product.tags.length ? product.tags.join(", ") : "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {product.brandName || "—"}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <button
+                      type="button"
+                      title="Toggle featured"
+                      className={
+                        product.isFeatured
+                          ? "text-amber-500"
+                          : "text-muted-foreground/40 hover:text-amber-400"
+                      }
+                      onClick={() =>
+                        void toggleProductFeatured(product.id).then(
+                          refreshList,
+                        )
+                      }
+                    >
+                      ★
+                    </button>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <div className="capitalize">
+                      {product.lifecycleStatus === "UNPUBLISHED"
+                        ? "Private"
+                        : product.lifecycleStatus === "ARCHIVED"
+                          ? "Trash"
+                          : product.lifecycleStatus.toLowerCase()}
+                    </div>
+                    <div className="text-xs">
+                      {formatDate(product.updatedAt ?? product.createdAt)}
+                    </div>
+                  </TableCell>
+                </ClickableTableRow>
+              );
+            })}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

@@ -4,13 +4,24 @@
  * This registry does not change backend enums, lifecycle behavior, or
  * feature format helpers. Pages continue to use existing labels until 5E/5F.
  *
- * Bucket notes for ambiguous operational states:
- * - Processing / Medical Review / Shipped (Fulfilled) → info (in-progress, not success)
- * - Completed / Captured / Approved / Active / Published → positive
- * - Paused / On Hold / Declined hold → hold
- * - Past Due / Pending Payment / Pending verification / Review queues needing attention → warning
- * - Failed / Cancelled / Declined / Expired / Suspended → destructive
- * - Refunded / Migrated / Archived / Deleted / Voided → admin
+ * Order status colors (CRM + Guardian lists):
+ * - Pending Payment → neutral (grey)
+ * - Processing → positive (green)
+ * - Medical Review → warning (yellow)
+ * - Shipped → info (blue)
+ * - Failed / Cancelled → destructive (red)
+ * - Refunded → admin (purple)
+ *
+ * Other buckets:
+ * - Subscription Active → positive (green)
+ * - Subscription On Hold → warning (yellow)
+ * - Past Due / Pending Setup → neutral (grey)
+ * - Cancelled → destructive (red)
+ * - Expired / Refunded / Migrated / Archived / Deleted / Voided → admin (purple)
+ * - Completed (subscription) / Shipped → info (blue)
+ * - Declined hold → hold
+ * - Captured / Approved / Published → positive
+ * - Pending verification / Review queues needing attention → warning
  *
  * Product lifecycle UNPUBLISHED is registered as "Unpublished". Guardian
  * products currently display "Private" for the same enum — pass `label` on
@@ -44,11 +55,11 @@ type StatusEntry = {
 const STATUS_REGISTRY: Record<string, StatusEntry> = {
   // Orders — labels from features/orders/lib/format.ts productStatusLabel
   DRAFT: { tone: "neutral", label: "Draft" },
-  PAYMENT_PENDING: { tone: "warning", label: "Pending Payment" },
-  AWAITING_CLINICAL_REVIEW: { tone: "info", label: "Medical Review" },
+  PAYMENT_PENDING: { tone: "neutral", label: "Pending Payment" },
+  AWAITING_CLINICAL_REVIEW: { tone: "warning", label: "Medical Review" },
   CLINICAL_APPROVED: { tone: "positive", label: "Clinical Approved" },
   CLINICAL_DECLINED: { tone: "destructive", label: "Clinical Declined" },
-  AWAITING_FULFILLMENT: { tone: "info", label: "Processing" },
+  AWAITING_FULFILLMENT: { tone: "positive", label: "Processing" },
   FULFILLED: { tone: "info", label: "Shipped" },
   CANCELLED: { tone: "destructive", label: "Cancelled" },
   REFUNDED: { tone: "admin", label: "Refunded" },
@@ -56,11 +67,11 @@ const STATUS_REGISTRY: Record<string, StatusEntry> = {
   // Subscriptions — labels from features/subscriptions/lib/format.ts
   PENDING_SETUP: { tone: "neutral", label: "Pending Setup" },
   ACTIVE: { tone: "positive", label: "Active" },
-  PAUSED: { tone: "hold", label: "On Hold" },
-  PAST_DUE: { tone: "warning", label: "Past Due" },
+  PAUSED: { tone: "warning", label: "On Hold" },
+  PAST_DUE: { tone: "neutral", label: "Past Due" },
   MIGRATED: { tone: "admin", label: "Subscription Migrated" },
-  EXPIRED: { tone: "destructive", label: "Expired" },
-  COMPLETED: { tone: "positive", label: "Completed" },
+  EXPIRED: { tone: "admin", label: "Expired" },
+  COMPLETED: { tone: "info", label: "Completed" },
   NONE: { tone: "neutral", label: "None" },
   REASSESSMENT_REQUIRED: { tone: "warning", label: "Reassessment Required" },
   DECLINED_HOLD: { tone: "hold", label: "Declined Hold" },
@@ -134,12 +145,12 @@ export const STATUS_TONE_EXAMPLES: ReadonlyArray<{
   tone: StatusTone;
 }> = [
   { status: "DRAFT", tone: "neutral" },
-  { status: "AWAITING_CLINICAL_REVIEW", tone: "info" },
+  { status: "FULFILLED", tone: "info" },
   { status: "ACTIVE", tone: "positive" },
-  { status: "PAST_DUE", tone: "warning" },
+  { status: "AWAITING_CLINICAL_REVIEW", tone: "warning" },
   { status: "CANCELLED", tone: "destructive" },
-  { status: "PAUSED", tone: "hold" },
-  { status: "REFUNDED", tone: "admin" },
+  { status: "DECLINED_HOLD", tone: "hold" },
+  { status: "EXPIRED", tone: "admin" },
 ];
 
 /**
@@ -193,9 +204,9 @@ export function assertStatusSemantics(): string[] {
     errors.push("Shipped label drifted from existing order copy");
   }
 
-  const hold = resolveStatusSemantics("PAUSED");
-  if (hold.label !== "On Hold") {
-    errors.push("On Hold label drifted from existing subscription copy");
+  const hold = resolveStatusSemantics("DECLINED_HOLD");
+  if (hold.label !== "Declined Hold") {
+    errors.push("Declined Hold label drifted from existing subscription copy");
   }
 
   return errors;

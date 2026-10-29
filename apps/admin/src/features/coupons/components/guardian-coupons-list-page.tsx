@@ -1,9 +1,29 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import { Permissions } from "@/features/auth/permissions";
@@ -13,15 +33,19 @@ import {
   formatDateTime,
   formatMoneyCents,
 } from "@/features/orders/lib/format";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parsePage(value: string | null): number {
   const n = Number(value ?? "1");
   if (!Number.isFinite(n) || n < 1) return 0;
   return Math.floor(n) - 1;
+}
+
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
 }
 
 function discountLabel(coupon: Coupon): string {
@@ -36,13 +60,24 @@ export function GuardianCouponsListPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { can } = usePermissions();
-  const q = searchParams.get("q") ?? "";
+
+  const appliedQ = searchParams.get("q") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const [draftQ, setDraftQ] = useState(appliedQ);
+  const [syncedQ, setSyncedQ] = useState(appliedQ);
   const [items, setItems] = useState<Coupon[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  if (appliedQ !== syncedQ) {
+    setSyncedQ(appliedQ);
+    setDraftQ(appliedQ);
+  }
 
   function writeParams(patch: Record<string, string | null | undefined>) {
     const next = new URLSearchParams(searchParams.toString());
@@ -54,15 +89,19 @@ export function GuardianCouponsListPage() {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
+  function applySearch() {
+    writeParams({ q: draftQ.trim() || null, page: "1" });
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function run() {
       setLoading(true);
       try {
         const result = await listAdminCoupons({
-          q: q || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          q: appliedQ || undefined,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -79,94 +118,139 @@ export function GuardianCouponsListPage() {
     return () => {
       cancelled = true;
     };
-  }, [q, page]);
+  }, [appliedQ, page, pageSize]);
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Coupons</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Promotional codes. Pricing is calculated by Promotions, not
-            Payments.
-          </p>
-        </div>
-        {can(Permissions.CPN_CONFIGURE) ? (
-          <Button size="sm" render={<Link href="/guardian/coupons/new" />}>
-            New coupon
-          </Button>
-        ) : null}
-      </div>
-      <ClearableSearchInput
-        value={q}
-        onChange={(value) => writeParams({ q: value, page: "1" })}
-        onClear={() => writeParams({ q: null, page: "1" })}
-        placeholder="Search code or name"
-      />
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-border bg-muted/40">
-            <tr>
-              <th className="px-3 py-2 font-medium">Code</th>
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Discount</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Usage</th>
-              <th className="px-3 py-2 font-medium">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td className="px-3 py-6 text-muted-foreground" colSpan={6}>
-                  Loading…
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              <tr>
-                <td className="px-3 py-6 text-muted-foreground" colSpan={6}>
-                  No coupons.
-                </td>
-              </tr>
-            ) : (
-              items.map((coupon) => (
-                <tr key={coupon.id} className="border-t border-border">
-                  <td className="px-3 py-2 font-mono">
-                    <Link
-                      href={`/guardian/coupons/${coupon.id}`}
-                      className="underline-offset-4 hover:underline"
-                    >
-                      {coupon.code}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">{coupon.name}</td>
-                  <td className="px-3 py-2">{discountLabel(coupon)}</td>
-                  <td className="px-3 py-2">
-                    {coupon.isActive ? "Active" : "Inactive"}
-                  </td>
-                  <td className="px-3 py-2 tabular-nums">
-                    {coupon.usageCount}
-                    {coupon.globalUsageLimit != null
-                      ? ` / ${coupon.globalUsageLimit}`
-                      : ""}
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {formatDateTime(coupon.updatedAt)}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: String(page) })}
-        onNext={() => writeParams({ page: String(page + 2) })}
-      />
-    </main>
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 md:order-1" />
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search code or name"
+                className="w-full"
+                aria-label="Search coupons"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
+              >
+                Apply
+              </Button>
+              {can(Permissions.CPN_CONFIGURE) ? (
+                <Button
+                  size="sm"
+                  render={<Link href="/guardian/coupons/new" />}
+                >
+                  New coupon
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </FilterPanel>
+
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No coupons found"
+              description="Try a different search."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load coupons">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead>Code</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Discount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Usage</TableHead>
+              <TableHead>Updated</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((coupon) => (
+              <ClickableTableRow
+                href={`/guardian/coupons/${coupon.id}`}
+                key={coupon.id}
+              >
+                <TableCell className="font-mono">
+                  <Link
+                    href={`/guardian/coupons/${coupon.id}`}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    {coupon.code}
+                  </Link>
+                </TableCell>
+                <TableCell>{coupon.name}</TableCell>
+                <TableCell>{discountLabel(coupon)}</TableCell>
+                <TableCell>
+                  {coupon.isActive ? "Active" : "Inactive"}
+                </TableCell>
+                <TableCell className="tabular-nums">
+                  {coupon.usageCount}
+                  {coupon.globalUsageLimit != null
+                    ? ` / ${coupon.globalUsageLimit}`
+                    : ""}
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatDateTime(coupon.updatedAt)}
+                </TableCell>
+              </ClickableTableRow>
+            ))}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

@@ -18,6 +18,16 @@ export class AddressSnapshotDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  firstName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   line1?: string;
 
   @ApiPropertyOptional()
@@ -262,6 +272,36 @@ export class CrmUpdateUserDto {
   @ValidateNested()
   @Type(() => AddressSnapshotDto)
   shippingAddress?: AddressSnapshotDto | null;
+
+  @ApiPropertyOptional({
+    description: 'Primary avatar shown beside the user name in CRM',
+  })
+  @IsOptional()
+  @IsString()
+  avatarMediaAssetId?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Larger profile photo for the CRM profile section',
+  })
+  @IsOptional()
+  @IsString()
+  profileImageMediaAssetId?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Insurance / health card image asset id',
+  })
+  @IsOptional()
+  @IsString()
+  healthCardMediaAssetId?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'CRM patient tags stored in user preferences',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class UpdateOwnProfileDto {

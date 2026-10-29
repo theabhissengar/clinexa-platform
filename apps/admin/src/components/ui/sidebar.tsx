@@ -123,6 +123,7 @@ function SidebarProvider({
     <SidebarContext.Provider value={contextValue}>
       <div
         data-slot="sidebar-wrapper"
+        data-sidebar-state={state}
         style={
           {
             '--sidebar-width': SIDEBAR_WIDTH,
@@ -162,7 +163,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          'flex h-full w-(--sidebar-width) flex-col border-r border-sidebar-border bg-[linear-gradient(180deg,#f8f5ef_0%,#f3efe8_55%,#efe6d4_100%)] text-sidebar-foreground shadow-sm backdrop-blur-xl dark:bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)]',
+          'flex h-full w-(--sidebar-width) flex-col border-r border-sidebar-border bg-[linear-gradient(180deg,#ece9e3_0%,#e4e0d8_55%,#dcd6cb_100%)] text-sidebar-foreground shadow-sm backdrop-blur-xl dark:bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)]',
           className,
         )}
         {...props}
@@ -180,7 +181,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) max-w-[min(var(--sidebar-width),calc(100vw-0.75rem))] border-0 bg-[linear-gradient(180deg,#f8f5ef_0%,#f3efe8_55%,#efe6d4_100%)] p-0 text-sidebar-foreground shadow-[inset_-1px_0_0_0_rgba(28,28,28,0.08)] backdrop-blur-2xl dark:bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)] dark:shadow-[inset_-1px_0_0_0_rgba(239,213,106,0.18)] [&>button]:hidden"
+          className="w-(--sidebar-width) max-w-[min(var(--sidebar-width),calc(100vw-0.75rem))] border-0 bg-[linear-gradient(180deg,#ece9e3_0%,#e4e0d8_55%,#dcd6cb_100%)] p-0 text-sidebar-foreground shadow-[inset_-1px_0_0_0_rgba(28,28,28,0.08)] backdrop-blur-2xl dark:bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)] dark:shadow-[inset_-1px_0_0_0_rgba(239,213,106,0.18)] [&>button]:hidden"
           style={
             {
               '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
@@ -240,8 +241,8 @@ function Sidebar({
             'bg-[color-mix(in_oklch,var(--sidebar)_96%,transparent)]',
             variant === 'floating' || variant === 'inset'
               ? 'rounded-2xl shadow-[0_8px_32px_-12px_rgba(40,30,10,0.28),inset_0_1px_0_0_rgba(255,255,255,0.45)] ring-1 ring-black/6 dark:shadow-[0_8px_32px_-12px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.08)] dark:ring-white/10'
-              : // Flush glass rail — soft charcoal edge, no white gutters
-                'shadow-[inset_-1px_0_0_0_rgba(28,28,28,0.08)] dark:shadow-[inset_-1px_0_0_0_rgba(239,213,106,0.16)]',
+              : // Flush rail edge — real border so opaque header/content cannot cover it
+                'border-r border-black/10 dark:border-[#efd56a]/30',
           )}
         >
           {children}

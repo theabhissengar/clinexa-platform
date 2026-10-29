@@ -1,17 +1,25 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ModuleDetailSearch } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RequirePermission } from "@/components/auth/require-permission";
+import { listPickerAssets, resolveAsset } from "@/features/assets/api/assets-api";
 import { Permissions } from "@/features/auth/permissions";
 import { listAdminCategories } from "@/features/categories/api/categories-api";
 import {
-  attachMedia,
   createProduct,
   createVariant,
   deleteProduct,
@@ -42,6 +50,7 @@ import type {
   ProductType,
   StripeGatewayPref,
 } from "@/features/products/types";
+import { cn } from "@/lib/utils";
 
 function slugify(value: string): string {
   return value
@@ -50,6 +59,12 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value);
+}
+
+type ProductFormSnapshot = Record<string, string>;
 
 type Props = {
   mode: "create" | "edit";
@@ -68,6 +83,17 @@ export function ProductEditorPage({ mode, productId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [inventoryMessage, setInventoryMessage] = useState<string | null>(null);
+  const [baseline, setBaseline] = useState<ProductFormSnapshot | null>(null);
+  const [baselineNonce, setBaselineNonce] = useState(0);
+  const [appliedBaselineNonce, setAppliedBaselineNonce] = useState(0);
+  const [createBaselineReady, setCreateBaselineReady] = useState(
+    mode !== "create",
+  );
+  const [highlightUnsaved, setHighlightUnsaved] = useState(false);
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const bypassLeaveGuardRef = useRef(false);
+  const leaveActionRef = useRef<"discard" | "update" | null>(null);
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -84,7 +110,13 @@ export function ProductEditorPage({ mode, productId }: Props) {
   const [seoDescription, setSeoDescription] = useState("");
   const [seoCanonical, setSeoCanonical] = useState("");
   const [featuredMediaAssetId, setFeaturedMediaAssetId] = useState("");
-  const [galleryAssetId, setGalleryAssetId] = useState("");
+  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string | null>(
+    null,
+  );
+  const [resolvedPreviewName, setResolvedPreviewName] = useState<string | null>(
+    null,
+  );
+  const [previewResolveKey, setPreviewResolveKey] = useState("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [questionnaireBindingRef, setQuestionnaireBindingRef] = useState("");
   const [regularPrice, setRegularPrice] = useState("");
@@ -214,8 +246,170 @@ export function ProductEditorPage({ mode, productId }: Props) {
           ? (primary.salePriceCents / 100).toFixed(2)
           : "",
       );
+    } else {
+      setPrimaryVariantId(null);
+      setVariantSku("");
+      setRegularPrice("");
+      setSalePrice("");
     }
+    setBaselineNonce((n) => n + 1);
   }, []);
+
+  const captureSnapshot = useCallback((): ProductFormSnapshot => {
+    return {
+      name,
+      slug,
+      description,
+      shortDescription,
+      productType,
+      isRxEligible: String(isRxEligible),
+      isFeatured: String(isFeatured),
+      brandName,
+      tagsText,
+      seoTitle,
+      seoDescription,
+      seoCanonical,
+      featuredMediaAssetId,
+      selectedCategoryIds: stableJson([...selectedCategoryIds].sort()),
+      questionnaireBindingRef,
+      regularPrice,
+      salePrice,
+      variantSku,
+      gtin,
+      soldIndividually: String(soldIndividually),
+      weightLbs,
+      lengthIn,
+      widthIn,
+      heightIn,
+      shippingClass,
+      oneTimeShipping: String(oneTimeShipping),
+      upsellIds: stableJson([...upsellIds].sort()),
+      crossSellIds: stableJson([...crossSellIds].sort()),
+      bundleSellIds: stableJson([...bundleSellIds].sort()),
+      bundleSellsTitle,
+      bundleSellsDiscount,
+      catalogAttributes: stableJson(catalogAttributes),
+      defaultVariationOptions: stableJson(defaultVariationOptions),
+      purchaseNote,
+      menuOrder,
+      enableReviews: String(enableReviews),
+      limitSubscription,
+      stripeButtonPosition,
+      stripeGateways: stableJson(stripeGateways),
+    };
+  }, [
+    name,
+    slug,
+    description,
+    shortDescription,
+    productType,
+    isRxEligible,
+    isFeatured,
+    brandName,
+    tagsText,
+    seoTitle,
+    seoDescription,
+    seoCanonical,
+    featuredMediaAssetId,
+    selectedCategoryIds,
+    questionnaireBindingRef,
+    regularPrice,
+    salePrice,
+    variantSku,
+    gtin,
+    soldIndividually,
+    weightLbs,
+    lengthIn,
+    widthIn,
+    heightIn,
+    shippingClass,
+    oneTimeShipping,
+    upsellIds,
+    crossSellIds,
+    bundleSellIds,
+    bundleSellsTitle,
+    bundleSellsDiscount,
+    catalogAttributes,
+    defaultVariationOptions,
+    purchaseNote,
+    menuOrder,
+    enableReviews,
+    limitSubscription,
+    stripeButtonPosition,
+    stripeGateways,
+  ]);
+
+  const currentSnapshot = useMemo(
+    () => captureSnapshot(),
+    [captureSnapshot],
+  );
+
+  const dirtyFields = useMemo(() => {
+    const dirty = new Set<string>();
+    if (!baseline) return dirty;
+    for (const key of Object.keys(currentSnapshot)) {
+      if (currentSnapshot[key] !== baseline[key]) dirty.add(key);
+    }
+    return dirty;
+  }, [baseline, currentSnapshot]);
+
+  const isDirty = dirtyFields.size > 0;
+
+  const isFieldUnsaved = useCallback(
+    (key: string) => highlightUnsaved && dirtyFields.has(key),
+    [highlightUnsaved, dirtyFields],
+  );
+
+  // Establish create-mode baseline / re-baseline after hydrate+save during render
+  // (React “adjust state when a prop/state changes” pattern — avoids set-state-in-effect).
+  if (mode === "create" && !createBaselineReady) {
+    setCreateBaselineReady(true);
+    setBaseline(captureSnapshot());
+    if (highlightUnsaved) setHighlightUnsaved(false);
+  }
+  if (baselineNonce !== appliedBaselineNonce) {
+    setAppliedBaselineNonce(baselineNonce);
+    setBaseline(captureSnapshot());
+    if (highlightUnsaved) setHighlightUnsaved(false);
+  }
+
+  const featuredMediaTrimmed = featuredMediaAssetId.trim();
+  const featuredIsHttp =
+    featuredMediaTrimmed.startsWith("http://") ||
+    featuredMediaTrimmed.startsWith("https://");
+  if (previewResolveKey !== featuredMediaTrimmed) {
+    setPreviewResolveKey(featuredMediaTrimmed);
+    setResolvedPreviewUrl(null);
+    setResolvedPreviewName(null);
+  }
+  const featuredPreviewUrl = featuredIsHttp
+    ? featuredMediaTrimmed
+    : featuredMediaTrimmed
+      ? resolvedPreviewUrl
+      : null;
+  const featuredPreviewName =
+    featuredIsHttp || !featuredMediaTrimmed ? null : resolvedPreviewName;
+
+  useEffect(() => {
+    if (!leaveDialogOpen) return;
+    const scroller = document.querySelector<HTMLElement>("[data-admin-scroll]");
+    if (!scroller) return;
+    const previous = scroller.style.overflow;
+    scroller.style.overflow = "hidden";
+    return () => {
+      scroller.style.overflow = previous;
+    };
+  }, [leaveDialogOpen]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isDirty]);
 
   useEffect(() => {
     void listAdminCategories()
@@ -242,6 +436,34 @@ export function ProductEditorPage({ mode, productId }: Props) {
       })
       .catch(() => setError("Unable to load product."));
   }, [mode, productId, hydrate]);
+
+  useEffect(() => {
+    if (!featuredMediaTrimmed || featuredIsHttp) return;
+    let cancelled = false;
+    void resolveAsset(featuredMediaTrimmed)
+      .then((r) => {
+        if (cancelled) return;
+        setResolvedPreviewUrl(r.url);
+        setResolvedPreviewName(r.altText);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResolvedPreviewUrl(null);
+        setResolvedPreviewName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [featuredMediaTrimmed, featuredIsHttp]);
+
+  const searchFeaturedAssets = useCallback(async (q: string) => {
+    const res = await listPickerAssets({ q, take: 20 });
+    return res.items.map((asset) => ({
+      id: asset.id,
+      label: asset.originalFilename,
+      sublabel: `${asset.mimeType} · ${asset.status}`,
+    }));
+  }, []);
 
   function buildPayload(): CreateProductPayload {
     const tags = tagsText
@@ -324,8 +546,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
     }
   }
 
-  async function onSave(event: React.FormEvent) {
-    event.preventDefault();
+  async function persistProduct(): Promise<boolean> {
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -334,22 +555,62 @@ export function ProductEditorPage({ mode, productId }: Props) {
       if (mode === "create") {
         const created = await createProduct(payload);
         await syncPrimaryPricing(created.id);
+        bypassLeaveGuardRef.current = true;
+        setHighlightUnsaved(false);
         router.push(`/guardian/products/${created.id}/edit`);
-        return;
+        return true;
       }
-      if (!productId) return;
+      if (!productId) return false;
       await updateProduct(productId, payload);
       await syncPrimaryPricing(productId);
       const refreshed = await getAdminProduct(productId);
       hydrate(refreshed);
       setMessage("Product updated.");
+      setHighlightUnsaved(false);
+      return true;
     } catch {
       setError(
         "Unable to save product. Check required fields and slug uniqueness.",
       );
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function onSave(event: React.FormEvent) {
+    event.preventDefault();
+    await persistProduct();
+  }
+
+  function requestLeave(href: string) {
+    if (bypassLeaveGuardRef.current || !isDirty) {
+      router.push(href);
+      return;
+    }
+    setPendingHref(href);
+    setLeaveDialogOpen(true);
+  }
+
+  function onLeaveDiscard() {
+    const href = pendingHref ?? "/guardian/products";
+    leaveActionRef.current = "discard";
+    setLeaveDialogOpen(false);
+    setPendingHref(null);
+    setHighlightUnsaved(false);
+    bypassLeaveGuardRef.current = true;
+    router.push(href);
+  }
+
+  async function onLeaveUpdate() {
+    const href = pendingHref ?? "/guardian/products";
+    const ok = await persistProduct();
+    if (!ok) return;
+    leaveActionRef.current = "update";
+    setLeaveDialogOpen(false);
+    setPendingHref(null);
+    bypassLeaveGuardRef.current = true;
+    router.push(href);
   }
 
   async function runTransition(status: ProductLifecycleStatus) {
@@ -421,12 +682,13 @@ export function ProductEditorPage({ mode, productId }: Props) {
     <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link
-            href="/guardian/products"
+          <button
+            type="button"
+            onClick={() => requestLeave("/guardian/products")}
             className="text-sm text-muted-foreground underline-offset-4 hover:underline"
           >
             ← All products
-          </Link>
+          </button>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight">
             {mode === "create" ? "Add product" : name || "Edit product"}
           </h1>
@@ -453,19 +715,25 @@ export function ProductEditorPage({ mode, productId }: Props) {
         </div>
         {mode === "edit" && productId ? (
           <div className="flex flex-wrap gap-2 text-sm">
-            <Link
-              href={`/guardian/products/${productId}/history`}
+            <button
+              type="button"
+              onClick={() =>
+                requestLeave(`/guardian/products/${productId}/history`)
+              }
               className="text-primary hover:underline"
             >
               History
-            </Link>
+            </button>
             <span className="text-muted-foreground">·</span>
-            <Link
-              href={`/guardian/products/${productId}/activity`}
+            <button
+              type="button"
+              onClick={() =>
+                requestLeave(`/guardian/products/${productId}/activity`)
+              }
               className="text-primary hover:underline"
             >
               Activity
-            </Link>
+            </button>
           </div>
         ) : null}
       </div>
@@ -486,6 +754,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
               placeholder="Product name"
               className="h-11 text-lg font-medium"
               required
+              aria-invalid={isFieldUnsaved("name")}
             />
             {mode === "create" || !slugLocked ? (
               <div className="mt-3 space-y-1">
@@ -498,12 +767,20 @@ export function ProductEditorPage({ mode, productId }: Props) {
                     setSlugLocked(true);
                   }}
                   required
+                  aria-invalid={isFieldUnsaved("slug")}
                 />
               </div>
             ) : null}
           </div>
 
-          <div className="rounded-md border border-border bg-card">
+          <div
+            className={cn(
+              "rounded-md border bg-card",
+              isFieldUnsaved("description")
+                ? "border-destructive ring-1 ring-destructive/30"
+                : "border-border",
+            )}
+          >
             <div className="border-b border-border px-4 py-2 text-sm font-medium">
               Product description
             </div>
@@ -513,6 +790,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
               rows={8}
               className="w-full resize-y bg-transparent px-4 py-3 text-sm outline-none"
               placeholder="Write a full product description…"
+              aria-invalid={isFieldUnsaved("description")}
             />
           </div>
 
@@ -591,9 +869,17 @@ export function ProductEditorPage({ mode, productId }: Props) {
             setStripeButtonPosition={setStripeButtonPosition}
             stripeGateways={stripeGateways}
             setStripeGateways={setStripeGateways}
+            isFieldUnsaved={isFieldUnsaved}
           />
 
-          <div className="rounded-md border border-border bg-card">
+          <div
+            className={cn(
+              "rounded-md border bg-card",
+              isFieldUnsaved("shortDescription")
+                ? "border-destructive ring-1 ring-destructive/30"
+                : "border-border",
+            )}
+          >
             <div className="border-b border-border px-4 py-2 text-sm font-medium">
               Product short description
             </div>
@@ -603,6 +889,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
               rows={4}
               className="w-full resize-y bg-transparent px-4 py-3 text-sm outline-none"
               placeholder="Excerpt shown in listings…"
+              aria-invalid={isFieldUnsaved("shortDescription")}
             />
           </div>
 
@@ -615,6 +902,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
                   id="seoTitle"
                   value={seoTitle}
                   onChange={(e) => setSeoTitle(e.target.value)}
+                  aria-invalid={isFieldUnsaved("seoTitle")}
                 />
               </div>
               <div className="space-y-1">
@@ -623,6 +911,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
                   id="seoCanonical"
                   value={seoCanonical}
                   onChange={(e) => setSeoCanonical(e.target.value)}
+                  aria-invalid={isFieldUnsaved("seoCanonical")}
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
@@ -632,7 +921,13 @@ export function ProductEditorPage({ mode, productId }: Props) {
                   value={seoDescription}
                   onChange={(e) => setSeoDescription(e.target.value)}
                   rows={2}
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                  className={cn(
+                    "w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none",
+                    isFieldUnsaved("seoDescription")
+                      ? "border-destructive ring-3 ring-destructive/20"
+                      : "border-border",
+                  )}
+                  aria-invalid={isFieldUnsaved("seoDescription")}
                 />
               </div>
               <div className="space-y-1 sm:col-span-2">
@@ -644,6 +939,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
                     setQuestionnaireBindingRef(e.target.value)
                   }
                   placeholder="Required before publishing Rx products"
+                  aria-invalid={isFieldUnsaved("questionnaireBindingRef")}
                 />
               </div>
             </div>
@@ -721,66 +1017,70 @@ export function ProductEditorPage({ mode, productId }: Props) {
             </div>
           </div>
 
-          <div className="rounded-md border border-border bg-card">
+          <div
+            className={cn(
+              "rounded-md border bg-card",
+              isFieldUnsaved("featuredMediaAssetId")
+                ? "border-destructive ring-1 ring-destructive/30"
+                : "border-border",
+            )}
+          >
             <div className="border-b border-border px-3 py-2 text-sm font-medium">
               Product image
             </div>
-            <div className="space-y-2 p-3 text-sm">
-              <Input
-                value={featuredMediaAssetId}
-                onChange={(e) => setFeaturedMediaAssetId(e.target.value)}
-                placeholder="Media asset id or URL"
-              />
-            </div>
-          </div>
-
-          <div className="rounded-md border border-border bg-card">
-            <div className="border-b border-border px-3 py-2 text-sm font-medium">
-              Product gallery
-            </div>
-            <div className="space-y-2 p-3 text-sm">
-              {product?.media.map((m) => (
-                <div
-                  key={m.id ?? m.mediaAssetId}
-                  className="truncate text-xs text-muted-foreground"
-                >
-                  {m.mediaAssetId}
-                </div>
-              ))}
-              {mode === "edit" && productId ? (
-                <div className="flex gap-2">
-                  <Input
-                    value={galleryAssetId}
-                    onChange={(e) => setGalleryAssetId(e.target.value)}
-                    placeholder="Asset id"
+            <div className="space-y-3 p-3 text-sm">
+              <div className="space-y-1.5">
+                <Label htmlFor="product-image-search">Search by name</Label>
+                <ModuleDetailSearch
+                  searchFn={searchFeaturedAssets}
+                  onSelect={(id) => {
+                    setFeaturedMediaAssetId(id);
+                    setMessage("Featured image selected from Media Vault. Save the product to apply.");
+                  }}
+                  placeholder="Search Media Vault by filename…"
+                  minQueryLength={1}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="product-image-id">Media asset id or URL</Label>
+                <Input
+                  id="product-image-id"
+                  value={featuredMediaAssetId}
+                  onChange={(e) => setFeaturedMediaAssetId(e.target.value)}
+                  placeholder="Paste asset id or image URL"
+                  aria-invalid={isFieldUnsaved("featuredMediaAssetId")}
+                />
+              </div>
+              {featuredPreviewUrl ? (
+                <div className="flex min-h-48 items-center justify-center overflow-hidden rounded-md border border-border bg-muted/30 sm:min-h-56">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={featuredPreviewUrl}
+                    alt={featuredPreviewName || "Product image preview"}
+                    className="mx-auto max-h-64 w-full object-contain p-3 sm:max-h-72"
                   />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      if (!galleryAssetId) return;
-                      void attachMedia(productId, {
-                        mediaAssetId: galleryAssetId,
-                      })
-                        .then(() => getAdminProduct(productId))
-                        .then(hydrate)
-                        .then(() => setGalleryAssetId(""))
-                        .catch(() => setError("Unable to attach media."));
-                    }}
-                  >
-                    Add
-                  </Button>
                 </div>
-              ) : (
+              ) : featuredMediaAssetId.trim() ? (
                 <p className="text-xs text-muted-foreground">
-                  Save product first to attach gallery images.
+                  Preview unavailable — save with an Active Media Vault asset id
+                  for a thumbnail.
                 </p>
-              )}
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Selecting from search stores the Media Vault asset id. Click Save
+                on the product to persist it.
+              </p>
             </div>
           </div>
 
-          <div className="rounded-md border border-border bg-card">
+          <div
+            className={cn(
+              "rounded-md border bg-card",
+              isFieldUnsaved("selectedCategoryIds")
+                ? "border-destructive ring-1 ring-destructive/30"
+                : "border-border",
+            )}
+          >
             <div className="border-b border-border px-3 py-2 text-sm font-medium">
               Product categories
             </div>
@@ -815,6 +1115,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
                 value={tagsText}
                 onChange={(e) => setTagsText(e.target.value)}
                 placeholder="Comma-separated tags"
+                aria-invalid={isFieldUnsaved("tagsText")}
               />
             </div>
           </div>
@@ -828,11 +1129,57 @@ export function ProductEditorPage({ mode, productId }: Props) {
                 value={brandName}
                 onChange={(e) => setBrandName(e.target.value)}
                 placeholder="Brand display name"
+                aria-invalid={isFieldUnsaved("brandName")}
               />
             </div>
           </div>
         </aside>
       </form>
+
+      <Dialog
+        open={leaveDialogOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setLeaveDialogOpen(true);
+            return;
+          }
+          setLeaveDialogOpen(false);
+          setPendingHref(null);
+          if (leaveActionRef.current) {
+            leaveActionRef.current = null;
+            return;
+          }
+          setHighlightUnsaved(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Unsaved changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes on this product. Update to keep them, or
+              discard to leave without saving.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onLeaveDiscard}
+              disabled={saving}
+            >
+              Discard
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void onLeaveUpdate()}
+              disabled={saving}
+              loading={saving}
+            >
+              Update
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

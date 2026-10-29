@@ -1,11 +1,20 @@
 "use client";
 
+import { Inbox, Search, Upload } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
+import {
+  ClearableSearchInput,
+  EmptyState,
+  ErrorState,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   archiveAsset,
   bulkAssets,
@@ -13,24 +22,53 @@ import {
   listAdminAssets,
   restoreAsset,
 } from "@/features/assets/api/assets-api";
+import {
+  AssetLibraryHeader,
+  AssetLibraryShell,
+} from "@/features/assets/components/asset-library-shell";
+import { AssetThumb } from "@/features/assets/components/asset-thumb";
+import { formatAssetBytes } from "@/features/assets/lib/mime-from-filename";
 import type { Asset, AssetStatus } from "@/features/assets/types";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
 import { Permissions } from "@/features/auth/permissions";
+import { cn } from "@/lib/utils";
 
-const STATUS_TABS: Array<{ key: AssetStatus | "ALL"; label: string }> = [
+const STATUS_CHIPS: Array<{ key: AssetStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "All" },
   { key: "ACTIVE", label: "Active" },
   { key: "ARCHIVED", label: "Archived" },
-  { key: "UPLOADED", label: "Uploaded" },
   { key: "DELETED", label: "Deleted" },
 ];
 
-const PAGE_SIZE = 24;
+const STATUS_KEYS = new Set(STATUS_CHIPS.map((t) => t.key));
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
+/** Gallery default — denser grid; 10 left the 11th item alone on page 2. */
+const ASSETS_DEFAULT_PAGE_SIZE = 50;
 
-function formatBytes(n: number) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+function parseStatus(value: string | null): AssetStatus | "ALL" {
+  if (value && STATUS_KEYS.has(value as AssetStatus | "ALL")) {
+    return value as AssetStatus | "ALL";
+  }
+  return "ACTIVE";
+}
+
+function parsePage(value: string | null): number {
+  const n = Number(value ?? "1");
+  if (!Number.isFinite(n) || n < 1) return 0;
+  return Math.floor(n) - 1;
+}
+
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? ASSETS_DEFAULT_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return ASSETS_DEFAULT_PAGE_SIZE;
+}
+
+function allCount(statusCounts: Record<string, number>) {
+  return Object.entries(statusCounts).reduce((sum, [key, n]) => {
+    if (key === "DELETED") return sum;
+    return sum + n;
+  }, 0);
 }
 
 export function AssetsListPage() {
@@ -42,7 +80,13 @@ export function AssetsListPage() {
   const canDestroy = can(Permissions.AST_DESTRUCTIVE);
   const canBulk = can(Permissions.AST_BULK_DESTRUCTIVE);
 
-  const [draftQ, setDraftQ] = useState(searchParams.get("q") ?? "");
+  const appliedQ = searchParams.get("q") ?? "";
+  const statusParam = parseStatus(searchParams.get("status"));
+  const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const [draftQ, setDraftQ] = useState(appliedQ);
+  const [syncedQ, setSyncedQ] = useState(appliedQ);
   const [items, setItems] = useState<Asset[]>([]);
   const [total, setTotal] = useState(0);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
@@ -50,34 +94,53 @@ export function AssetsListPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const statusParam = (searchParams.get("status") ?? "ACTIVE") as
-    | AssetStatus
-    | "ALL";
-  const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  const applyParams = useCallback(
-    (next: Record<string, string | undefined>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      for (const [k, v] of Object.entries(next)) {
-        if (!v || v === "ALL") params.delete(k);
-        else params.set(k, v);
-      }
-      router.push(`${pathname}?${params.toString()}`);
-    },
-    [pathname, router, searchParams],
-  );
+  if (appliedQ !== syncedQ) {
+    setSyncedQ(appliedQ);
+    setDraftQ(appliedQ);
+  }
 
-  const loadKey = `${searchParams.toString()}|${statusParam}|${page}`;
+  function writeParams(patch: Record<string, string | null | undefined>) {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value == null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
+    if (patch.status === "ALL") next.set("status", "ALL");
+    const qs = next.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await listAdminAssets({
+        q: appliedQ || undefined,
+        status: statusParam === "ALL" ? undefined : statusParam,
+        skip: page * pageSize,
+        take: pageSize,
+      });
+      setItems(res.items);
+      setTotal(res.total);
+      setStatusCounts(res.statusCounts);
+      setError(null);
+    } catch {
+      setError("Unable to load assets.");
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedQ, statusParam, page, pageSize]);
 
   useEffect(() => {
     let cancelled = false;
     async function run() {
       try {
         const res = await listAdminAssets({
-          q: searchParams.get("q") ?? undefined,
+          q: appliedQ || undefined,
           status: statusParam === "ALL" ? undefined : statusParam,
-          skip: (page - 1) * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(res.items);
@@ -95,277 +158,343 @@ export function AssetsListPage() {
     return () => {
       cancelled = true;
     };
-    // searchParams identity is keyed via loadKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadKey captures query state
-  }, [loadKey, page, statusParam]);
+  }, [appliedQ, statusParam, page, pageSize]);
 
-  async function reload() {
-    setLoading(true);
-    try {
-      const res = await listAdminAssets({
-        q: searchParams.get("q") ?? undefined,
-        status: statusParam === "ALL" ? undefined : statusParam,
-        skip: (page - 1) * PAGE_SIZE,
-        take: PAGE_SIZE,
-      });
-      setItems(res.items);
-      setTotal(res.total);
-      setStatusCounts(res.statusCounts);
-      setError(null);
-    } catch {
-      setError("Unable to load assets.");
-    } finally {
-      setLoading(false);
-    }
+  function applySearch() {
+    writeParams({ q: draftQ.trim() || null, page: "1" });
   }
 
   async function onArchive(id: string) {
-    if (!window.confirm("Archive this asset? (Class D)")) return;
-    await archiveAsset(id);
-    await reload();
+    if (!window.confirm("Archive this asset?")) return;
+    try {
+      await archiveAsset(id);
+      toast.success("Asset archived.");
+      await reload();
+    } catch {
+      toast.error("Unable to archive asset.");
+    }
   }
 
   async function onRestore(id: string) {
-    if (!window.confirm("Restore this asset? (Class D)")) return;
-    await restoreAsset(id);
-    await reload();
+    if (!window.confirm("Restore this asset?")) return;
+    try {
+      await restoreAsset(id);
+      toast.success("Asset restored.");
+      await reload();
+    } catch {
+      toast.error("Unable to restore asset.");
+    }
   }
 
   async function onDelete(id: string) {
-    if (!window.confirm("Soft-delete this asset? (Class D)")) return;
-    await deleteAsset(id);
-    await reload();
+    if (!window.confirm("Soft-delete this asset?")) return;
+    try {
+      await deleteAsset(id);
+      toast.success("Asset deleted.");
+      await reload();
+    } catch {
+      toast.error("Unable to delete asset.");
+    }
   }
 
   async function onBulk(action: "archive" | "delete") {
     if (!selected.size) return;
-    if (
-      !window.confirm(
-        `Bulk ${action} ${selected.size} asset(s)? (Class D)`,
-      )
-    ) {
-      return;
+    if (!window.confirm(`Bulk ${action} ${selected.size} asset(s)?`)) return;
+    try {
+      await bulkAssets([...selected], action);
+      toast.success(`Bulk ${action} complete.`);
+      setSelected(new Set());
+      await reload();
+    } catch {
+      toast.error(`Unable to bulk ${action}.`);
     }
-    await bulkAssets([...selected], action);
-    setSelected(new Set());
-    await reload();
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Asset Library
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Reusable business assets. Consumers store Asset IDs only — never
-            provider URLs.
-          </p>
+    <AssetLibraryShell>
+      <AssetLibraryHeader eyebrow="Media Vault" className="mb-5 sm:mb-6" />
+
+      <div className="mb-6 flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2">
+        <div
+          className="flex shrink-0 gap-2 overflow-x-auto pb-0.5"
+          role="tablist"
+          aria-label="Asset status"
+        >
+          {STATUS_CHIPS.map((chip) => {
+            const count =
+              chip.key === "ALL"
+                ? allCount(statusCounts)
+                : (statusCounts[chip.key] ?? 0);
+            const active = statusParam === chip.key;
+            return (
+              <button
+                key={chip.key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() =>
+                  writeParams({
+                    status: chip.key,
+                    page: "1",
+                  })
+                }
+                className={cn(
+                  "shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-info/40 bg-info text-info-foreground shadow-sm"
+                    : "border-border/70 bg-card/70 text-muted-foreground hover:border-info/30 hover:text-foreground",
+                )}
+              >
+                {chip.label}
+                <span
+                  className={cn(
+                    "ml-1.5 tabular-nums",
+                    active ? "opacity-90" : "opacity-60",
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
+
+        <form
+          className="flex min-w-0 w-full max-w-md flex-1 items-center gap-2 sm:w-auto"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applySearch();
+          }}
+        >
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 z-10 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <ClearableSearchInput
+              value={draftQ}
+              onChange={setDraftQ}
+              onClear={() => {
+                setDraftQ("");
+                if (appliedQ) writeParams({ q: null, page: "1" });
+              }}
+              placeholder="Search filename, alt, caption…"
+              className="w-full"
+              inputClassName="pl-9"
+              aria-label="Search assets"
+            />
+          </div>
+          <Button
+            type="submit"
+            size="sm"
+            className="shrink-0 border-transparent bg-success text-success-foreground hover:bg-success/90"
+          >
+            Apply
+          </Button>
+        </form>
+
         {canManage ? (
-          <Button render={<Link href="/guardian/assets/upload" />}>
+          <Button
+            size="sm"
+            className="shrink-0 border-transparent bg-info text-info-foreground hover:bg-info/90 sm:ml-auto"
+            render={<Link href="/guardian/assets/upload" />}
+          >
+            <Upload className="size-4" />
             Upload
           </Button>
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {STATUS_TABS.map((tab) => {
-          const count =
-            tab.key === "ALL"
-              ? Object.values(statusCounts).reduce((a, b) => a + b, 0)
-              : (statusCounts[tab.key] ?? 0);
-          const active =
-            (tab.key === "ALL" && statusParam === "ALL") ||
-            tab.key === statusParam;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() =>
-                applyParams({
-                  status: tab.key === "ALL" ? "ALL" : tab.key,
-                  page: "1",
-                })
-              }
-              className={`rounded-md border px-3 py-1.5 text-sm ${
-                active
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border text-muted-foreground hover:bg-muted"
-              }`}
-            >
-              {tab.label} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[220px] flex-1">
-          <label className="mb-1 block text-xs text-muted-foreground">
-            Search
-          </label>
-          <Input
-            value={draftQ}
-            onChange={(e) => setDraftQ(e.target.value)}
-            placeholder="Filename, alt, caption…"
-          />
+      {error ? (
+        <ErrorState title="Unable to load assets">{error}</ErrorState>
+      ) : loading ? (
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="aspect-4/3 animate-pulse rounded-xl bg-muted/50"
+            />
+          ))}
         </div>
-        <Button
-          type="button"
-          onClick={() =>
-            applyParams({ q: draftQ.trim() || undefined, page: "1" })
-          }
-        >
-          Search
-        </Button>
-        {(searchParams.get("q") || statusParam !== "ACTIVE") && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setDraftQ("");
-              router.push(pathname);
-            }}
-          >
-            Clear
-          </Button>
-        )}
-      </div>
-
-      {canBulk && selected.size > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => void onBulk("archive")}>
-            Bulk archive ({selected.size})
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            onClick={() => void onBulk("delete")}
-          >
-            Bulk delete ({selected.size})
-          </Button>
-        </div>
-      ) : null}
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading assets…</p>
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={<Inbox />}
+          title="No assets found"
+          description="Try a different search or status filter, or upload something new."
+        />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((asset) => (
-            <article
-              key={asset.id}
-              className="rounded-lg border border-border p-3"
-            >
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="min-w-0">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+          {items.map((asset) => {
+            const selectedOn = selected.has(asset.id);
+            return (
+              <article
+                key={asset.id}
+                className={cn(
+                  "group relative flex flex-col overflow-hidden rounded-xl border bg-card/75 shadow-sm backdrop-blur-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md",
+                  selectedOn
+                    ? "border-info ring-2 ring-info/30"
+                    : "border-border/70",
+                )}
+              >
+                <div className="relative aspect-4/3 overflow-hidden bg-muted/30">
                   <Link
                     href={`/guardian/assets/${asset.id}`}
-                    className="block truncate text-sm font-medium hover:underline"
+                    className="absolute inset-0 block size-full"
                   >
-                    {asset.originalFilename}
+                    <AssetThumb
+                      assetId={asset.id}
+                      mimeType={asset.mimeType}
+                      alt={asset.altText || asset.originalFilename}
+                      status={asset.status}
+                      className="transition-transform duration-500 group-hover:scale-[1.03]"
+                    />
                   </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {asset.mimeType} · {formatBytes(asset.byteSize)} ·{" "}
-                    {asset.status}
-                  </p>
+                  <div className="pointer-events-none absolute top-1.5 left-1.5 scale-90 origin-top-left">
+                    <StatusBadge status={asset.status} />
+                  </div>
+                  {canBulk ? (
+                    <label className="absolute top-1.5 right-1.5 z-10 flex size-6 cursor-pointer items-center justify-center rounded-md bg-black/45 text-white backdrop-blur-sm">
+                      <input
+                        type="checkbox"
+                        className="size-3 accent-[oklch(0.55_0.12_250)]"
+                        checked={selectedOn}
+                        onChange={(e) => {
+                          setSelected((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(asset.id);
+                            else next.delete(asset.id);
+                            return next;
+                          });
+                        }}
+                        aria-label={`Select ${asset.originalFilename}`}
+                      />
+                    </label>
+                  ) : null}
                 </div>
-                {canBulk ? (
-                  <input
-                    type="checkbox"
-                    checked={selected.has(asset.id)}
-                    onChange={(e) => {
-                      setSelected((prev) => {
-                        const next = new Set(prev);
-                        if (e.target.checked) next.add(asset.id);
-                        else next.delete(asset.id);
-                        return next;
-                      });
-                    }}
-                    aria-label={`Select ${asset.originalFilename}`}
-                  />
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs">
-                <Link
-                  href={`/guardian/assets/${asset.id}/edit`}
-                  className="text-muted-foreground hover:underline"
-                >
-                  Edit
-                </Link>
-                <Link
-                  href={`/guardian/assets/${asset.id}/history`}
-                  className="text-muted-foreground hover:underline"
-                >
-                  History
-                </Link>
-                {canDestroy && asset.status === "ACTIVE" ? (
-                  <button
-                    type="button"
-                    className="text-destructive hover:underline"
-                    onClick={() => void onArchive(asset.id)}
-                  >
-                    Archive
-                  </button>
-                ) : null}
-                {canDestroy &&
-                (asset.status === "ARCHIVED" || asset.status === "DELETED") ? (
-                  <button
-                    type="button"
-                    className="hover:underline"
-                    onClick={() => void onRestore(asset.id)}
-                  >
-                    Restore
-                  </button>
-                ) : null}
-                {canDestroy && asset.status !== "DELETED" ? (
-                  <button
-                    type="button"
-                    className="text-destructive hover:underline"
-                    onClick={() => void onDelete(asset.id)}
-                  >
-                    Delete
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          ))}
-          {!items.length ? (
-            <p className="text-sm text-muted-foreground sm:col-span-2 lg:col-span-3">
-              No assets found.
-            </p>
-          ) : null}
+
+                <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/guardian/assets/${asset.id}`}
+                      className="block truncate text-xs font-semibold hover:text-info sm:text-sm"
+                    >
+                      {asset.originalFilename}
+                    </Link>
+                    <p className="mt-0.5 truncate text-[0.65rem] text-muted-foreground sm:text-xs">
+                      {asset.mimeType} · {formatAssetBytes(asset.byteSize)}
+                    </p>
+                  </div>
+                  <div className="mt-auto flex flex-wrap gap-x-2 gap-y-0.5 text-[0.65rem] sm:text-xs">
+                    {canManage ? (
+                      <Link
+                        href={`/guardian/assets/${asset.id}/edit`}
+                        className="font-medium text-info hover:underline"
+                      >
+                        Edit
+                      </Link>
+                    ) : null}
+                    <Link
+                      href={`/guardian/assets/${asset.id}/history`}
+                      className="text-muted-foreground hover:underline"
+                    >
+                      History
+                    </Link>
+                    {canDestroy && asset.status === "ACTIVE" ? (
+                      <button
+                        type="button"
+                        className="text-destructive hover:underline"
+                        onClick={() => void onArchive(asset.id)}
+                      >
+                        Archive
+                      </button>
+                    ) : null}
+                    {canDestroy &&
+                    (asset.status === "ARCHIVED" ||
+                      asset.status === "DELETED") ? (
+                      <button
+                        type="button"
+                        className="hover:underline"
+                        onClick={() => void onRestore(asset.id)}
+                      >
+                        Restore
+                      </button>
+                    ) : null}
+                    {canDestroy && asset.status !== "DELETED" ? (
+                      <button
+                        type="button"
+                        className="text-destructive hover:underline"
+                        onClick={() => void onDelete(asset.id)}
+                      >
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {total} item{total === 1 ? "" : "s"}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => applyParams({ page: String(page - 1) })}
-          >
-            ‹
-          </Button>
-          <span>Page {page}</span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page * PAGE_SIZE >= total}
-            onClick={() => applyParams({ page: String(page + 1) })}
-          >
-            ›
-          </Button>
+      {!error && !loading && items.length > 0 ? (
+        <div className="mt-6">
+          <ListPaginationBar
+            total={total}
+            page={page}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            onPageSizeChange={(next) =>
+              writeParams({
+                take:
+                  next === ASSETS_DEFAULT_PAGE_SIZE ? null : String(next),
+                page: "1",
+              })
+            }
+            onPrev={() =>
+              writeParams({ page: page <= 0 ? null : String(page) })
+            }
+            onNext={() =>
+              writeParams({
+                page: String(Math.min(pageCount, page + 2)),
+              })
+            }
+          />
         </div>
-      </div>
-    </main>
+      ) : null}
+
+      {canBulk && selected.size > 0 ? (
+        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-full border border-border/80 bg-card/95 px-4 py-2.5 shadow-lg backdrop-blur-md">
+            <span className="text-sm font-medium tabular-nums">
+              {selected.size} selected
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void onBulk("archive")}
+            >
+              Archive
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={() => void onBulk("delete")}
+            >
+              Delete
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </AssetLibraryShell>
   );
 }

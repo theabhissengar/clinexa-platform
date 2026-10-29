@@ -2,11 +2,43 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, FileText, Stethoscope } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ClipboardList,
+  CreditCard,
+  FileText,
+  MapPin,
+  Plus,
+  Stethoscope,
+  Tag,
+  UserRound,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import {
+  AppSelect,
+  ClinexaPage,
+  ErrorState,
+  FieldGrid,
+  PageBody,
+  PageSkeleton,
+  crossAppNavButtonClassName,
+  filterApplyButtonClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { listCrmOrders } from "@/features/orders/api/orders-api";
 import {
   addCrmPaymentMethod,
@@ -15,128 +47,220 @@ import {
   makeCrmPaymentMethodDefault,
 } from "@/features/payments/api/crm-payments-api";
 import { MedicalProfileEditor } from "@/features/shared/components/medical-profile-editor";
-import {
-  ModuleDetailSearch,
-  type ModuleSearchResult,
-} from "@/features/shared/components/module-detail-search";
 import { NotesTimeline } from "@/features/shared/components/notes-timeline";
 import { listCrmSubscriptions } from "@/features/subscriptions/api/subscriptions-api";
-import { productStatusLabel as orderStatusLabel } from "@/features/orders/lib/format";
-import { productStatusLabel as subscriptionStatusLabel } from "@/features/subscriptions/lib/format";
 import {
   addCrmUserNote,
+  deleteCrmUserNote,
   getCrmUser,
   listCrmUserNotes,
-  listCrmUsers,
   updateCrmUser,
 } from "@/features/users/api/users-api";
+import { AddressFieldsEditor } from "@/features/users/components/address-fields-editor";
+import {
+  UserAvatarThumb,
+  UserMediaImageField,
+} from "@/features/users/components/user-media-image-field";
+import {
+  addressFromJson,
+  addressToJson,
+  ADDRESS_REGION_OPTIONS,
+  EMPTY_USER_ADDRESS,
+  type UserAddressForm,
+} from "@/features/users/lib/address";
+import {
+  sanitizeDisplayName,
+  sanitizePersonName,
+  validateAddressFields,
+  validateUserProfileFields,
+} from "@/features/users/lib/user-field-validation";
+import { formatPhoneMask, toPhoneDigits } from "@/features/users/lib/phone";
 import type {
-  AddressSnapshot,
   MedicalProfile,
   OperationalUser,
   SavedPaymentMethod,
   UserGender,
   UserNote,
 } from "@/features/users/types";
+import { cn } from "@/lib/utils";
 
 const GENDERS: UserGender[] = ["UNSPECIFIED", "MALE", "FEMALE", "OTHER"];
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: "", label: "Select payment method" },
+  { value: "Visa", label: "Visa" },
+  { value: "Mastercard", label: "Mastercard" },
+  { value: "Amex", label: "American Express" },
+  { value: "Discover", label: "Discover" },
+];
 
 type SectionId =
   | "profile"
   | "medical"
+  | "payments"
+  | "addresses"
+  | "documents";
+
+type MedicalTabId =
+  | "medical"
   | "orders"
   | "subscriptions"
   | "prescriptions"
-  | "questionnaires"
-  | "addresses"
-  | "payments"
-  | "documents"
-  | "notes";
+  | "questionnaires";
 
-const SECTIONS: Array<{ id: SectionId; label: string }> = [
-  { id: "profile", label: "Profile" },
-  { id: "medical", label: "Medical Profile" },
+type UserDocument = {
+  id: string;
+  name: string;
+  sizeLabel: string;
+  addedAt: string;
+  objectUrl: string;
+};
+
+const SECTIONS: Array<{
+  id: SectionId;
+  label: string;
+  description: string;
+  icon: typeof UserRound;
+}> = [
+  {
+    id: "profile",
+    label: "Profile",
+    description: "Identity and contact details",
+    icon: UserRound,
+  },
+  {
+    id: "medical",
+    label: "Medical Profile",
+    description: "Clinical data, orders, and care history",
+    icon: Stethoscope,
+  },
+  {
+    id: "payments",
+    label: "Payments",
+    description: "Saved payment methods",
+    icon: CreditCard,
+  },
+  {
+    id: "addresses",
+    label: "Billing & Shipping",
+    description: "Address book for fulfillment",
+    icon: MapPin,
+  },
+  {
+    id: "documents",
+    label: "Documents",
+    description: "Files and attachments",
+    icon: FileText,
+  },
+];
+
+const MEDICAL_TABS: Array<{ id: MedicalTabId; label: string }> = [
+  { id: "medical", label: "Medical" },
   { id: "orders", label: "Orders" },
   { id: "subscriptions", label: "Subscriptions" },
   { id: "prescriptions", label: "Prescriptions" },
   { id: "questionnaires", label: "Questionnaires" },
-  { id: "addresses", label: "Billing & Shipping" },
-  { id: "payments", label: "Payment Profiles" },
-  { id: "documents", label: "Documents" },
-  { id: "notes", label: "Notes" },
 ];
 
-type Address = {
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postalCode: string;
-  country: string;
-};
+const SECTION_IDS = new Set<SectionId>(
+  SECTIONS.map((section) => section.id),
+);
 
-const EMPTY_ADDRESS: Address = {
-  line1: "",
-  line2: "",
-  city: "",
-  region: "",
-  postalCode: "",
-  country: "",
-};
+const TAG_OPTIONS = [
+  "VIP",
+  "High priority",
+  "Follow-up",
+  "Insurance pending",
+  "New patient",
+  "Clinical hold",
+];
 
-function addressFromJson(
-  value: Record<string, unknown> | AddressSnapshot | null | undefined,
-): Address {
-  if (!value) return { ...EMPTY_ADDRESS };
-  const record = value as Record<string, unknown>;
-  return {
-    line1: String(record.line1 ?? ""),
-    line2: String(record.line2 ?? ""),
-    city: String(record.city ?? ""),
-    region: String(record.region ?? ""),
-    postalCode: String(record.postalCode ?? ""),
-    country: String(record.country ?? ""),
-  };
+function parseSectionSlug(slug: string | undefined): SectionId {
+  if (slug && SECTION_IDS.has(slug as SectionId)) {
+    return slug as SectionId;
+  }
+  return "profile";
 }
 
-function addressToJson(address: Address): AddressSnapshot | null {
-  const entries = Object.entries(address).filter(([, v]) => v.trim() !== "");
-  if (!entries.length) return null;
-  return Object.fromEntries(entries) as AddressSnapshot;
+type Address = UserAddressForm;
+const EMPTY_ADDRESS = EMPTY_USER_ADDRESS;
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function userName(user: OperationalUser): string {
-  return (
-    user.displayName ||
-    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-    user.email
-  );
-}
-
-function Section({
-  id,
+function SectionSurface({
   title,
+  description,
+  actions,
   children,
+  className,
 }: {
-  id: SectionId;
-  title: string;
-  children: React.ReactNode;
+  title?: string;
+  description?: string;
+  actions?: ReactNode;
+  children: ReactNode;
+  className?: string;
 }) {
   return (
     <section
-      id={id}
-      className="rounded-md border border-border bg-background p-4"
+      className={cn(
+        "min-w-0 rounded-2xl border border-border bg-card p-4 shadow-sm ring-1 ring-foreground/5 sm:p-5",
+        className,
+      )}
     >
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-      <div className="mt-3">{children}</div>
+      {title ? (
+        <header className="mb-4 border-b border-border/70 pb-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base font-semibold tracking-tight text-foreground">
+                {title}
+              </h2>
+              {description ? (
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {description}
+                </p>
+              ) : null}
+            </div>
+            {actions ? (
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {actions}
+              </div>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
+      {children}
     </section>
   );
 }
 
-export function CrmUserDetailPage() {
+function EmptyHint({
+  icon: Icon,
+  children,
+}: {
+  icon: typeof FileText;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-dashed border-border bg-muted/25 px-4 py-5 text-sm text-muted-foreground">
+      <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p>{children}</p>
+    </div>
+  );
+}
+
+export function CrmUserDetailPage({
+  sectionSlug,
+}: {
+  sectionSlug?: string;
+} = {}) {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const userId = params.id;
+  const activeSection = parseSectionSlug(sectionSlug);
   const [user, setUser] = useState<OperationalUser | null>(null);
   const [notes, setNotes] = useState<UserNote[]>([]);
   const [orders, setOrders] = useState<
@@ -151,7 +275,12 @@ export function CrmUserDetailPage() {
   const [saving, setSaving] = useState(false);
   const [addingNote, setAddingNote] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [medicalTab, setMedicalTab] = useState<MedicalTabId>("medical");
+  const [notesCollapsed, setNotesCollapsed] = useState(true);
+  const [tagsCollapsed, setTagsCollapsed] = useState(true);
+  const [tags, setTags] = useState<string[]>([]);
+  const [pendingTag, setPendingTag] = useState("");
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -159,6 +288,15 @@ export function CrmUserDetailPage() {
   const [phone, setPhone] = useState("");
   const [gender, setGender] = useState<UserGender>("UNSPECIFIED");
   const [region, setRegion] = useState("");
+  const [avatarMediaAssetId, setAvatarMediaAssetId] = useState<string | null>(
+    null,
+  );
+  const [profileImageMediaAssetId, setProfileImageMediaAssetId] = useState<
+    string | null
+  >(null);
+  const [healthCardMediaAssetId, setHealthCardMediaAssetId] = useState<
+    string | null
+  >(null);
   const [internalNotes, setInternalNotes] = useState("");
   const [medicalProfile, setMedicalProfile] = useState<MedicalProfile | null>(
     null,
@@ -167,22 +305,48 @@ export function CrmUserDetailPage() {
   const [shippingAddress, setShippingAddress] =
     useState<Address>(EMPTY_ADDRESS);
 
-  const [newCardBrand, setNewCardBrand] = useState("Visa");
-  const [newCardLast4, setNewCardLast4] = useState("4242");
+  const [showAddCard, setShowAddCard] = useState(false);
+  const [cardPaymentMethod, setCardPaymentMethod] = useState("");
+  const [cardFirstName, setCardFirstName] = useState("");
+  const [cardLastName, setCardLastName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiration, setCardExpiration] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
+
+  const [documents, setDocuments] = useState<UserDocument[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputId = useId();
 
   const hydrate = useCallback((next: OperationalUser) => {
     setUser(next);
     setFirstName(next.firstName ?? "");
     setLastName(next.lastName ?? "");
     setDisplayName(next.displayName ?? "");
-    setPhone(next.phone ?? "");
+    setPhone(toPhoneDigits(next.phone ?? ""));
     setGender(next.gender);
     setRegion(next.region ?? "");
+    setAvatarMediaAssetId(next.avatarMediaAssetId ?? null);
+    setProfileImageMediaAssetId(next.profileImageMediaAssetId ?? null);
+    setHealthCardMediaAssetId(next.healthCardMediaAssetId ?? null);
+    setTags(next.tags ?? []);
     setInternalNotes(next.internalNotes ?? "");
     setMedicalProfile(next.medicalProfile);
     setBillingAddress(addressFromJson(next.billingAddress));
     setShippingAddress(addressFromJson(next.shippingAddress));
   }, []);
+
+  useEffect(() => {
+    if (sectionSlug && !SECTION_IDS.has(sectionSlug as SectionId)) {
+      router.replace(`/crm/users/${userId}?section=profile`);
+    }
+  }, [sectionSlug, router, userId]);
+
+  function goToSection(section: SectionId) {
+    if (section === activeSection) return;
+    router.replace(`/crm/users/${userId}?section=${section}`, {
+      scroll: false,
+    });
+  }
 
   useEffect(() => {
     void getCrmUser(userId)
@@ -200,21 +364,37 @@ export function CrmUserDetailPage() {
       .catch(() => setPaymentMethods([]));
   }, [userId, hydrate]);
 
-  const searchUsers = useCallback(async (q: string): Promise<ModuleSearchResult[]> => {
-    const result = await listCrmUsers({ q, take: 10 });
-    return result.items.map((row) => ({
-      id: row.id,
-      label: userName(row),
-      sublabel: row.email,
-    }));
-  }, []);
-
-  async function onSaveProfile(event: React.FormEvent) {
-    event.preventDefault();
+  async function onSaveProfile(event?: React.FormEvent) {
+    event?.preventDefault();
     if (!user) return;
+
+    const profileError = validateUserProfileFields({
+      firstName,
+      lastName,
+      displayName,
+      phone,
+      region,
+    });
+    if (profileError) {
+      toast.error(profileError);
+      return;
+    }
+    const billingError = validateAddressFields("Billing address", billingAddress);
+    if (billingError) {
+      toast.error(billingError);
+      return;
+    }
+    const shippingError = validateAddressFields(
+      "Shipping address",
+      shippingAddress,
+    );
+    if (shippingError) {
+      toast.error(shippingError);
+      return;
+    }
+
     setSaving(true);
     setError(null);
-    setMessage(null);
     try {
       const updated = await updateCrmUser(user.id, {
         firstName: firstName || null,
@@ -223,317 +403,675 @@ export function CrmUserDetailPage() {
         phone: phone || null,
         gender,
         region: region || null,
+        avatarMediaAssetId,
+        profileImageMediaAssetId,
+        healthCardMediaAssetId,
+        tags,
         medicalProfile,
         billingAddress: addressToJson(billingAddress),
         shippingAddress: addressToJson(shippingAddress),
       });
       hydrate(updated);
-      setMessage("User updated.");
+      toast.success("User updated.");
     } catch {
       setError("Unable to save user.");
+      toast.error("Unable to save user.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function onAddNote(body: string, visibility: "PRIVATE" | "USER_VISIBLE") {
+  async function onSaveTags(nextTags: string[]) {
+    if (!user) return;
+    setTags(nextTags);
+    setSaving(true);
+    try {
+      const updated = await updateCrmUser(user.id, { tags: nextTags });
+      hydrate(updated);
+      toast.success("Tags updated.");
+    } catch {
+      toast.error("Unable to update tags.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function addTag(raw: string) {
+    const next = raw.trim();
+    if (!next) return;
+    if (tags.includes(next)) {
+      setPendingTag("");
+      return;
+    }
+    void onSaveTags([...tags, next]);
+    setPendingTag("");
+  }
+
+  function commitPendingTag() {
+    addTag(pendingTag);
+  }
+
+  function removeTag(tag: string) {
+    void onSaveTags(tags.filter((item) => item !== tag));
+  }
+
+  async function onAddNote(
+    body: string,
+    visibility: "PRIVATE" | "USER_VISIBLE",
+  ) {
     if (!user) return;
     setAddingNote(true);
     try {
       await addCrmUserNote(user.id, body, visibility);
       const refreshed = await listCrmUserNotes(user.id);
       setNotes(refreshed);
-      setMessage("Note added.");
+      toast.success("Note added.");
     } catch {
       setError("Unable to add note.");
+      toast.error("Unable to add note.");
     } finally {
       setAddingNote(false);
     }
   }
 
+  async function onDeleteNote(noteId: string) {
+    if (!user) return;
+    setDeletingNoteId(noteId);
+    try {
+      await deleteCrmUserNote(user.id, noteId);
+      setNotes((prev) => prev.filter((note) => note.id !== noteId));
+      toast.success("Note deleted.");
+    } catch {
+      toast.error("Unable to delete note.");
+    } finally {
+      setDeletingNoteId(null);
+    }
+  }
+
+  function resetCardForm() {
+    setCardPaymentMethod("");
+    setCardFirstName("");
+    setCardLastName("");
+    setCardNumber("");
+    setCardExpiration("");
+    setCardCvv("");
+  }
+
   async function onAddPaymentMethod() {
     if (!user) return;
+    const digits = cardNumber.replace(/\D/g, "");
+    if (!cardPaymentMethod || digits.length < 4) {
+      toast.error("Enter a payment method and card number.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const expParts = cardExpiration.split(/[/\-]/).map((p) => p.trim());
+      const expMonth = Number(expParts[0]) || undefined;
+      const expYearRaw = expParts[1];
+      const expYear = expYearRaw
+        ? Number(expYearRaw.length === 2 ? `20${expYearRaw}` : expYearRaw)
+        : undefined;
       await addCrmPaymentMethod(user.id, {
-        brand: newCardBrand,
-        last4: newCardLast4,
+        brand: cardPaymentMethod,
+        last4: digits.slice(-4),
+        expMonth,
+        expYear,
         isDefault: paymentMethods.length === 0,
       });
       const methods = await listCrmPaymentMethods(user.id);
       setPaymentMethods(methods);
-      setMessage("Payment method added.");
+      resetCardForm();
+      setShowAddCard(false);
+      toast.success("Payment method added.");
     } catch {
       setError("Unable to add payment method.");
+      toast.error("Unable to add payment method.");
     } finally {
       setSaving(false);
     }
   }
 
-  if (!user) {
-    return (
-      <main className="px-6 py-10 text-sm text-muted-foreground">
-        {error ?? "Loading user…"}
-      </main>
+  function onAddDocuments(files: FileList | null) {
+    if (!files?.length) return;
+    const next: UserDocument[] = Array.from(files).map((file) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+      name: file.name,
+      sizeLabel: formatBytes(file.size),
+      addedAt: new Date().toISOString(),
+      objectUrl: URL.createObjectURL(file),
+    }));
+    setDocuments((prev) => [...next, ...prev]);
+    toast.success(
+      next.length === 1 ? "Document added." : `${next.length} documents added.`,
     );
   }
 
-  return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-4 py-8 md:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/crm/users"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            ← All users
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            {userName(user)}
-          </h1>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {user.email} · ID: {user.id}
-          </p>
-        </div>
-        <Link
-          href={`/guardian/users/${user.id}/edit`}
-          className="text-sm text-primary hover:underline"
-          target="_blank"
-          rel="noopener noreferrer"
+  function onDeleteDocument(id: string) {
+    setDocuments((prev) => {
+      const target = prev.find((doc) => doc.id === id);
+      if (target) URL.revokeObjectURL(target.objectUrl);
+      return prev.filter((doc) => doc.id !== id);
+    });
+    toast.success("Document removed.");
+  }
+
+  if (!user) {
+    if (error) {
+      return (
+        <ClinexaPage width="wide">
+          <ErrorState title="Unable to load user">{error}</ErrorState>
+        </ClinexaPage>
+      );
+    }
+    return (
+      <ClinexaPage width="wide">
+        <PageSkeleton />
+      </ClinexaPage>
+    );
+  }
+
+  const currentUser = user;
+  const activeMeta =
+    SECTIONS.find((s) => s.id === activeSection) ?? SECTIONS[0]!;
+
+  const notesAndTagsRail = (
+    <div className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-4">
+      <aside
+        className={cn(
+          "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl shadow-sm",
+          notesCollapsed
+            ? "border-0 bg-slate-800 dark:bg-slate-900"
+            : cn(
+                "h-112 border border-slate-200/90 bg-[linear-gradient(180deg,#eef4fb_0%,#e7eef8_55%,#e2ebf5_100%)] ring-1 ring-slate-900/5",
+                "dark:border-slate-700 dark:bg-[linear-gradient(180deg,#1a2332_0%,#172033_100%)] dark:ring-slate-900/40",
+              ),
+        )}
+      >
+        <button
+          type="button"
+          className={cn(
+            "flex w-full shrink-0 items-start gap-2 bg-slate-800 px-4 py-3 text-left transition-colors hover:bg-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
+            !notesCollapsed && "border-b border-slate-700/80",
+          )}
+          aria-expanded={!notesCollapsed}
+          onClick={() => setNotesCollapsed((open) => !open)}
         >
-          Manage in Guardian →
-        </Link>
-      </div>
-
-      <ModuleDetailSearch
-        placeholder="Search users…"
-        searchFn={searchUsers}
-        onSelect={(id) => router.push(`/crm/users/${id}`)}
-      />
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {message ? (
-        <p className="text-sm text-emerald-600">{message}</p>
-      ) : null}
-
-      <div className="flex flex-col gap-6 lg:flex-row">
-        <nav className="flex flex-row flex-wrap gap-2 lg:w-48 lg:flex-col lg:gap-1">
-          {SECTIONS.map((section) => (
-            <a
-              key={section.id}
-              href={`#${section.id}`}
-              className="rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              {section.label}
-            </a>
-          ))}
-        </nav>
-
-        <div className="min-w-0 flex-1 space-y-4">
-          <Section id="profile" title="User Profile">
-            <form onSubmit={onSaveProfile} className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label htmlFor="firstName">First name</Label>
-                  <Input
-                    id="firstName"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                  />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold tracking-tight text-white">
+              Notes
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-300">
+              Shared across every section on this patient
+            </p>
+          </div>
+          <span
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-white"
+            aria-hidden
+          >
+            {notesCollapsed ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronUp className="size-4" />
+            )}
+          </span>
+        </button>
+        {!notesCollapsed ? (
+          <div className="flex min-h-0 flex-1 flex-col p-4 pt-3">
+            {internalNotes ? (
+              <div className="mb-3 shrink-0 rounded-xl border border-dashed border-slate-300 bg-white/70 p-3 text-sm dark:border-slate-600 dark:bg-slate-900/50">
+                <div className="text-[0.65rem] font-medium tracking-[0.06em] text-slate-500 uppercase dark:text-slate-400">
+                  Legacy internal notes
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="lastName">Last name</Label>
-                  <Input
-                    id="lastName"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="displayName">Display name</Label>
-                  <Input
-                    id="displayName"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="gender">Gender</Label>
-                  <select
-                    id="gender"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value as UserGender)}
-                  >
-                    {GENDERS.map((g) => (
-                      <option key={g} value={g}>{g}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="region">Region</Label>
-                  <Input
-                    id="region"
-                    value={region}
-                    onChange={(e) => setRegion(e.target.value)}
-                  />
-                </div>
+                <p className="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-100">
+                  {internalNotes}
+                </p>
               </div>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Saving…" : "Update profile"}
-              </Button>
-            </form>
-          </Section>
+            ) : null}
+            <NotesTimeline
+              notes={notes}
+              activities={[]}
+              onAddNote={onAddNote}
+              onDeleteNote={onDeleteNote}
+              addingNote={addingNote}
+              deletingNoteId={deletingNoteId}
+              variant="cool"
+              className="min-h-0 flex-1"
+            />
+          </div>
+        ) : null}
+      </aside>
 
-          <Section id="medical" title="Medical Profile">
+      <aside
+        className={cn(
+          "shrink-0 overflow-hidden rounded-2xl shadow-sm",
+          tagsCollapsed
+            ? "border-0 bg-slate-800 dark:bg-slate-900"
+            : cn(
+                "border border-slate-200/90 bg-[linear-gradient(180deg,#eef4fb_0%,#e7eef8_55%,#e2ebf5_100%)] ring-1 ring-slate-900/5",
+                "dark:border-slate-700 dark:bg-[linear-gradient(180deg,#1a2332_0%,#172033_100%)] dark:ring-slate-900/40",
+              ),
+        )}
+      >
+        <button
+          type="button"
+          className={cn(
+            "flex w-full items-start gap-2 bg-slate-800 px-4 py-3 text-left transition-colors hover:bg-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
+            !tagsCollapsed && "border-b border-slate-700/80",
+          )}
+          aria-expanded={!tagsCollapsed}
+          onClick={() => setTagsCollapsed((open) => !open)}
+        >
+          <div className="min-w-0 flex-1">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight text-white">
+              <Tag className="size-3.5" aria-hidden />
+              Tags
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-300">
+              Assign labels for triage and follow-up
+            </p>
+          </div>
+          <span
+            className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full text-white"
+            aria-hidden
+          >
+            {tagsCollapsed ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronUp className="size-4" />
+            )}
+          </span>
+        </button>
+        {!tagsCollapsed ? (
+          <div className="space-y-3 p-4">
+            {tags.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                No tags assigned yet.
+              </p>
+            ) : (
+              <ul className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => (
+                  <li
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                      aria-label={`Remove ${tag}`}
+                      onClick={() => removeTag(tag)}
+                    >
+                      <X className="size-3" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label className="text-slate-700 dark:text-slate-200">
+                  Add tag
+                </Label>
+                <AppSelect
+                  value={pendingTag}
+                  onValueChange={setPendingTag}
+                  aria-label="Add tag"
+                  placeholder={
+                    TAG_OPTIONS.every((option) => tags.includes(option))
+                      ? "All preset tags added"
+                      : "Add tag"
+                  }
+                  className="w-full"
+                  disabled={
+                    saving ||
+                    TAG_OPTIONS.every((option) => tags.includes(option))
+                  }
+                  options={TAG_OPTIONS.filter(
+                    (option) => !tags.includes(option),
+                  ).map((option) => ({ value: option, label: option }))}
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 shrink-0 bg-slate-800 text-white hover:bg-slate-700"
+                disabled={saving || !pendingTag.trim()}
+                onClick={() => commitPendingTag()}
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </aside>
+    </div>
+  );
+
+  function renderMedicalTab() {
+    switch (medicalTab) {
+      case "medical":
+        return (
+          <div className="space-y-3">
             <MedicalProfileEditor
               value={medicalProfile}
               onChange={setMedicalProfile}
               disabled={saving}
             />
-            <Button
-              type="button"
-              className="mt-3"
-              disabled={saving}
-              onClick={() => void onSaveProfile({ preventDefault: () => {} } as React.FormEvent)}
+          </div>
+        );
+      case "orders":
+        return orders.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No orders.</p>
+        ) : (
+          <ul className="space-y-2">
+            {orders.map((order) => (
+              <li
+                key={order.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5"
+              >
+                <Link
+                  href={`/crm/orders/${order.id}`}
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {order.orderNumber}
+                </Link>
+                <StatusBadge status={order.status} />
+              </li>
+            ))}
+          </ul>
+        );
+      case "subscriptions":
+        return subscriptions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No subscriptions.</p>
+        ) : (
+          <ul className="space-y-2">
+            {subscriptions.map((row) => (
+              <li
+                key={row.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5"
+              >
+                <Link
+                  href={`/crm/subscriptions/${row.id}`}
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {row.subscriptionNumber ?? row.id}
+                </Link>
+                <StatusBadge status={row.status} />
+              </li>
+            ))}
+          </ul>
+        );
+      case "prescriptions":
+        return (
+          <EmptyHint icon={Stethoscope}>
+            Prescription management is coming soon in a future phase.
+          </EmptyHint>
+        );
+      case "questionnaires":
+        return (
+          <EmptyHint icon={ClipboardList}>
+            Questionnaire responses are coming soon in a future phase.
+          </EmptyHint>
+        );
+      default:
+        return null;
+    }
+  }
+
+  function renderMain() {
+    switch (activeSection) {
+      case "profile":
+        return (
+          <SectionSurface
+            title="Profile"
+            description="Identity, contact details, and identity documents"
+            actions={
+              <Button
+                type="submit"
+                form="crm-user-profile-form"
+                className={cn(filterApplyButtonClassName, "h-9")}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Update profile"}
+              </Button>
+            }
+          >
+            <form
+              id="crm-user-profile-form"
+              onSubmit={(e) => void onSaveProfile(e)}
+              className="space-y-6"
             >
-              Save medical profile
-            </Button>
-          </Section>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                <UserAvatarThumb
+                  assetId={avatarMediaAssetId ?? profileImageMediaAssetId}
+                  name={displayName || firstName || "User"}
+                  size="lg"
+                  className="ring-2 ring-[#efd56a]/70 ring-offset-2 ring-offset-background"
+                />
+                <div className="min-w-0 space-y-1">
+                  <h3 className="truncate text-lg font-semibold tracking-tight">
+                    {displayName ||
+                      [firstName, lastName].filter(Boolean).join(" ") ||
+                      "Unnamed user"}
+                  </h3>
+                </div>
+              </div>
 
-          <Section id="orders" title="Orders">
-            {orders.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No orders.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {orders.map((order) => (
-                  <li key={order.id}>
-                    <Link
-                      href={`/crm/orders/${order.id}`}
-                      className="text-primary underline-offset-4 hover:underline"
-                    >
-                      {order.orderNumber}
-                    </Link>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {orderStatusLabel(order.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section id="subscriptions" title="Subscriptions">
-            {subscriptions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No subscriptions.</p>
-            ) : (
-              <ul className="space-y-2 text-sm">
-                {subscriptions.map((row) => (
-                  <li key={row.id}>
-                    <Link
-                      href={`/crm/subscriptions/${row.id}`}
-                      className="text-primary underline-offset-4 hover:underline"
-                    >
-                      {row.subscriptionNumber ?? row.id}
-                    </Link>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {subscriptionStatusLabel(row.status)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
-          <Section id="prescriptions" title="Prescriptions">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <Stethoscope className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>Prescription management is coming soon in a future phase.</p>
-            </div>
-          </Section>
-
-          <Section id="questionnaires" title="Questionnaires">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <ClipboardList className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>Questionnaire responses are coming soon in a future phase.</p>
-            </div>
-          </Section>
-
-          <Section id="addresses" title="Billing & Shipping addresses">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Billing address</div>
-                {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
-                  (field) => (
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-semibold tracking-tight">
+                    Contact details
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Keep identity fields current for fulfillment and outreach.
+                  </p>
+                </div>
+                <FieldGrid columns={2}>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="firstName">First name</Label>
                     <Input
-                      key={field}
-                      placeholder={field}
-                      value={billingAddress[field]}
+                      id="firstName"
+                      value={firstName}
                       onChange={(e) =>
-                        setBillingAddress((prev) => ({
-                          ...prev,
-                          [field]: e.target.value,
-                        }))
+                        setFirstName(sanitizePersonName(e.target.value))
                       }
                     />
-                  ),
-                )}
-              </div>
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Shipping address</div>
-                {(Object.keys(EMPTY_ADDRESS) as Array<keyof Address>).map(
-                  (field) => (
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="lastName">Last name</Label>
                     <Input
-                      key={field}
-                      placeholder={field}
-                      value={shippingAddress[field]}
+                      id="lastName"
+                      value={lastName}
                       onChange={(e) =>
-                        setShippingAddress((prev) => ({
-                          ...prev,
-                          [field]: e.target.value,
-                        }))
+                        setLastName(sanitizePersonName(e.target.value))
                       }
                     />
-                  ),
-                )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="displayName">Display name</Label>
+                    <Input
+                      id="displayName"
+                      value={displayName}
+                      onChange={(e) =>
+                        setDisplayName(sanitizeDisplayName(e.target.value))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phone">Phone</Label>
+                    <Input
+                      id="phone"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="(555) 123-4567"
+                      value={formatPhoneMask(phone)}
+                      onChange={(e) => setPhone(toPhoneDigits(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="gender">Gender</Label>
+                    <AppSelect
+                      value={gender}
+                      onValueChange={(next) => setGender(next as UserGender)}
+                      aria-label="Gender"
+                      className="w-full"
+                      options={GENDERS.map((g) => ({
+                        value: g,
+                        label: g,
+                      }))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="region">Region</Label>
+                    <AppSelect
+                      value={region}
+                      onValueChange={setRegion}
+                      aria-label="Region"
+                      className="w-full"
+                      options={[...ADDRESS_REGION_OPTIONS]}
+                    />
+                  </div>
+                </FieldGrid>
               </div>
-            </div>
-            <Button
-              type="button"
-              className="mt-3"
-              disabled={saving}
-              onClick={() => void onSaveProfile({ preventDefault: () => {} } as React.FormEvent)}
-            >
-              Save addresses
-            </Button>
-          </Section>
 
-          <Section id="payments" title="Payment Profiles">
+              <div
+                className={cn(
+                  "space-y-3 rounded-2xl border p-4 ring-1 sm:p-5",
+                  "border-[#d9d2c4] bg-[#f3efe6] ring-black/5",
+                  "dark:border-white/12 dark:bg-[#22252b] dark:[background-image:none] dark:ring-white/8",
+                )}
+              >
+                <div>
+                  <h3 className="text-sm font-semibold tracking-tight text-[#1c1c1c] dark:text-[#f4f1ea]">
+                    Identity images
+                  </h3>
+                  <p className="text-xs text-[#6b675f] dark:text-white/55">
+                    Profile photo, avatar, and insurance card — separate from
+                    contact fields above.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <UserMediaImageField
+                    label="Profile image"
+                    hint="Larger photo shown on this profile"
+                    value={profileImageMediaAssetId}
+                    onChange={setProfileImageMediaAssetId}
+                    aspect="portrait"
+                    tone="media"
+                  />
+                  <UserMediaImageField
+                    label="Avatar"
+                    hint="Circular image beside the user name in lists"
+                    value={avatarMediaAssetId}
+                    onChange={setAvatarMediaAssetId}
+                    aspect="square"
+                    rounded="full"
+                    tone="media"
+                  />
+                  <div className="sm:col-span-2 xl:col-span-1">
+                    <UserMediaImageField
+                      label="Insurance card"
+                      hint="Front of insurance / health card"
+                      value={healthCardMediaAssetId}
+                      onChange={setHealthCardMediaAssetId}
+                      aspect="wide"
+                      tone="media"
+                    />
+                  </div>
+                </div>
+              </div>
+            </form>
+          </SectionSurface>
+        );
+      case "medical":
+        return (
+          <SectionSurface
+            title="Medical Profile"
+            description={activeMeta.description}
+            actions={
+              medicalTab === "medical" ? (
+                <Button
+                  type="button"
+                  className={cn(filterApplyButtonClassName, "h-9")}
+                  disabled={saving}
+                  onClick={() => void onSaveProfile()}
+                >
+                  {saving ? "Saving…" : "Save medical profile"}
+                </Button>
+              ) : null
+            }
+          >
+            <div
+              role="tablist"
+              aria-label="Medical profile sections"
+              className="mb-4 flex flex-wrap gap-1.5 rounded-xl bg-muted/40 p-1"
+            >
+              {MEDICAL_TABS.map((tab) => {
+                const selected = medicalTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm transition-colors",
+                      selected
+                        ? "bg-[#1c1c1c] font-medium text-[#efd56a] shadow-sm dark:bg-[#efd56a] dark:text-[#1c1c1c]"
+                        : "text-muted-foreground hover:bg-background/80 hover:text-foreground",
+                    )}
+                    onClick={() => setMedicalTab(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            {renderMedicalTab()}
+          </SectionSurface>
+        );
+      case "payments":
+        return (
+          <SectionSurface
+            title="Payments"
+            description={activeMeta.description}
+            actions={
+              !showAddCard ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className={cn(filterApplyButtonClassName, "h-9")}
+                  onClick={() => {
+                    resetCardForm();
+                    setShowAddCard(true);
+                  }}
+                >
+                  <Plus className="size-4" aria-hidden />
+                  Add card
+                </Button>
+              ) : null
+            }
+          >
             {paymentMethods.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="mb-4 text-sm text-muted-foreground">
                 No saved payment methods.
               </p>
             ) : (
-              <ul className="space-y-2 text-sm">
+              <ul className="mb-4 space-y-2">
                 {paymentMethods.map((method) => (
                   <li
                     key={method.id}
-                    className="flex flex-wrap items-center gap-2 border-b border-border pb-2"
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5 text-sm"
                   >
-                    <span>
+                    <span className="min-w-0 flex-1 font-medium">
                       {method.brand ?? "Card"} ···{method.last4 ?? "????"}
-                      {method.isDefault ? " · default" : ""}
+                      {method.isDefault ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          Default
+                        </span>
+                      ) : null}
                     </span>
                     {!method.isDefault ? (
                       <Button
@@ -542,8 +1080,13 @@ export function CrmUserDetailPage() {
                         variant="outline"
                         disabled={saving}
                         onClick={() =>
-                          void makeCrmPaymentMethodDefault(user.id, method.id)
-                            .then(() => listCrmPaymentMethods(user.id))
+                          void makeCrmPaymentMethodDefault(
+                            currentUser.id,
+                            method.id,
+                          )
+                            .then(() =>
+                              listCrmPaymentMethods(currentUser.id),
+                            )
                             .then(setPaymentMethods)
                         }
                       >
@@ -556,8 +1099,8 @@ export function CrmUserDetailPage() {
                       variant="ghost"
                       disabled={saving || method.isDefault}
                       onClick={() =>
-                        void deleteCrmPaymentMethod(user.id, method.id)
-                          .then(() => listCrmPaymentMethods(user.id))
+                        void deleteCrmPaymentMethod(currentUser.id, method.id)
+                          .then(() => listCrmPaymentMethods(currentUser.id))
                           .then(setPaymentMethods)
                       }
                     >
@@ -567,57 +1110,318 @@ export function CrmUserDetailPage() {
                 ))}
               </ul>
             )}
-            <div className="mt-4 grid max-w-md gap-2 sm:grid-cols-2">
-              <Input
-                placeholder="Brand"
-                value={newCardBrand}
-                onChange={(e) => setNewCardBrand(e.target.value)}
-              />
-              <Input
-                placeholder="Last 4"
-                value={newCardLast4}
-                onChange={(e) => setNewCardLast4(e.target.value)}
-                maxLength={4}
-              />
-              <Button
-                type="button"
-                size="sm"
-                disabled={saving}
-                onClick={() => void onAddPaymentMethod()}
-              >
-                Add simulated card
-              </Button>
-            </div>
-          </Section>
 
-          <Section id="documents" title="Documents">
-            <div className="flex items-start gap-3 text-sm text-muted-foreground">
-              <FileText className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>
-                Document upload and management are not available in this phase.
-                This section is a placeholder for future document workflows.
-              </p>
-            </div>
-          </Section>
-
-          <Section id="notes" title="Notes">
-            {internalNotes ? (
-              <div className="mb-4 rounded-md border border-dashed border-border bg-muted/30 p-3 text-sm">
-                <div className="text-xs font-medium text-muted-foreground">
-                  Legacy internal notes blob
+            {showAddCard ? (
+              <div className="space-y-3 rounded-xl border border-border/70 bg-muted/15 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Add payment method</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setShowAddCard(false);
+                      resetCardForm();
+                    }}
+                  >
+                    Cancel
+                  </Button>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap">{internalNotes}</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Payment method</Label>
+                    <AppSelect
+                      value={cardPaymentMethod}
+                      onValueChange={setCardPaymentMethod}
+                      aria-label="Payment method"
+                      className="w-full"
+                      options={PAYMENT_METHOD_OPTIONS}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cardFirstName">First name</Label>
+                    <Input
+                      id="cardFirstName"
+                      autoComplete="off"
+                      value={cardFirstName}
+                      onChange={(e) => setCardFirstName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cardLastName">Last name</Label>
+                    <Input
+                      id="cardLastName"
+                      autoComplete="off"
+                      value={cardLastName}
+                      onChange={(e) => setCardLastName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="cardNumber">Card number</Label>
+                    <Input
+                      id="cardNumber"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="•••• •••• •••• ••••"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cardExpiration">Expiration date</Label>
+                    <Input
+                      id="cardExpiration"
+                      autoComplete="off"
+                      placeholder="MM/YY"
+                      value={cardExpiration}
+                      onChange={(e) => setCardExpiration(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cardCvv">CVV</Label>
+                    <Input
+                      id="cardCvv"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="•••"
+                      value={cardCvv}
+                      onChange={(e) => setCardCvv(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={cn(filterApplyButtonClassName, "h-9")}
+                    disabled={saving}
+                    onClick={() => void onAddPaymentMethod()}
+                  >
+                    {saving ? "Saving…" : "Save card"}
+                  </Button>
+                </div>
               </div>
             ) : null}
-            <NotesTimeline
-              notes={notes}
-              activities={[]}
-              onAddNote={onAddNote}
-              addingNote={addingNote}
+          </SectionSurface>
+        );
+      case "addresses":
+        return (
+          <SectionSurface
+            title="Billing & Shipping"
+            description={activeMeta.description}
+            actions={
+              <Button
+                type="button"
+                className={cn(filterApplyButtonClassName, "h-9")}
+                disabled={saving}
+                onClick={() => void onSaveProfile()}
+              >
+                {saving ? "Saving…" : "Save addresses"}
+              </Button>
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <AddressFieldsEditor
+                label="Billing address"
+                value={billingAddress}
+                onChange={setBillingAddress}
+              />
+              <AddressFieldsEditor
+                label="Shipping address"
+                value={shippingAddress}
+                onChange={setShippingAddress}
+              />
+            </div>
+          </SectionSurface>
+        );
+      case "documents":
+        return (
+          <SectionSurface
+            title="Documents"
+            description={activeMeta.description}
+            actions={
+              <>
+                <input
+                  ref={fileInputRef}
+                  id={fileInputId}
+                  type="file"
+                  className="sr-only"
+                  multiple
+                  onChange={(e) => {
+                    onAddDocuments(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className={cn(filterApplyButtonClassName, "h-9")}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Plus className="size-4" aria-hidden />
+                  Add Doc
+                </Button>
+              </>
+            }
+          >
+            {documents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No documents yet. Use Add Doc to attach files for this patient.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {documents.map((doc) => (
+                  <li
+                    key={doc.id}
+                    className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/20 px-3 py-2.5 text-sm"
+                  >
+                    <FileText
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{doc.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {doc.sizeLabel}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-900"
+                      render={
+                        <a
+                          href={doc.objectUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      }
+                    >
+                      View
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => onDeleteDocument(doc.id)}
+                    >
+                      Delete
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </SectionSurface>
+        );
+      default:
+        return null;
+    }
+  }
+
+  return (
+    <ClinexaPage width="wide" className="gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href="/crm/users"
+          className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+        >
+          ← All users
+        </Link>
+        <Button
+          size="sm"
+          className={crossAppNavButtonClassName}
+          render={
+            <Link
+              href={`/guardian/users/${currentUser.id}/edit`}
+              target="_blank"
+              rel="noopener noreferrer"
             />
-          </Section>
-        </div>
+          }
+        >
+          Manage in Guardian
+        </Button>
       </div>
-    </main>
+      {error ? (
+        <p className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <PageBody className="gap-4">
+        <nav
+          aria-label="User sections"
+          className="flex gap-1.5 overflow-x-auto pb-1 lg:hidden"
+        >
+          {SECTIONS.map((section) => {
+            const selected = activeSection === section.id;
+            const Icon = section.icon;
+            return (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => goToSection(section.id)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors",
+                  selected
+                    ? "border-[#1c1c1c] bg-[#1c1c1c] text-[#efd56a]"
+                    : "border-border bg-card text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="size-3.5" aria-hidden />
+                {section.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[15rem_minmax(0,1fr)_19rem] lg:items-start xl:grid-cols-[16rem_minmax(0,1fr)_20rem]">
+          <nav
+            aria-label="User sections"
+            className={cn(
+              "hidden overflow-hidden rounded-2xl border p-1.5 shadow-sm lg:sticky lg:top-4 lg:block",
+              "border-border bg-[linear-gradient(180deg,#ece9e3_0%,#e4e0d8_100%)] ring-1 ring-black/5",
+              "dark:border-white/12 dark:bg-[#1c1e22] dark:[background-image:none] dark:ring-white/10",
+            )}
+          >
+            <ul className="flex flex-col gap-1">
+              {SECTIONS.map((section) => {
+                const selected = activeSection === section.id;
+                const Icon = section.icon;
+                return (
+                  <li key={section.id}>
+                    <button
+                      type="button"
+                      onClick={() => goToSection(section.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                        selected
+                          ? "bg-[#1c1c1c] font-medium text-[#efd56a] shadow-sm dark:bg-[#efd56a] dark:text-[#1c1c1c]"
+                          : "text-[#4a463e] hover:bg-white/60 dark:text-[#c8c4bc] dark:hover:bg-white/10 dark:hover:text-white",
+                      )}
+                    >
+                      <Icon
+                        className="size-4 shrink-0 opacity-80"
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate">{section.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+
+          <div className="min-w-0 [perspective:1400px]">
+            <div key={activeSection} className="crm-section-flip min-w-0">
+              {renderMain()}
+            </div>
+          </div>
+
+          <div className="min-w-0 lg:block">{notesAndTagsRail}</div>
+        </div>
+      </PageBody>
+    </ClinexaPage>
   );
 }

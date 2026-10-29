@@ -70,12 +70,12 @@ export function AppSidebar() {
     <Sidebar
       collapsible="icon"
       className={cn(
-        // Soft cream rail — CRM slightly warmer, Guardian slightly inkier brand band via header.
-        "[&_[data-slot=sidebar-inner]]:!bg-[linear-gradient(180deg,#f8f5ef_0%,#f3efe8_55%,#efe6d4_100%)]",
+        // Light rail: cool paper surface; dark mode unchanged.
+        "[&_[data-slot=sidebar-inner]]:!bg-[linear-gradient(180deg,#ece9e3_0%,#e4e0d8_55%,#dcd6cb_100%)]",
         "dark:[&_[data-slot=sidebar-inner]]:!bg-[linear-gradient(180deg,#1a1814_0%,#1c1e22_55%,#221e18_100%)]",
       )}
     >
-      <SidebarHeader className="relative h-14 shrink-0 gap-0 overflow-hidden border-b border-black/8 bg-[#1c1c1c] p-0 text-white dark:border-white/10 dark:bg-[#121417]">
+      <SidebarHeader className="relative h-14 shrink-0 gap-0 overflow-hidden border-b border-black/8 bg-[#1c1c1c] p-0 text-white dark:border-white/15 dark:bg-[#121417]">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(239,213,106,0.22),transparent_55%)] opacity-80"
@@ -96,7 +96,7 @@ export function AppSidebar() {
           </span>
         </div>
       </SidebarHeader>
-      <SidebarContent className="gap-1 px-2 py-2">
+      <SidebarContent className="gap-2 px-2 pt-3.5 pb-2">
         {isGuardian ? (
           <GuardianNav
             items={visibleNav}
@@ -120,9 +120,9 @@ function CrmNav({
   pathname: string;
 }) {
   return (
-    <SidebarGroup className="gap-0 overflow-hidden rounded-xl bg-white/55 p-0.5 ring-1 ring-black/5 backdrop-blur-sm dark:bg-white/6 dark:ring-white/8">
-      <SidebarGroupContent className="p-0.5">
-        <SidebarMenu className="gap-px">
+    <SidebarGroup className="gap-0 overflow-hidden rounded-xl bg-white/55 p-1 ring-1 ring-black/5 backdrop-blur-sm dark:bg-white/6 dark:ring-white/8">
+      <SidebarGroupContent className="px-0.5 pt-1.5 pb-0.5">
+        <SidebarMenu className="gap-0.5">
           {items.map((item) => (
             <NavLinkItem
               key={item.key}
@@ -253,9 +253,9 @@ function GuardianNav({
                   aria-labelledby={`${panelId}-trigger`}
                   aria-hidden={!isOpen}
                   inert={!isOpen ? true : undefined}
-                  className="px-0.5 pb-0.5"
+                  className="px-0.5 pt-1 pb-1"
                 >
-                  <SidebarMenu className="gap-px">
+                  <SidebarMenu className="gap-1">
                     {section.items.map((item) => (
                       <NavLinkItem
                         key={item.key}

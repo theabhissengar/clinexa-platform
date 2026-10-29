@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { getInventoryDashboard } from "../api/inventory-api";
@@ -20,9 +19,6 @@ export function InventoryDashboardPage() {
   return (
     <main className="px-6 py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Inventory</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Ledger-first stock administration (Guardian only).
-      </p>
       <InventorySubnav />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {!data && !error ? (
@@ -52,17 +48,6 @@ export function InventoryDashboardPage() {
           ))}
         </div>
       ) : null}
-      <div className="mt-8 flex gap-3 text-sm">
-        <Link className="text-primary underline" href="/guardian/inventory/stock">
-          View stock
-        </Link>
-        <Link
-          className="text-primary underline"
-          href="/guardian/inventory/receiving"
-        >
-          Receive stock
-        </Link>
-      </div>
     </main>
   );
 }

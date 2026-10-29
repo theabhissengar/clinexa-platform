@@ -1,9 +1,35 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import {
+  AppSelect,
+  ClearableSearchInput,
+  ClickableTableRow,
+  ClinexaPage,
+  CollapsibleFilterFields,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
+} from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { listAdminSubscriptionPlans } from "@/features/subscriptions/api/admin-subscription-plans-api";
 import {
@@ -15,8 +41,6 @@ import type {
   SubscriptionPlan,
   SubscriptionPlanStatus,
 } from "@/features/subscriptions/types";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
 
 const STATUS_TABS: Array<{
   key: SubscriptionPlanStatus | "ALL";
@@ -30,7 +54,7 @@ const STATUS_TABS: Array<{
 ];
 
 const STATUS_KEYS = new Set(STATUS_TABS.map((tab) => tab.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): SubscriptionPlanStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as SubscriptionPlanStatus | "ALL")) {
@@ -45,6 +69,12 @@ function parsePage(value: string | null): number {
   return Math.floor(n) - 1;
 }
 
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
+}
+
 export function GuardianSubscriptionPlansListPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -53,6 +83,7 @@ export function GuardianSubscriptionPlansListPage() {
   const appliedStatus = parseStatus(searchParams.get("status"));
   const appliedQ = searchParams.get("q") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
 
   const [draftQ, setDraftQ] = useState(appliedQ);
   const [syncedQ, setSyncedQ] = useState(appliedQ);
@@ -61,8 +92,9 @@ export function GuardianSubscriptionPlansListPage() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   if (appliedQ !== syncedQ) {
     setSyncedQ(appliedQ);
@@ -79,6 +111,10 @@ export function GuardianSubscriptionPlansListPage() {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
+  function applySearch() {
+    writeParams({ q: draftQ.trim() || null, page: "1" });
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function run() {
@@ -87,8 +123,8 @@ export function GuardianSubscriptionPlansListPage() {
         const result = await listAdminSubscriptionPlans({
           q: appliedQ || undefined,
           status: appliedStatus === "ALL" ? undefined : appliedStatus,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -106,150 +142,173 @@ export function GuardianSubscriptionPlansListPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedQ, appliedStatus, page]);
+  }, [appliedQ, appliedStatus, page, pageSize]);
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 px-6 py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link
-            href="/guardian/subscriptions"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-          >
-            ← Subscriptions
-          </Link>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-            Subscription plans
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Configure and publish plans. Archive uses plan configure
-            permission, not subscription Class D.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          render={<Link href="/guardian/subscriptions/plans/new" />}
-        >
-          Create plan
-        </Button>
-      </div>
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applySearch();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search plans"
+                className="w-full"
+                aria-label="Search plans"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applySearch()}
+              >
+                Apply
+              </Button>
+              <Button
+                size="sm"
+                render={<Link href="/guardian/subscriptions/plans/new" />}
+              >
+                Create plan
+              </Button>
+            </div>
+          </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const active = appliedStatus === tab.key;
-            const count =
-              tab.key === "ALL" ? statusCounts.ALL : statusCounts[tab.key];
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className={filterFieldsRowClassName}>
+              <FilterControl
+                label="Status"
+                className={filterControlCompactClassName}
+              >
+                <AppSelect
+                  value={appliedStatus}
+                  onValueChange={(next) =>
                     writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
+                      status: next === "ALL" ? null : next,
                       page: "1",
                     })
                   }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
-                  }
-                >
-                  {tab.label}
-                  {typeof count === "number" ? (
-                    <span className="ml-1 text-muted-foreground">({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            writeParams({ q: draftQ.trim() || null, page: "1" });
-          }}
+                  aria-label="Filter by status"
+                  options={STATUS_TABS.map((tab) => {
+                    const count =
+                      tab.key === "ALL"
+                        ? statusCounts.ALL
+                        : statusCounts[tab.key];
+                    return {
+                      value: tab.key,
+                      label:
+                        typeof count === "number"
+                          ? `${tab.label} (${count})`
+                          : tab.label,
+                    };
+                  })}
+                />
+              </FilterControl>
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
+
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No plans found"
+              description="Try a different search or status filter."
+            />
+          }
+          error={
+            error ? (
+              <ErrorState title="Unable to load plans">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
         >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search plans"
-            className="w-52"
-            aria-label="Search plans"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search
-          </Button>
-        </form>
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading plans…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No plans found.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-225 text-left text-sm">
-            <thead className="border-b border-border bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Plan</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Interval</th>
-                <th className="px-3 py-2 font-medium">Price</th>
-                <th className="px-3 py-2 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((plan) => (
-                <tr key={plan.id} className="border-b border-border">
-                  <td className="px-3 py-2">
-                    <div className="font-medium">{plan.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {plan.slug}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    {statusLabel(plan.lifecycleStatus)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {intervalLabel(plan.billingInterval, plan.intervalCount)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {formatMoneyCents(plan.priceCents, plan.currency)}
-                  </td>
-                  <td className="px-3 py-2">
-                    <Link
-                      href={`/guardian/subscriptions/plans/${plan.id}/edit`}
-                      className="text-primary underline-offset-4 hover:underline"
-                    >
-                      Edit
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: String(page) })}
-        onNext={() => writeParams({ page: String(page + 2) })}
-      />
-    </main>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Plan</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Interval</TableHead>
+              <TableHead>Price</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((plan) => (
+              <ClickableTableRow
+                href={`/guardian/subscriptions/plans/${plan.id}/edit`}
+                key={plan.id}
+              >
+                <TableCell>
+                  <div className="font-medium">{plan.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {plan.slug}
+                  </div>
+                </TableCell>
+                <TableCell>{statusLabel(plan.lifecycleStatus)}</TableCell>
+                <TableCell>
+                  {intervalLabel(plan.billingInterval, plan.intervalCount)}
+                </TableCell>
+                <TableCell>
+                  {formatMoneyCents(plan.priceCents, plan.currency)}
+                </TableCell>
+                <TableCell>
+                  <Link
+                    href={`/guardian/subscriptions/plans/${plan.id}/edit`}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    Edit
+                  </Link>
+                </TableCell>
+              </ClickableTableRow>
+            ))}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

@@ -1,13 +1,38 @@
 "use client";
 
+import { Inbox } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import {
+  AppSelect,
+  ClearableSearchInput,
+  ClinexaPage,
+  CollapsibleFilterFields,
+  DEFAULT_LIST_PAGE_SIZE,
+  DataTable,
+  DateField,
+  EmptyState,
+  ErrorState,
+  FilterControl,
+  FilterFieldsToggle,
+  FilterPanel,
+  LIST_PAGE_SIZE_OPTIONS,
+  ListPaginationBar,
+  PageBody,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  filterApplyButtonClassName,
+  filterControlCompactClassName,
+  filterFieldsRowClassName,
+} from "@/components/patterns";
 import { RequirePermission } from "@/components/auth/require-permission";
-import { ClearableSearchInput } from "@/features/products/components/clearable-search-input";
-import { ListPaginationBar } from "@/features/products/components/list-pagination-bar";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Permissions } from "@/features/auth/permissions";
 import {
   archiveUser,
@@ -23,6 +48,7 @@ import type {
   UserStatus,
   UserStatusCounts,
 } from "@/features/users/types";
+import { cn } from "@/lib/utils";
 
 const STATUS_TABS: Array<{ key: UserStatus | "ALL"; label: string }> = [
   { key: "ALL", label: "All" },
@@ -34,7 +60,7 @@ const STATUS_TABS: Array<{ key: UserStatus | "ALL"; label: string }> = [
   { key: "DELETED", label: "Deleted" },
 ];
 const STATUS_KEYS = new Set(STATUS_TABS.map((t) => t.key));
-const PAGE_SIZE = 20;
+const PAGE_SIZE_SET = new Set<number>(LIST_PAGE_SIZE_OPTIONS);
 
 function parseStatus(value: string | null): UserStatus | "ALL" {
   if (value && STATUS_KEYS.has(value as UserStatus | "ALL")) {
@@ -47,6 +73,12 @@ function parsePage(value: string | null): number {
   const n = Number(value ?? "1");
   if (!Number.isFinite(n) || n < 1) return 0;
   return Math.floor(n) - 1;
+}
+
+function parsePageSize(value: string | null): number {
+  const n = Number(value ?? DEFAULT_LIST_PAGE_SIZE);
+  if (PAGE_SIZE_SET.has(n)) return n;
+  return DEFAULT_LIST_PAGE_SIZE;
 }
 
 function formatDate(value?: string | null) {
@@ -76,10 +108,35 @@ export function UsersListPage() {
   const appliedStatus = parseStatus(searchParams.get("status"));
   const appliedQ = searchParams.get("q") ?? "";
   const appliedRole = searchParams.get("role") ?? "";
+  const appliedCreatedFrom = searchParams.get("createdFrom") ?? "";
+  const appliedCreatedTo = searchParams.get("createdTo") ?? "";
+  const appliedUpdatedFrom = searchParams.get("updatedFrom") ?? "";
+  const appliedUpdatedTo = searchParams.get("updatedTo") ?? "";
   const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("take"));
+
+  const appliedKey = [
+    appliedQ,
+    appliedCreatedFrom,
+    appliedCreatedTo,
+    appliedUpdatedFrom,
+    appliedUpdatedTo,
+  ].join("|");
 
   const [draftQ, setDraftQ] = useState(appliedQ);
-  const [syncedQ, setSyncedQ] = useState(appliedQ);
+  const [draftCreatedFrom, setDraftCreatedFrom] = useState(
+    appliedCreatedFrom.slice(0, 10),
+  );
+  const [draftCreatedTo, setDraftCreatedTo] = useState(
+    appliedCreatedTo.slice(0, 10),
+  );
+  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState(
+    appliedUpdatedFrom.slice(0, 10),
+  );
+  const [draftUpdatedTo, setDraftUpdatedTo] = useState(
+    appliedUpdatedTo.slice(0, 10),
+  );
+  const [syncedKey, setSyncedKey] = useState(appliedKey);
   const [items, setItems] = useState<AdminUser[]>([]);
   const [total, setTotal] = useState(0);
   const [statusCounts, setStatusCounts] = useState<UserStatusCounts | null>(
@@ -91,13 +148,18 @@ export function UsersListPage() {
   const [loading, setLoading] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  // Sync the draft search box when the URL applied filter changes (back/forward/clear).
-  if (appliedQ !== syncedQ) {
-    setSyncedQ(appliedQ);
+  // Sync draft fields when URL applied filters change (back/forward/clear).
+  if (appliedKey !== syncedKey) {
+    setSyncedKey(appliedKey);
     setDraftQ(appliedQ);
+    setDraftCreatedFrom(appliedCreatedFrom.slice(0, 10));
+    setDraftCreatedTo(appliedCreatedTo.slice(0, 10));
+    setDraftUpdatedFrom(appliedUpdatedFrom.slice(0, 10));
+    setDraftUpdatedTo(appliedUpdatedTo.slice(0, 10));
   }
 
   function writeParams(patch: Record<string, string | null | undefined>) {
@@ -122,8 +184,12 @@ export function UsersListPage() {
           q: appliedQ || undefined,
           status: appliedStatus === "ALL" ? undefined : appliedStatus,
           role: appliedRole || undefined,
-          skip: page * PAGE_SIZE,
-          take: PAGE_SIZE,
+          createdFrom: appliedCreatedFrom || undefined,
+          createdTo: appliedCreatedTo || undefined,
+          updatedFrom: appliedUpdatedFrom || undefined,
+          updatedTo: appliedUpdatedTo || undefined,
+          skip: page * pageSize,
+          take: pageSize,
         });
         if (cancelled) return;
         setItems(result.items);
@@ -141,7 +207,18 @@ export function UsersListPage() {
     return () => {
       cancelled = true;
     };
-  }, [appliedQ, appliedStatus, appliedRole, page, reloadToken]);
+  }, [
+    appliedQ,
+    appliedStatus,
+    appliedRole,
+    appliedCreatedFrom,
+    appliedCreatedTo,
+    appliedUpdatedFrom,
+    appliedUpdatedTo,
+    page,
+    pageSize,
+    reloadToken,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,8 +232,23 @@ export function UsersListPage() {
     };
   }, []);
 
-  function applySearch() {
-    writeParams({ q: draftQ.trim() || null, page: "1" });
+  function applyFilters() {
+    writeParams({
+      q: draftQ.trim() || null,
+      createdFrom: draftCreatedFrom
+        ? new Date(draftCreatedFrom).toISOString()
+        : null,
+      createdTo: draftCreatedTo
+        ? new Date(`${draftCreatedTo}T23:59:59.999Z`).toISOString()
+        : null,
+      updatedFrom: draftUpdatedFrom
+        ? new Date(draftUpdatedFrom).toISOString()
+        : null,
+      updatedTo: draftUpdatedTo
+        ? new Date(`${draftUpdatedTo}T23:59:59.999Z`).toISOString()
+        : null,
+      page: "1",
+    });
   }
 
   async function onArchive(id: string) {
@@ -199,136 +291,220 @@ export function UsersListPage() {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Administrative user lifecycle. Destructive actions are Class D
-            gated and never appear in CRM.
+    <ClinexaPage width="wide" className="gap-6">
+      <PageBody>
+        {message ? (
+          <p className="text-sm text-success" role="status">
+            {message}
           </p>
-        </div>
-        <Button render={<Link href="/guardian/users/new" />}>Add user</Button>
-      </div>
+        ) : null}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-2 text-sm">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {STATUS_TABS.map((tab, index) => {
-            const count = statusCounts?.[tab.key];
-            const active = appliedStatus === tab.key;
-            return (
-              <span key={tab.key} className="inline-flex items-center gap-3">
-                {index > 0 ? (
-                  <span className="text-muted-foreground/40">|</span>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() =>
+        <FilterPanel>
+          <div className="grid grid-cols-1 items-center gap-2 md:grid-cols-[minmax(0,1fr)_minmax(12rem,min(100%,28rem))_minmax(0,1fr)]">
+            <div className="order-2 flex justify-start md:order-1">
+              <FilterFieldsToggle
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+              />
+            </div>
+            <form
+              className="order-1 w-full min-w-0 md:order-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyFilters();
+              }}
+            >
+              <ClearableSearchInput
+                value={draftQ}
+                onChange={setDraftQ}
+                onClear={() => {
+                  setDraftQ("");
+                  if (appliedQ) writeParams({ q: null, page: "1" });
+                }}
+                placeholder="Search users"
+                className="w-full"
+                aria-label="Search users"
+              />
+              <button type="submit" className="sr-only">
+                Apply
+              </button>
+            </form>
+            <div className="order-3 flex flex-wrap items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className={filterApplyButtonClassName}
+                onClick={() => applyFilters()}
+              >
+                Apply
+              </Button>
+              <Button render={<Link href="/guardian/users/new" />}>
+                Add user
+              </Button>
+            </div>
+          </div>
+
+          <CollapsibleFilterFields open={filtersOpen}>
+            <div className={filterFieldsRowClassName}>
+              <FilterControl label="Status" className={filterControlCompactClassName}>
+                <AppSelect
+                  value={appliedStatus}
+                  onValueChange={(next) =>
                     writeParams({
-                      status: tab.key === "ALL" ? null : tab.key,
+                      status: next === "ALL" ? null : next,
                       page: "1",
                     })
                   }
-                  className={
-                    active
-                      ? "font-medium text-foreground"
-                      : "text-primary hover:underline"
+                  aria-label="Filter by status"
+                  options={STATUS_TABS.map((tab) => {
+                    const count = statusCounts?.[tab.key];
+                    return {
+                      value: tab.key,
+                      label:
+                        count !== undefined
+                          ? `${tab.label} (${count})`
+                          : tab.label,
+                    };
+                  })}
+                />
+              </FilterControl>
+              <FilterControl label="Role" className={filterControlCompactClassName}>
+                <AppSelect
+                  value={appliedRole}
+                  onValueChange={(next) =>
+                    writeParams({ role: next || null, page: "1" })
                   }
+                  aria-label="Filter by role"
+                  placeholder="All roles"
+                  options={[
+                    { value: "", label: "All roles" },
+                    ...roles.map((role) => ({
+                      value: role.code,
+                      label: role.name,
+                    })),
+                  ]}
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created from"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftCreatedFrom}
+                  onChange={setDraftCreatedFrom}
+                  aria-label="Created from"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Created to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftCreatedTo}
+                  onChange={setDraftCreatedTo}
+                  aria-label="Created to"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Updated from"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftUpdatedFrom}
+                  onChange={setDraftUpdatedFrom}
+                  aria-label="Updated from"
+                />
+              </FilterControl>
+              <FilterControl
+                label="Updated to"
+                className={filterControlCompactClassName}
+              >
+                <DateField
+                  value={draftUpdatedTo}
+                  onChange={setDraftUpdatedTo}
+                  aria-label="Updated to"
+                />
+              </FilterControl>
+              {appliedRole ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-9 shrink-0"
+                  onClick={() => writeParams({ role: null, page: "1" })}
                 >
-                  {tab.label}
-                  {count !== undefined ? (
-                    <span className="text-muted-foreground"> ({count})</span>
-                  ) : null}
-                </button>
-              </span>
-            );
-          })}
-        </div>
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            applySearch();
-          }}
-        >
-          <ClearableSearchInput
-            value={draftQ}
-            onChange={setDraftQ}
-            onClear={() => {
-              setDraftQ("");
-              if (appliedQ) writeParams({ q: null, page: "1" });
-            }}
-            placeholder="Search users"
-            className="w-52"
-            aria-label="Search users"
-          />
-          <Button type="submit" size="sm" variant="outline">
-            Search users
-          </Button>
-        </form>
-      </div>
+                  Clear role
+                </Button>
+              ) : null}
+            </div>
+          </CollapsibleFilterFields>
+        </FilterPanel>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="h-8 rounded-md border border-border bg-background px-2 text-sm"
-          value={appliedRole}
-          onChange={(e) =>
-            writeParams({ role: e.target.value || null, page: "1" })
+        <DataTable
+          framed
+          stickyFirstColumn
+          loading={loading}
+          empty={!loading && !error && items.length === 0}
+          emptyState={
+            <EmptyState
+              icon={<Inbox />}
+              title="No users found"
+              description="Try a different search, status, role, or date filter."
+            />
           }
-          aria-label="Filter by role"
+          error={
+            error ? (
+              <ErrorState title="Unable to load users">{error}</ErrorState>
+            ) : undefined
+          }
+          footer={
+            <ListPaginationBar
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageSizeChange={(next) =>
+                writeParams({
+                  take:
+                    next === DEFAULT_LIST_PAGE_SIZE ? null : String(next),
+                  page: "1",
+                })
+              }
+              onPrev={() =>
+                writeParams({ page: page <= 0 ? null : String(page) })
+              }
+              onNext={() =>
+                writeParams({ page: String(Math.min(pageCount, page + 2)) })
+              }
+            />
+          }
         >
-          <option value="">All roles</option>
-          {roles.map((role) => (
-            <option key={role.code} value={role.code}>
-              {role.name}
-            </option>
-          ))}
-        </select>
-        {appliedRole ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => writeParams({ role: null, page: "1" })}
-          >
-            Clear role filter
-          </Button>
-        ) : null}
-      </div>
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {message ? (
-        <p className="text-sm text-emerald-600">{message}</p>
-      ) : null}
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="overflow-x-auto rounded-md border border-border">
-          <table className="w-full min-w-240 text-left text-sm">
-            <thead className="bg-muted/40 text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Roles</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">2FA</th>
-                <th className="px-3 py-2 font-medium">Registered</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((user) => {
-                const editHref = `/guardian/users/${user.id}/edit`;
-                const isArchived = user.status === "ARCHIVED";
-                const isDeleted = user.status === "DELETED";
-                const canRestore = isArchived || isDeleted;
-                return (
-                  <tr
-                    key={user.id}
-                    className="group border-t border-border align-top hover:bg-muted/20"
-                    onMouseEnter={() => setHoveredId(user.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  >
-                    <td className="px-3 py-3">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Roles</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>2FA</TableHead>
+              <TableHead>Created At</TableHead>
+              <TableHead>Updated At</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((user) => {
+              const editHref = `/guardian/users/${user.id}/edit`;
+              const isArchived = user.status === "ARCHIVED";
+              const isDeleted = user.status === "DELETED";
+              const canRestore = isArchived || isDeleted;
+              return (
+                <TableRow
+                  key={user.id}
+                  className="group align-top"
+                  onMouseEnter={() => setHoveredId(user.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                >
+                  <TableCell>
+                    <div className="min-w-0">
                       <Link
                         href={editHref}
                         className="font-semibold text-primary hover:underline"
@@ -336,16 +512,13 @@ export function UsersListPage() {
                         {userName(user)}
                       </Link>
                       <div
-                        className={`mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity ${
+                        className={cn(
+                          "mt-1 flex flex-wrap items-center gap-x-1 text-xs leading-relaxed text-primary transition-opacity",
                           hoveredId === user.id
                             ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100"
-                        }`}
+                            : "opacity-0 group-hover:opacity-100",
+                        )}
                       >
-                        <Link href={editHref} className="hover:underline">
-                          Edit
-                        </Link>
-                        <span className="text-muted-foreground">|</span>
                         {canRestore ? (
                           <RequirePermission
                             permission={Permissions.ADM_RESTORE_USER}
@@ -395,51 +568,32 @@ export function UsersListPage() {
                           Send reset
                         </button>
                       </div>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {user.email}
-                    </td>
-                    <td className="px-3 py-3">
-                      {user.roles.length
-                        ? user.roles.map((r) => r.name).join(", ")
-                        : "—"}
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      <span className="capitalize">
-                        {user.status.replace(/_/g, " ").toLowerCase()}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">—</td>
-                    <td className="px-3 py-3 text-muted-foreground">
-                      {formatDate(user.createdAt)}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!items.length ? (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-muted-foreground"
-                  >
-                    No users found.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <ListPaginationBar
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        onPrev={() => writeParams({ page: page <= 0 ? null : String(page) })}
-        onNext={() =>
-          writeParams({ page: String(Math.min(pageCount, page + 2)) })
-        }
-      />
-    </main>
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-48 truncate text-muted-foreground">
+                    {user.email}
+                  </TableCell>
+                  <TableCell>
+                    {user.roles.length
+                      ? user.roles.map((r) => r.name).join(", ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={user.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">—</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(user.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDate(user.updatedAt)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </DataTable>
+      </PageBody>
+    </ClinexaPage>
   );
 }

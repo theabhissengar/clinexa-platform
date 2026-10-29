@@ -11,7 +11,7 @@ import {
   getAdminOrder,
   updateAdminOrder,
 } from "@/features/orders/api/admin-orders-api";
-import { formatDateTime, statusLabel } from "@/features/orders/lib/format";
+import { formatDateTime, productStatusLabel } from "@/features/orders/lib/format";
 import type { OrderDetail } from "@/features/orders/types";
 import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
 
@@ -179,7 +179,7 @@ export function GuardianOrderEditPage() {
           Edit order
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Status {statusLabel(order.status)} · updated{" "}
+          Status {productStatusLabel(order.status)} · updated{" "}
           {formatDateTime(order.updatedAt)}. Includes Guardian admin tags and
           reconciliation flags.
         </p>

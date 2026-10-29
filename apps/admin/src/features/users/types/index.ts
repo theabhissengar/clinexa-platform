@@ -23,6 +23,8 @@ export type StaffProfileRef = {
 } | null;
 
 export type AddressSnapshot = {
+  firstName?: string;
+  lastName?: string;
   line1?: string;
   line2?: string;
   city?: string;
@@ -86,6 +88,7 @@ export type UserNote = {
   id: string;
   userId: string;
   authorUserId: string;
+  authorName?: string | null;
   body: string;
   visibility: NoteVisibility;
   createdAt: string;
@@ -116,6 +119,10 @@ export type OperationalUser = {
   gender: UserGender;
   region: string | null;
   dateOfBirth: string | null;
+  avatarMediaAssetId: string | null;
+  profileImageMediaAssetId: string | null;
+  healthCardMediaAssetId: string | null;
+  tags: string[];
   billingAddress: AddressSnapshot | null;
   shippingAddress: AddressSnapshot | null;
   internalNotes: string | null;
@@ -190,6 +197,10 @@ export type UpdateUserOperationalPayload = {
   dateOfBirth?: string | null;
   gender?: UserGender;
   region?: string | null;
+  avatarMediaAssetId?: string | null;
+  profileImageMediaAssetId?: string | null;
+  healthCardMediaAssetId?: string | null;
+  tags?: string[];
   internalNotes?: string | null;
   medicalProfile?: MedicalProfile | null;
   billingAddress?: AddressSnapshot | null;

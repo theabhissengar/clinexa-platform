@@ -8,6 +8,7 @@ import { isAxiosError } from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatPhoneMask, toPhoneDigits } from "@/features/users/lib/phone";
 import { Roles } from "@/features/auth/permissions";
 import { createStaffUser, listRoles } from "@/features/users/api/users-api";
 import type { Role } from "@/features/users/types";
@@ -259,8 +260,11 @@ export function UserCreatePage() {
             <Label htmlFor="phone">Phone</Label>
             <Input
               id="phone"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="(555) 123-4567"
+              value={formatPhoneMask(phone)}
+              onChange={(e) => setPhone(toPhoneDigits(e.target.value))}
             />
           </div>
         </div>

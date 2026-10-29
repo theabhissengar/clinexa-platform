@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -122,6 +123,8 @@ type Props = {
   setStripeButtonPosition: (v: string) => void;
   stripeGateways: StripeGatewayPref[];
   setStripeGateways: (v: StripeGatewayPref[]) => void;
+  /** When true for a field key, mark that control as unsaved (red). */
+  isFieldUnsaved?: (key: string) => boolean;
 };
 
 function MultiProductPicker({
@@ -143,22 +146,23 @@ function MultiProductPicker({
   return (
     <div className="space-y-1">
       <Label>{label}</Label>
-      <select
-        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+      <AppSelect
         value=""
-        onChange={(e) => {
-          const id = e.target.value;
+        onValueChange={(id) => {
           if (!id || selectedIds.includes(id)) return;
           onChange([...selectedIds, id]);
         }}
-      >
-        <option value="">Search for a product…</option>
-        {available.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
+        aria-label={label}
+        className="w-full"
+        placeholder="Search for a product…"
+        options={[
+          { value: "", label: "Search for a product…" },
+          ...available.map((o) => ({
+            value: o.id,
+            label: o.name,
+          })),
+        ]}
+      />
       {selectedIds.length ? (
         <ul className="space-y-1 pt-1">
           {selectedIds.map((id) => {
@@ -198,6 +202,8 @@ export function ProductDataPanel(props: Props) {
     inventoryMessage,
   } = props;
 
+  const unsaved = (key: string) => Boolean(props.isFieldUnsaved?.(key));
+
   function moveGateway(index: number, direction: -1 | 1) {
     const next = [...props.stripeGateways];
     const target = index + direction;
@@ -215,19 +221,19 @@ export function ProductDataPanel(props: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span>Product data</span>
-          <select
-            className="h-8 rounded border border-border bg-background px-2 text-sm font-normal"
+          <AppSelect
+            size="default"
             value={productType}
-            onChange={(e) =>
-              onProductTypeChange(e.target.value as ProductType)
+            onValueChange={(next) =>
+              onProductTypeChange(next as ProductType)
             }
-          >
-            {PRODUCT_TYPE_OPTIONS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+            aria-label="Product type"
+            aria-invalid={unsaved("productType")}
+            options={PRODUCT_TYPE_OPTIONS.map((t) => ({
+              value: t.value,
+              label: t.label,
+            }))}
+          />
         </div>
       </div>
       <div className="grid md:grid-cols-[180px_1fr]">
@@ -258,6 +264,7 @@ export function ProductDataPanel(props: Props) {
                     value={props.regularPrice}
                     onChange={(e) => props.setRegularPrice(e.target.value)}
                     placeholder="0.00"
+                    aria-invalid={unsaved("regularPrice")}
                   />
                 </div>
                 <div className="space-y-1">
@@ -267,6 +274,7 @@ export function ProductDataPanel(props: Props) {
                     value={props.salePrice}
                     onChange={(e) => props.setSalePrice(e.target.value)}
                     placeholder="Optional"
+                    aria-invalid={unsaved("salePrice")}
                   />
                 </div>
               </div>
@@ -276,9 +284,12 @@ export function ProductDataPanel(props: Props) {
                   id="variantSku"
                   value={props.variantSku}
                   onChange={(e) => props.setVariantSku(e.target.value)}
+                  aria-invalid={unsaved("variantSku")}
                 />
               </div>
-              <label className="flex items-center gap-2">
+              <label
+                className={`flex items-center gap-2 ${unsaved("isRxEligible") ? "text-destructive" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={props.isRxEligible}
@@ -286,7 +297,9 @@ export function ProductDataPanel(props: Props) {
                 />
                 Rx-eligible
               </label>
-              <label className="flex items-center gap-2">
+              <label
+                className={`flex items-center gap-2 ${unsaved("isFeatured") ? "text-destructive" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={props.isFeatured}
@@ -305,6 +318,7 @@ export function ProductDataPanel(props: Props) {
                   id="invSku"
                   value={props.variantSku}
                   onChange={(e) => props.setVariantSku(e.target.value)}
+                  aria-invalid={unsaved("variantSku")}
                 />
               </div>
               <div className="space-y-1">
@@ -313,6 +327,7 @@ export function ProductDataPanel(props: Props) {
                   id="gtin"
                   value={props.gtin}
                   onChange={(e) => props.setGtin(e.target.value)}
+                  aria-invalid={unsaved("gtin")}
                 />
               </div>
               <div className="rounded border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -327,7 +342,9 @@ export function ProductDataPanel(props: Props) {
                     "Disabled until the Inventory module ships. Catalog stores SKU/GTIN only."}
                 </p>
               </div>
-              <label className="flex items-center gap-2">
+              <label
+                className={`flex items-center gap-2 ${unsaved("soldIndividually") ? "text-destructive" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={props.soldIndividually}
@@ -349,6 +366,7 @@ export function ProductDataPanel(props: Props) {
                   value={props.weightLbs}
                   onChange={(e) => props.setWeightLbs(e.target.value)}
                   placeholder="0"
+                  aria-invalid={unsaved("weightLbs")}
                 />
               </div>
               <div>
@@ -358,33 +376,38 @@ export function ProductDataPanel(props: Props) {
                     placeholder="Length"
                     value={props.lengthIn}
                     onChange={(e) => props.setLengthIn(e.target.value)}
+                    aria-invalid={unsaved("lengthIn")}
                   />
                   <Input
                     placeholder="Width"
                     value={props.widthIn}
                     onChange={(e) => props.setWidthIn(e.target.value)}
+                    aria-invalid={unsaved("widthIn")}
                   />
                   <Input
                     placeholder="Height"
                     value={props.heightIn}
                     onChange={(e) => props.setHeightIn(e.target.value)}
+                    aria-invalid={unsaved("heightIn")}
                   />
                 </div>
               </div>
               <div className="space-y-1">
                 <Label htmlFor="shippingClass">Shipping class</Label>
-                <select
-                  id="shippingClass"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                <AppSelect
                   value={props.shippingClass}
-                  onChange={(e) => props.setShippingClass(e.target.value)}
-                >
-                  <option value="">No shipping class</option>
-                  <option value="standard">Standard</option>
-                  <option value="fragile">Fragile</option>
-                  <option value="cold-chain">Cold chain</option>
-                  <option value="rx">Rx restricted</option>
-                </select>
+                  onValueChange={props.setShippingClass}
+                  aria-label="Shipping class"
+                  aria-invalid={unsaved("shippingClass")}
+                  className="w-full"
+                  options={[
+                    { value: "", label: "No shipping class" },
+                    { value: "standard", label: "Standard" },
+                    { value: "fragile", label: "Fragile" },
+                    { value: "cold-chain", label: "Cold chain" },
+                    { value: "rx", label: "Rx restricted" },
+                  ]}
+                />
               </div>
               <label className="flex items-center gap-2">
                 <input
@@ -573,25 +596,29 @@ export function ProductDataPanel(props: Props) {
                     .map((attr) => (
                       <div key={attr.name} className="space-y-1">
                         <Label>{attr.name}</Label>
-                        <select
-                          className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                        <AppSelect
                           value={
                             props.defaultVariationOptions[attr.name] ?? ""
                           }
-                          onChange={(e) =>
+                          onValueChange={(next) =>
                             props.setDefaultVariationOptions({
                               ...props.defaultVariationOptions,
-                              [attr.name]: e.target.value,
+                              [attr.name]: next,
                             })
                           }
-                        >
-                          <option value="">No default {attr.name}…</option>
-                          {attr.values.map((v) => (
-                            <option key={v} value={v}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
+                          aria-label={`Default ${attr.name}`}
+                          className="w-full"
+                          options={[
+                            {
+                              value: "",
+                              label: `No default ${attr.name}…`,
+                            },
+                            ...attr.values.map((v) => ({
+                              value: v,
+                              label: v,
+                            })),
+                          ]}
+                        />
                       </div>
                     ))}
                   {!props.catalogAttributes.length ? (
@@ -665,24 +692,25 @@ export function ProductDataPanel(props: Props) {
                         {props.catalogAttributes
                           .filter((a) => a.forVariation !== false)
                           .map((attr) => (
-                            <select
+                            <AppSelect
                               key={attr.name}
-                              className="h-8 rounded-md border border-border bg-background px-2 text-sm"
+                              size="default"
                               value={options[attr.name] ?? ""}
-                              onChange={(e) =>
+                              onValueChange={(next) =>
                                 props.onUpdateVariationOptions(v.id, {
                                   ...options,
-                                  [attr.name]: e.target.value,
+                                  [attr.name]: next,
                                 })
                               }
-                            >
-                              <option value="">N/A</option>
-                              {attr.values.map((val) => (
-                                <option key={val} value={val}>
-                                  {val}
-                                </option>
-                              ))}
-                            </select>
+                              aria-label={attr.name}
+                              options={[
+                                { value: "", label: "N/A" },
+                                ...attr.values.map((val) => ({
+                                  value: val,
+                                  label: val,
+                                })),
+                              ]}
+                            />
                           ))}
                       </div>
                     </div>
@@ -706,8 +734,13 @@ export function ProductDataPanel(props: Props) {
                   value={props.purchaseNote}
                   onChange={(e) => props.setPurchaseNote(e.target.value)}
                   rows={4}
-                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+                  className={`w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none ${
+                    unsaved("purchaseNote")
+                      ? "border-destructive ring-3 ring-destructive/20"
+                      : "border-border"
+                  }`}
                   placeholder="Optional note to the customer after purchase"
+                  aria-invalid={unsaved("purchaseNote")}
                 />
               </div>
               <div className="space-y-1">
@@ -716,9 +749,12 @@ export function ProductDataPanel(props: Props) {
                   id="menuOrder"
                   value={props.menuOrder}
                   onChange={(e) => props.setMenuOrder(e.target.value)}
+                  aria-invalid={unsaved("menuOrder")}
                 />
               </div>
-              <label className="flex items-center gap-2">
+              <label
+                className={`flex items-center gap-2 ${unsaved("enableReviews") ? "text-destructive" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={props.enableReviews}
@@ -728,17 +764,21 @@ export function ProductDataPanel(props: Props) {
               </label>
               <div className="space-y-1">
                 <Label htmlFor="limitSubscription">Limit subscription</Label>
-                <select
-                  id="limitSubscription"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                <AppSelect
                   value={props.limitSubscription}
-                  onChange={(e) => props.setLimitSubscription(e.target.value)}
-                >
-                  <option value="none">Do not limit</option>
-                  <option value="one">
-                    Only allow one active subscription per customer
-                  </option>
-                </select>
+                  onValueChange={props.setLimitSubscription}
+                  aria-label="Limit subscription"
+                  aria-invalid={unsaved("limitSubscription")}
+                  className="w-full"
+                  options={[
+                    { value: "none", label: "Do not limit" },
+                    {
+                      value: "one",
+                      label:
+                        "Only allow one active subscription per customer",
+                    },
+                  ]}
+                />
                 <p className="text-xs text-muted-foreground">
                   Only allow a customer to have one subscription to this product.
                   Enforced when Subscriptions module consumes this flag.
@@ -822,23 +862,25 @@ export function ProductDataPanel(props: Props) {
                           gateway.id === "apple_pay" ||
                           gateway.id === "google_pay" ||
                           gateway.id === "link" ? (
-                            <select
-                              className="h-8 rounded border border-border bg-background px-2 text-sm"
+                            <AppSelect
+                              size="default"
                               value={gateway.chargeType ?? "Capture"}
-                              onChange={(e) => {
-                                const next = [...props.stripeGateways];
-                                next[index] = {
+                              onValueChange={(next) => {
+                                const nextGateways = [...props.stripeGateways];
+                                nextGateways[index] = {
                                   ...gateway,
-                                  chargeType: e.target.value as
+                                  chargeType: next as
                                     | "Authorize"
                                     | "Capture",
                                 };
-                                props.setStripeGateways(next);
+                                props.setStripeGateways(nextGateways);
                               }}
-                            >
-                              <option value="Authorize">Authorize</option>
-                              <option value="Capture">Capture</option>
-                            </select>
+                              aria-label={`${gateway.id} charge type`}
+                              options={[
+                                { value: "Authorize", label: "Authorize" },
+                                { value: "Capture", label: "Capture" },
+                              ]}
+                            />
                           ) : (
                             "—"
                           )}
@@ -850,18 +892,26 @@ export function ProductDataPanel(props: Props) {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="stripeButtonPosition">Button position</Label>
-                <select
-                  id="stripeButtonPosition"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                <AppSelect
                   value={props.stripeButtonPosition}
-                  onChange={(e) =>
-                    props.setStripeButtonPosition(e.target.value)
-                  }
-                >
-                  <option value="below_add_to_cart">Below add to cart</option>
-                  <option value="above_add_to_cart">Above add to cart</option>
-                  <option value="replace_add_to_cart">Replace add to cart</option>
-                </select>
+                  onValueChange={props.setStripeButtonPosition}
+                  aria-label="Stripe button position"
+                  className="w-full"
+                  options={[
+                    {
+                      value: "below_add_to_cart",
+                      label: "Below add to cart",
+                    },
+                    {
+                      value: "above_add_to_cart",
+                      label: "Above add to cart",
+                    },
+                    {
+                      value: "replace_add_to_cart",
+                      label: "Replace add to cart",
+                    },
+                  ]}
+                />
               </div>
             </div>
           ) : null}

@@ -18,12 +18,15 @@ type AppShellProps = {
  */
 export function AppShell({ children }: AppShellProps) {
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh max-h-svh overflow-hidden">
       <AppSidebar />
-      <SidebarInset className="min-w-0 overflow-hidden bg-transparent">
+      <SidebarInset className="min-h-0 min-w-0 overflow-hidden bg-transparent">
         <AppHeader />
         <AppSwitchLoaderProvider>
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-auto [scrollbar-gutter:stable] bg-[linear-gradient(145deg,#f7f4ef_0%,#f3efe8_42%,#f0e2c4_100%)] dark:bg-[linear-gradient(145deg,#16181c_0%,#1b1e24_45%,#242018_100%)]">
+          <div
+            data-admin-scroll
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-auto scrollbar-gutter-stable bg-[linear-gradient(145deg,#f7f4ef_0%,#f3efe8_42%,#f0e2c4_100%)] dark:bg-[linear-gradient(145deg,#16181c_0%,#1b1e24_45%,#242018_100%)]"
+          >
             <LoginAtmosphere variant="form" />
             <div className="relative z-10 flex min-w-0 flex-1 flex-col">
               {children}

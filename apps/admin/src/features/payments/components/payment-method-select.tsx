@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Label } from "@/components/ui/label";
 import { listAdminPaymentMethods } from "@/features/payments/api/admin-payments-api";
 import { listCrmPaymentMethods } from "@/features/payments/api/crm-payments-api";
@@ -62,26 +63,25 @@ export function PaymentMethodSelect({
     };
   }, [userId, context]);
 
+  const options =
+    methods.length === 0
+      ? [{ value: "", label: "No saved methods" }]
+      : methods.map((method) => ({
+          value: method.id,
+          label: optionLabel(method),
+        }));
+
   return (
     <div className="space-y-1">
       <Label htmlFor="payment-method-select">{label}</Label>
-      <select
-        id="payment-method-select"
-        className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+      <AppSelect
         value={value}
+        onValueChange={onChange}
+        aria-label={label}
+        className="w-full"
         disabled={disabled || loading || methods.length === 0}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {methods.length === 0 ? (
-          <option value="">No saved methods</option>
-        ) : (
-          methods.map((method) => (
-            <option key={method.id} value={method.id}>
-              {optionLabel(method)}
-            </option>
-          ))
-        )}
-      </select>
+        options={options}
+      />
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading methods…</p>
       ) : null}

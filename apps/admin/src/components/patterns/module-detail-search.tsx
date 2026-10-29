@@ -15,6 +15,7 @@ type ModuleDetailSearchProps = {
   onSelect: (id: string) => void;
   placeholder?: string;
   className?: string;
+  inputClassName?: string;
   minQueryLength?: number;
 };
 
@@ -23,6 +24,7 @@ export function ModuleDetailSearch({
   onSelect,
   placeholder = "Search…",
   className,
+  inputClassName,
   minQueryLength = 2,
 }: ModuleDetailSearchProps) {
   const [query, setQuery] = useState("");
@@ -77,7 +79,8 @@ export function ModuleDetailSearch({
         }}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full max-w-md"
+        className="w-full"
+        inputClassName={inputClassName}
       />
       {showLoading ? (
         <p className="mt-2 text-xs text-muted-foreground">Searching…</p>
@@ -86,7 +89,7 @@ export function ModuleDetailSearch({
         <p className="mt-2 text-xs text-destructive">{visibleError}</p>
       ) : null}
       {visibleResults.length > 0 ? (
-        <ul className="mt-2 max-w-md rounded-md border border-border bg-popover text-sm shadow-sm">
+        <ul className="mt-2 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-popover text-sm shadow-sm">
           {visibleResults.map((row) => (
             <li key={row.id}>
               <button

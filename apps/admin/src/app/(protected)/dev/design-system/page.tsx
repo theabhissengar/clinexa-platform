@@ -5,10 +5,12 @@ import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
+  AppSelect,
   ClearableSearchInput,
   ClinexaPage,
   ConfirmDialog,
   DataTable,
+  DateField,
   DetailSection,
   EmptyState,
   EntityDetailHeader,
@@ -67,6 +69,8 @@ export default function DesignSystemPreviewPage() {
   const errors = useMemo(() => assertStatusSemantics(), []);
   const unknown = resolveStatusSemantics(UNKNOWN_STATUS);
   const [search, setSearch] = useState("");
+  const [sampleStatus, setSampleStatus] = useState("ALL");
+  const [sampleDate, setSampleDate] = useState("");
   const [tablePreview, setTablePreview] = useState<TablePreview>("rows");
   const [page, setPage] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -249,14 +253,25 @@ export default function DesignSystemPreviewPage() {
                 />
                 <label className="flex flex-col gap-1 text-sm">
                   <span className="text-muted-foreground">Status</span>
-                  <select
-                    className="h-8 rounded-lg border border-input bg-background px-2"
-                    defaultValue="ALL"
+                  <AppSelect
+                    size="default"
+                    value={sampleStatus}
+                    onValueChange={setSampleStatus}
                     aria-label="Sample status filter"
-                  >
-                    <option value="ALL">All</option>
-                    <option value="ACTIVE">Active</option>
-                  </select>
+                    options={[
+                      { value: "ALL", label: "All" },
+                      { value: "ACTIVE", label: "Active" },
+                    ]}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-muted-foreground">Date</span>
+                  <DateField
+                    value={sampleDate}
+                    onChange={setSampleDate}
+                    aria-label="Sample date field"
+                    className="w-40"
+                  />
                 </label>
               </FilterBarGroup>
               <FilterBarGroup>

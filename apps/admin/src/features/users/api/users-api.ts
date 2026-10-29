@@ -27,6 +27,10 @@ export async function listAdminUsers(params?: {
   status?: UserStatus | "ALL";
   role?: string;
   kind?: "staff" | "patient";
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
   skip?: number;
   take?: number;
 }): Promise<AdminUserListResponse> {
@@ -186,6 +190,12 @@ export async function setRolePermissions(
 export async function listCrmUsers(params?: {
   q?: string;
   status?: UserStatus | "ALL";
+  role?: string;
+  tag?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  updatedFrom?: string;
+  updatedTo?: string;
   skip?: number;
   take?: number;
 }): Promise<CrmUserListResponse> {
@@ -233,6 +243,16 @@ export async function addCrmUserNote(
   return data.data;
 }
 
+export async function deleteCrmUserNote(
+  userId: string,
+  noteId: string,
+): Promise<{ id: string; deleted: boolean }> {
+  const { data } = await apiClient.delete<
+    ApiEnvelope<{ id: string; deleted: boolean }>
+  >(`/v1/crm/users/${userId}/notes/${noteId}`);
+  return data.data;
+}
+
 export async function listAdminUserNotes(userId: string): Promise<UserNote[]> {
   const { data } = await apiClient.get<ApiEnvelope<UserNote[]>>(
     `/v1/admin/users/${userId}/notes`,
@@ -249,5 +269,15 @@ export async function addAdminUserNote(
     `/v1/admin/users/${userId}/notes`,
     { body, visibility },
   );
+  return data.data;
+}
+
+export async function deleteAdminUserNote(
+  userId: string,
+  noteId: string,
+): Promise<{ id: string; deleted: boolean }> {
+  const { data } = await apiClient.delete<
+    ApiEnvelope<{ id: string; deleted: boolean }>
+  >(`/v1/admin/users/${userId}/notes/${noteId}`);
   return data.data;
 }

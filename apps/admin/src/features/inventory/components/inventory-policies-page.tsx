@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { AppSelect } from "@/components/patterns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePermissions } from "@/features/auth/hooks/use-permissions";
@@ -43,22 +44,48 @@ export function InventoryPoliciesPage() {
       </p>
       <InventorySubnav />
       <section className="max-w-md space-y-3 rounded-lg border p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium">Policies</h2>
+          {canManage ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                void updatePolicies({
+                  oversellMode: policy.oversellMode,
+                  reservationTimeoutMinutes: policy.reservationTimeoutMinutes,
+                  lowStockThreshold: policy.lowStockThreshold,
+                  allowNegativeStock: policy.allowNegativeStock,
+                })
+                  .then((p) => {
+                    setPolicy(p);
+                    setMessage("Policies saved.");
+                  })
+                  .catch(() => setError("Save failed."))
+              }
+            >
+              Save
+            </Button>
+          ) : null}
+        </div>
         <label className="block text-sm">
           Oversell mode
-          <select
-            className="mt-1 w-full rounded-md border px-2 py-2"
+          <AppSelect
+            className="mt-1 w-full"
             disabled={!canManage}
             value={policy.oversellMode}
-            onChange={(e) =>
+            onValueChange={(next) =>
               setPolicy({
                 ...policy,
-                oversellMode: e.target.value as "PREVENT" | "ALLOW",
+                oversellMode: next as "PREVENT" | "ALLOW",
               })
             }
-          >
-            <option value="PREVENT">PREVENT</option>
-            <option value="ALLOW">ALLOW</option>
-          </select>
+            aria-label="Oversell mode"
+            options={[
+              { value: "PREVENT", label: "PREVENT" },
+              { value: "ALLOW", label: "ALLOW" },
+            ]}
+          />
         </label>
         <label className="block text-sm">
           Reservation timeout (minutes)
@@ -102,26 +129,6 @@ export function InventoryPoliciesPage() {
           />
           Allow negative stock
         </label>
-        {canManage ? (
-          <Button
-            type="button"
-            onClick={() =>
-              void updatePolicies({
-                oversellMode: policy.oversellMode,
-                reservationTimeoutMinutes: policy.reservationTimeoutMinutes,
-                lowStockThreshold: policy.lowStockThreshold,
-                allowNegativeStock: policy.allowNegativeStock,
-              })
-                .then((p) => {
-                  setPolicy(p);
-                  setMessage("Policies saved.");
-                })
-                .catch(() => setError("Save failed."))
-            }
-          >
-            Save
-          </Button>
-        ) : null}
         {message ? <p className="text-sm text-green-700">{message}</p> : null}
       </section>
 

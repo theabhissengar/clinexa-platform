@@ -11,7 +11,7 @@ import {
   getCrmOrder,
   updateCrmOrder,
 } from "@/features/orders/api/orders-api";
-import { formatDateTime, statusLabel } from "@/features/orders/lib/format";
+import { formatDateTime, productStatusLabel } from "@/features/orders/lib/format";
 import type { OrderAddressInput, OrderDetail } from "@/features/orders/types";
 import { AdminTagsEditor } from "@/features/shared/components/admin-tags-editor";
 import {
@@ -211,7 +211,7 @@ export function CrmOrderEditPage() {
           Edit operational fields
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Status {statusLabel(order.status)} · updated{" "}
+          Status {productStatusLabel(order.status)} · updated{" "}
           {formatDateTime(order.updatedAt)}. Includes patient reassignment,
           addresses, and admin tags where policy allows.
         </p>

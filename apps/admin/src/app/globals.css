@@ -98,8 +98,8 @@
   --success-foreground: oklch(0.98 0.01 155);
   --warning: oklch(0.78 0.12 90);
   --warning-foreground: oklch(0.24 0.04 75);
-  --info: oklch(0.42 0.04 75);
-  --info-foreground: oklch(0.98 0.01 90);
+  --info: oklch(0.48 0.12 250);
+  --info-foreground: oklch(0.98 0.01 250);
   --hold: oklch(0.48 0.04 55);
   --hold-foreground: oklch(0.98 0.01 90);
   --border: oklch(0.88 0.016 85);
@@ -142,8 +142,8 @@
   --success-foreground: oklch(0.2 0.03 155);
   --warning: oklch(0.86 0.11 95);
   --warning-foreground: oklch(0.22 0.04 75);
-  --info: oklch(0.78 0.05 80);
-  --info-foreground: oklch(0.2 0.02 70);
+  --info: oklch(0.78 0.1 250);
+  --info-foreground: oklch(0.2 0.04 250);
   --hold: oklch(0.76 0.04 55);
   --hold-foreground: oklch(0.2 0.02 55);
   --border: oklch(1 0 0 / 12%);
@@ -326,61 +326,6 @@
   animation: login-grid-pan 48s linear infinite;
 }
 
-.login-fold-stage {
-  perspective: 1400px;
-  perspective-origin: 50% 45%;
-}
-
-.login-fold-sheet {
-  transform: translateZ(0);
-  transform-origin: center;
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-}
-
-@keyframes login-fold-tr-bl {
-  0% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
-    animation-timing-function: cubic-bezier(0.4, 0, 1, 0.55);
-  }
-  50% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, 76deg);
-    animation-timing-function: cubic-bezier(0, 0.45, 0.6, 1);
-  }
-  100% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
-  }
-}
-
-@keyframes login-fold-bl-tr {
-  0% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
-    animation-timing-function: cubic-bezier(0.4, 0, 1, 0.55);
-  }
-  50% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, -76deg);
-    animation-timing-function: cubic-bezier(0, 0.45, 0.6, 1);
-  }
-  100% {
-    transform: translateZ(0) rotate3d(-1, 1, 0, 0deg);
-  }
-}
-
-.login-fold-to-guardian,
-.login-fold-to-crm {
-  will-change: transform;
-}
-
-.login-fold-to-guardian {
-  transform-origin: 100% 0%;
-  animation: login-fold-tr-bl 640ms linear both;
-}
-
-.login-fold-to-crm {
-  transform-origin: 0% 100%;
-  animation: login-fold-bl-tr 640ms linear both;
-}
-
 /* CRM dashboard Insights flip (left → right 3D card) */
 .dashboard-flip-stage {
   perspective: 1600px;
@@ -409,8 +354,8 @@
   grid-row: 1;
   width: 100%;
   min-width: 0;
-  backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .dashboard-flip-face-back {
@@ -473,5 +418,65 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Sonner toasts — top-right success/error with soft fade */
+[data-sonner-toaster] {
+  --width: 22rem;
+}
+
+[data-sonner-toast] {
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s ease,
+    height 0.35s ease,
+    box-shadow 0.35s ease !important;
+}
+
+[data-sonner-toast][data-type="success"] {
+  background: #4ade80 !important;
+  color: #14532d !important;
+  border-color: #86efac !important;
+}
+
+[data-sonner-toast][data-type="error"] {
+  background: #f87171 !important;
+  color: #7f1d1d !important;
+  border-color: #fca5a5 !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-description],
+[data-sonner-toast][data-type="error"] [data-description] {
+  color: inherit !important;
+  opacity: 0.85;
+}
+
+[data-sonner-toast][data-type="success"] [data-icon],
+[data-sonner-toast][data-type="error"] [data-icon] {
+  color: inherit !important;
+}
+
+/* Guardian / CRM user section panel — enter from the right */
+@keyframes crm-section-flip-in {
+  from {
+    opacity: 0.55;
+    transform: perspective(1400px) translateX(1.1rem) rotateY(-10deg);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1400px) translateX(0) rotateY(0deg);
+  }
+}
+
+.crm-section-flip {
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  animation: crm-section-flip-in 0.18s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-section-flip {
+    animation: none;
   }
 }

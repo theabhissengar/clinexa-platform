@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -34,12 +35,24 @@ export class CrmUsersController {
   list(
     @Query('q') q?: string,
     @Query('status') status?: UserStatus | 'ALL',
+    @Query('role') role?: string,
+    @Query('tag') tag?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
+    @Query('updatedFrom') updatedFrom?: string,
+    @Query('updatedTo') updatedTo?: string,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
   ) {
     return this.users.listCrm({
       q,
       status,
+      role,
+      tag,
+      createdFrom,
+      createdTo,
+      updatedFrom,
+      updatedTo,
       skip: skip ? Number(skip) : 0,
       take: take ? Number(take) : 50,
     });
@@ -86,5 +99,12 @@ export class CrmUsersController {
       body: dto.body,
       visibility: dto.visibility ?? NoteVisibility.PRIVATE,
     });
+  }
+
+  @Delete(':id/notes/:noteId')
+  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @ApiOperation({ summary: 'Delete user note (CRM)' })
+  deleteNote(@Param('id') id: string, @Param('noteId') noteId: string) {
+    return this.users.deleteNote(id, noteId);
   }
 }

@@ -79,7 +79,7 @@ export const GUARDIAN_GROUP_LABEL: Record<NavGroupKey, string> = {
   dashboard: "Dashboard",
   commerce: "Commerce",
   content: "Content",
-  users: "Users",
+  users: "Patients",
   marketing: "Marketing",
   platform: "Platform",
   security: "Security",

@@ -42,6 +42,18 @@ apiClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // Let the browser set multipart boundary — never send bare multipart/form-data
+  // or the default application/json Content-Type with FormData bodies.
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    const headers = config.headers;
+    if (headers && typeof headers.delete === "function") {
+      headers.delete("Content-Type");
+      headers.delete("content-type");
+    } else if (headers) {
+      delete (headers as Record<string, unknown>)["Content-Type"];
+      delete (headers as Record<string, unknown>)["content-type"];
+    }
+  }
   return config;
 });
 

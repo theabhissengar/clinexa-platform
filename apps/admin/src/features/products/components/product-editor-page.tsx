@@ -84,7 +84,11 @@ export function ProductEditorPage({ mode, productId }: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [inventoryMessage, setInventoryMessage] = useState<string | null>(null);
   const [baseline, setBaseline] = useState<ProductFormSnapshot | null>(null);
-  const [baselineTick, setBaselineTick] = useState(0);
+  const [baselineNonce, setBaselineNonce] = useState(0);
+  const [appliedBaselineNonce, setAppliedBaselineNonce] = useState(0);
+  const [createBaselineReady, setCreateBaselineReady] = useState(
+    mode !== "create",
+  );
   const [highlightUnsaved, setHighlightUnsaved] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -106,12 +110,13 @@ export function ProductEditorPage({ mode, productId }: Props) {
   const [seoDescription, setSeoDescription] = useState("");
   const [seoCanonical, setSeoCanonical] = useState("");
   const [featuredMediaAssetId, setFeaturedMediaAssetId] = useState("");
-  const [featuredPreviewUrl, setFeaturedPreviewUrl] = useState<string | null>(
+  const [resolvedPreviewUrl, setResolvedPreviewUrl] = useState<string | null>(
     null,
   );
-  const [featuredPreviewName, setFeaturedPreviewName] = useState<string | null>(
+  const [resolvedPreviewName, setResolvedPreviewName] = useState<string | null>(
     null,
   );
+  const [previewResolveKey, setPreviewResolveKey] = useState("");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [questionnaireBindingRef, setQuestionnaireBindingRef] = useState("");
   const [regularPrice, setRegularPrice] = useState("");
@@ -247,7 +252,7 @@ export function ProductEditorPage({ mode, productId }: Props) {
       setRegularPrice("");
       setSalePrice("");
     }
-    setBaselineTick((n) => n + 1);
+    setBaselineNonce((n) => n + 1);
   }, []);
 
   const captureSnapshot = useCallback((): ProductFormSnapshot => {
@@ -355,19 +360,35 @@ export function ProductEditorPage({ mode, productId }: Props) {
     [highlightUnsaved, dirtyFields],
   );
 
-  useEffect(() => {
-    if (mode !== "create") return;
+  // Establish create-mode baseline / re-baseline after hydrate+save during render
+  // (React “adjust state when a prop/state changes” pattern — avoids set-state-in-effect).
+  if (mode === "create" && !createBaselineReady) {
+    setCreateBaselineReady(true);
     setBaseline(captureSnapshot());
-    setHighlightUnsaved(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- capture empty create defaults once
-  }, [mode]);
+    if (highlightUnsaved) setHighlightUnsaved(false);
+  }
+  if (baselineNonce !== appliedBaselineNonce) {
+    setAppliedBaselineNonce(baselineNonce);
+    setBaseline(captureSnapshot());
+    if (highlightUnsaved) setHighlightUnsaved(false);
+  }
 
-  useEffect(() => {
-    if (baselineTick === 0) return;
-    setBaseline(captureSnapshot());
-    setHighlightUnsaved(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-baseline after hydrate/save
-  }, [baselineTick]);
+  const featuredMediaTrimmed = featuredMediaAssetId.trim();
+  const featuredIsHttp =
+    featuredMediaTrimmed.startsWith("http://") ||
+    featuredMediaTrimmed.startsWith("https://");
+  if (previewResolveKey !== featuredMediaTrimmed) {
+    setPreviewResolveKey(featuredMediaTrimmed);
+    setResolvedPreviewUrl(null);
+    setResolvedPreviewName(null);
+  }
+  const featuredPreviewUrl = featuredIsHttp
+    ? featuredMediaTrimmed
+    : featuredMediaTrimmed
+      ? resolvedPreviewUrl
+      : null;
+  const featuredPreviewName =
+    featuredIsHttp || !featuredMediaTrimmed ? null : resolvedPreviewName;
 
   useEffect(() => {
     if (!leaveDialogOpen) return;
@@ -417,28 +438,23 @@ export function ProductEditorPage({ mode, productId }: Props) {
   }, [mode, productId, hydrate]);
 
   useEffect(() => {
-    const id = featuredMediaAssetId.trim();
-    if (!id || id.startsWith("http://") || id.startsWith("https://")) {
-      setFeaturedPreviewUrl(id.startsWith("http") ? id : null);
-      setFeaturedPreviewName(null);
-      return;
-    }
+    if (!featuredMediaTrimmed || featuredIsHttp) return;
     let cancelled = false;
-    void resolveAsset(id)
+    void resolveAsset(featuredMediaTrimmed)
       .then((r) => {
         if (cancelled) return;
-        setFeaturedPreviewUrl(r.url);
-        setFeaturedPreviewName(r.altText);
+        setResolvedPreviewUrl(r.url);
+        setResolvedPreviewName(r.altText);
       })
       .catch(() => {
         if (cancelled) return;
-        setFeaturedPreviewUrl(null);
-        setFeaturedPreviewName(null);
+        setResolvedPreviewUrl(null);
+        setResolvedPreviewName(null);
       });
     return () => {
       cancelled = true;
     };
-  }, [featuredMediaAssetId]);
+  }, [featuredMediaTrimmed, featuredIsHttp]);
 
   const searchFeaturedAssets = useCallback(async (q: string) => {
     const res = await listPickerAssets({ q, take: 20 });

@@ -25,23 +25,26 @@ const ALLOWED = new Set([
 const ACTION_ICON_CLASS = "size-4 shrink-0";
 
 export function useResolvedAssetUrl(assetId: string | null | undefined) {
-  const [url, setUrl] = useState<string | null>(null);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resolveKey, setResolveKey] = useState(assetId ?? "");
+
+  const key = assetId ?? "";
+  if (resolveKey !== key) {
+    setResolveKey(key);
+    setResolvedUrl(null);
+    setLoading(Boolean(assetId));
+  }
 
   useEffect(() => {
-    if (!assetId) {
-      setUrl(null);
-      setLoading(false);
-      return;
-    }
+    if (!assetId) return;
     let cancelled = false;
-    setLoading(true);
     void resolveAsset(assetId)
       .then((resolved) => {
-        if (!cancelled) setUrl(resolved.url);
+        if (!cancelled) setResolvedUrl(resolved.url);
       })
       .catch(() => {
-        if (!cancelled) setUrl(null);
+        if (!cancelled) setResolvedUrl(null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -51,7 +54,7 @@ export function useResolvedAssetUrl(assetId: string | null | undefined) {
     };
   }, [assetId]);
 
-  return { url, loading };
+  return { url: assetId ? resolvedUrl : null, loading: assetId ? loading : false };
 }
 
 export async function uploadImageAsset(file: File): Promise<string> {

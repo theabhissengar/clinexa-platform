@@ -71,7 +71,6 @@ import {
 import {
   sanitizeDisplayName,
   sanitizePersonName,
-  sanitizePlainText,
   validateAddressFields,
   validateUserProfileFields,
 } from "@/features/users/lib/user-field-validation";
@@ -192,14 +191,6 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function userName(user: OperationalUser): string {
-  return (
-    user.displayName ||
-    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
-    user.email
-  );
-}
-
 function SectionSurface({
   title,
   description,
@@ -269,9 +260,7 @@ export function CrmUserDetailPage({
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const userId = params.id;
-  const [activeSection, setActiveSection] = useState<SectionId>(() =>
-    parseSectionSlug(sectionSlug),
-  );
+  const activeSection = parseSectionSlug(sectionSlug);
   const [user, setUser] = useState<OperationalUser | null>(null);
   const [notes, setNotes] = useState<UserNote[]>([]);
   const [orders, setOrders] = useState<
@@ -349,14 +338,11 @@ export function CrmUserDetailPage({
   useEffect(() => {
     if (sectionSlug && !SECTION_IDS.has(sectionSlug as SectionId)) {
       router.replace(`/crm/users/${userId}?section=profile`);
-      return;
     }
-    setActiveSection(parseSectionSlug(sectionSlug));
   }, [sectionSlug, router, userId]);
 
   function goToSection(section: SectionId) {
     if (section === activeSection) return;
-    setActiveSection(section);
     router.replace(`/crm/users/${userId}?section=${section}`, {
       scroll: false,
     });

@@ -26,24 +26,29 @@ export function AssetThumb({
   className,
 }: AssetThumbProps) {
   const canResolve = status === "ACTIVE" && isImageMime(mimeType);
-  const [url, setUrl] = useState<string | null>(null);
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const [resolveKey, setResolveKey] = useState(assetId);
+
+  if (resolveKey !== assetId) {
+    setResolveKey(assetId);
+    setResolvedUrl(null);
+    setFailed(false);
+  }
 
   useEffect(() => {
-    if (!canResolve) {
-      setUrl(null);
-      setFailed(false);
-      return;
-    }
+    if (!canResolve) return;
     let cancelled = false;
-    setFailed(false);
     void resolveAsset(assetId)
       .then((r) => {
-        if (!cancelled) setUrl(r.url);
+        if (!cancelled) {
+          setResolvedUrl(r.url);
+          setFailed(false);
+        }
       })
       .catch(() => {
         if (!cancelled) {
-          setUrl(null);
+          setResolvedUrl(null);
           setFailed(true);
         }
       });
@@ -51,6 +56,8 @@ export function AssetThumb({
       cancelled = true;
     };
   }, [assetId, canResolve]);
+
+  const url = canResolve ? resolvedUrl : null;
 
   if (url && !failed) {
     return (

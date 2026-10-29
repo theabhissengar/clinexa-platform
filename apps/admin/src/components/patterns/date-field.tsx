@@ -69,11 +69,14 @@ export function DateField({
 }: DateFieldProps) {
   const [open, setOpen] = React.useState(false);
   const [draft, setDraft] = React.useState(() => toDisplay(value));
+  const [prevValue, setPrevValue] = React.useState(value);
   const selected = parseIsoDate(value);
 
-  React.useEffect(() => {
+  // Sync typed draft when the controlled ISO value changes externally.
+  if (value !== prevValue) {
+    setPrevValue(value);
     setDraft(toDisplay(value));
-  }, [value]);
+  }
 
   function commitDraft(nextDraft: string) {
     const parsed = parseTypedDate(nextDraft);

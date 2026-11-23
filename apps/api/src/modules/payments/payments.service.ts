@@ -24,6 +24,7 @@ import {
 } from '../../../generated/prisma';
 
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { isUuid } from '../../common/utils/search-query.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { assertSupportedCurrency, assertValidMinorUnitAmount } from './money';
 import type { PaymentGateway } from './payment.gateway';
@@ -2286,9 +2287,11 @@ export class PaymentsService {
       }
     }
     if (params.q?.trim()) {
+      // UUID id equality only when q is a valid UUID — non-UUID text must not
+      // hit Prisma UUID columns (DEF-P1-001 / Phase 7 Guardian search).
       const q = params.q.trim();
       where.OR = [
-        { id: { equals: q } },
+        ...(isUuid(q) ? [{ id: { equals: q } }] : []),
         { providerPaymentRef: { contains: q, mode: 'insensitive' } },
         { idempotencyKey: { contains: q, mode: 'insensitive' } },
         { order: { orderNumber: { contains: q, mode: 'insensitive' } } },

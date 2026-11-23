@@ -50,6 +50,8 @@ export type TransitionSubscriptionInput = {
   expectedStatus?: SubscriptionStatus;
   /** Required for ACTIVE → PAST_DUE (payment failure on a renewal attempt). */
   failedRenewalAttempt?: boolean;
+  /** ACTIVE → PAST_DUE while SCA / requires_action is held (attempt stays PROCESSING). */
+  actionRequiredHold?: boolean;
 };
 
 export type ParentOrderHookInput = {

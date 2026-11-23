@@ -201,6 +201,9 @@ export class CommerceIntegrationModule implements OnModuleInit {
           source: 'payment',
         });
       },
+      onRenewalAuthorizationFailed: async (input) => {
+        await this.processor.onRenewalAuthorizationFailed(input);
+      },
       onPaymentCaptured: async (input) => {
         if (!input.orderId) {
           return;

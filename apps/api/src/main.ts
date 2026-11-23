@@ -22,6 +22,7 @@ function resolveBootstrapLogLevel(): AppLogLevel {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: nestLogLevelsAt(resolveBootstrapLogLevel()),
+    rawBody: true,
   });
   configureApp(app);
 

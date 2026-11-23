@@ -103,6 +103,13 @@ Every phase record in §5 carries these fields.
 | **P14** | Subscriptions platform module (lifecycle + in-module renewal orchestration; CRM ops + Guardian admin/Class D; no Renewals module) | **Complete** (P14a–h; verification freeze on `feature/subscriptions-p14h-freeze`) | P5 shell; P8 Products; P9 Users; P13 Orders; P12/P13e Inventory via Orders; P6 Class D patterns |
 | **P15** | Payments Phase 2 + Promotions / Coupons (Guardian payments UI, staff refunds, coupon pricing boundary; no Stripe) | **Complete** (merged to `dev`; renewals remain coupon-free) | P14 complete; P13 Orders |
 | **Phase 3** | Users + Orders + Subscriptions + Renewals expansion (initial DRAFT order on Guardian create; cancel open sub orders with CAPTURED skip; expire on AUTH-015 tick) | In progress (`feature/payments-phase3`) | P14 complete; P15 money/pricing freeze |
+| **Phase 6A** | Payments architecture audit (Stripe feasibility, gaps, phased plan) | **Complete** ([38](38-phase-6a-payments-architecture-audit.md)) | P15 complete |
+| **Phase 6B** | Payments foundation (money allow-list, Idempotency-Key retry, renewal attempt allocation, webhook leases, reconcile stubs; simulated only) | **Complete** (`feature/payments-architecture-audit`) | Phase 6A |
+| **Phase 6C** | Stripe test-mode adapter + HMAC webhooks + PM ownership (no live keys / Billing) | **Complete** (`feature/payments-architecture-audit`) | Phase 6B |
+| **Phase 6D** | One-time checkout + order lifecycle (patient thin checkout/pay; SCA clientSecret; no Elements) | **Complete** (`feature/payments-architecture-audit`) | Phase 6C |
+| **Phase 6E** | Subscription renewal reliability (attempt lease, SCA hold, grace/backoff, webhook fail wire) | **Complete** (`feature/payments-architecture-audit`) | Phase 6D |
+| **Phase 6F** | Refunds, webhook reliability & financial reconciliation (D1–D15) | **Complete** (`feature/payments-architecture-audit`) | Phase 6E |
+| **Phase 6G** | Security, reliability & E2E hardening (IDOR/RBAC, secrets, refund reservation, capture/authorize recovery) | **Complete** (`feature/payments-architecture-audit`) | Phase 6F |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | In progress (5A complete; 5B in progress) | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -368,6 +375,118 @@ Every phase record in §5 carries these fields.
 | **Notes** | Bind-if-provided path preserved; activate does not mint orders; CAPTURED skip protects P14f no-auto-refund invariant |
 | **Verification** | Subscriptions create/cancel/expire unit tests; open-order-cancel policy; renewal processor expire-before-due; boundaries + P14e/f/g regression |
 
+### Phase 6A — Payments Architecture Audit
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Document verified payments architecture, Stripe eligibility constraints, and phased remediation plan without code changes |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | P15 complete |
+| **Scope** | Audit doc [38](38-phase-6a-payments-architecture-audit.md); no schema/runtime changes |
+| **Architecture changes** | None (documentation only) |
+| **Documentation updates** | [38](38-phase-6a-payments-architecture-audit.md), [26](26-implementation-tracker.md) |
+| **Notes** | Rx Stripe processing remains Restricted pending merchant onboarding; 6B+ require explicit approval |
+| **Verification** | Doc review against repository facts |
+
+### Phase 6B — Payments Foundation
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Harden simulated payments foundation: minor-unit money, staff retry Idempotency-Key, atomic renewal authorize attempts, capture expiry/void-on-confirm, webhook lease claims, unknown-outcome reconcile hooks — no Stripe/ledger/PaymentAttempt/new Order or Subscription statuses |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6A |
+| **Scope** | Additive migration `payments_phase6b_foundation`; `money.ts` ISO subset; gateway retrieve hooks + simulated adapter; payments service lease/reconcile/capture/refund; orders retry header contract; renewal `authorizeAttemptNumber`; `PAYMENTS_*` env validation |
+| **Architecture changes** | Payment initiator + amount/expiry audit fields; webhook `claimToken`/`leaseExpiresAt`; renewal attempt counter; provider-neutral retrieve stubs (sim-only lookup) |
+| **Documentation updates** | [38](38-phase-6a-payments-architecture-audit.md) status note; [26](26-implementation-tracker.md) |
+| **Notes** | Breaking: `POST …/orders/:id/retry-payment` requires `Idempotency-Key`. `PAYMENTS_PROVIDER=simulated` only. Stripe retrieve/HMAC deferred to 6C/6F |
+| **Verification** | `@clinexa/api` unit: money, payments.service, payments-boundaries/schema, orders retry controllers/service, subscriptions-renewal processor/service; `typecheck` + `lint` green. Postgres concurrency int skipped unless reachable DB + migration applied |
+
+### Phase 6C — Stripe Test-Mode Integration
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Add Stripe test-mode `StripePaymentAdapter` behind PaymentGateway with PM ownership verify, HMAC webhooks, Search-as-best-effort unknown recovery, partial refund accounting, unsupported cancelRecurring — no live keys or Billing |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6B |
+| **Scope** | `stripe@23.2.0` pinned API `2026-11-18.endive`; env `PAYMENTS_PROVIDER=stripe` + `sk_test_`/`whsec_`; rawBody Stripe webhook route; Customer/PM ownership; `ACTION_REQUIRED`; migration unique `provider_refund_ref` with duplicate preflight |
+| **Architecture changes** | Gateway factory; `ACTION_REQUIRED` outcome; cancelRecurring soft unsupported; refund.* webhook mapping |
+| **Documentation updates** | [38](38-phase-6a-payments-architecture-audit.md); [26](26-implementation-tracker.md) |
+| **Notes** | Test-mode success ≠ merchant/Rx eligibility. SetupIntent/Elements deferred to 6E |
+| **Verification** | Stripe adapter/mapper unit tests; payments + subscriptions cancel-chain regression; typecheck/lint |
+
+### Phase 6D — One-Time Payments & Order Lifecycle
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Thin patient `POST /v1/checkout` + pay/reconcile; durable checkout fingerprint; ACTION_REQUIRED-safe advance; owner-only `clientSecret`; clinical reauth/capture-retry without new Order statuses |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6C |
+| **Scope** | CheckoutService; store catalog gates; `Order.idempotencyRequestHash` migration; void-on-reserve-fail for ONE_TIME; webhook retrieve-before-recapture; no Elements/SetupIntent/Store UI/coupons on patient checkout |
+| **Architecture changes** | Customer checkout response mapper; advance helper; AF capture-retry; fulfill requires CAPTURED for positive-total orders |
+| **Documentation updates** | [38](38-phase-6a-payments-architecture-audit.md); [26](26-implementation-tracker.md) |
+| **Notes** | Migration `payments_phase6d_checkout_idempotency_hash` requires separate safe-DB confirmation before apply. Test-mode ≠ eligibility. |
+| **Verification** | checkout/fingerprint/advance/stripe unit tests; clinical AF capture-retry; typecheck/lint |
+
+### Phase 6E — Subscription Renewal Reliability
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Harden Clinexa-owned renewal authorize/retry/SCA hold without Stripe Billing SoT or SetupIntent/PM APIs |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6D |
+| **Scope** | Attempt `claimToken`/`leaseExpiresAt`; payment-idempotency-first reclaim; zero-total before PM; fixed grace + min delay + max `a{n}`; SCA hold (PROCESSING + PAST_DUE); grace-end cancel via Payments; wire `onRenewalAuthorizationFailed`; conditional `completeRenewalOnCapture` |
+| **Architecture changes** | Durable renewal lease (no DB txn across gateway); void pending auth; lifecycle `actionRequiredHold`; SetupIntent/method APIs deferred |
+| **Documentation updates** | [38](38-phase-6a-payments-architecture-audit.md); [26](26-implementation-tracker.md) |
+| **Notes** | Migrations 6B–6E on disk; do not apply without separate approval. Defaults: lease 120s, max attempts 5, min retry delay 3600s (product-tunable). |
+| **Verification** | Renewal processor 6E unit tests; lifecycle action-required; schema lease fields; typecheck/lint |
+
+### Phase 6F — Refunds, Webhook Reliability & Financial Reconciliation
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Close D1–D15: refund ref persistence/list correlation, monotonic refunds, balance reservation + void_refund retry, webhook ACK/ownership, D12–D14 retrieve-before-mutate, batch reconcile with 6E retrieve-only default; no ledger |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6E |
+| **Scope** | `listRefundsByPaymentRef`; D4 in-flight staff protection; D7 remaining formula; `POST /v1/internal/jobs/payment-reconcile`; D11 APPLIED rowcount; D15 uncorrelated Conflict all providers; D9 PATIENT without `PAY_INITIATE_REFUND`; D10 `assertIdempotencyKey`; D8 Order status/restock deferred |
+| **Architecture changes** | Conditional capture finalize from PENDING_AUTHORIZATION/AUTHORIZED; durable `RECONCILE_DEFER` backoff in `lastErrorCode`; renewal-owned payments retrieve-only from 6F batch |
+| **Documentation updates** | [26](26-implementation-tracker.md) |
+| **Notes** | No new statuses, ledger, or backoff table. Migrations none for 6F. |
+| **Verification** | payments/rbac unit suites covering D1–D7/D9–D12/D14–D15; typecheck/lint |
+
+### Phase 6G — Security, Reliability & End-to-End Hardening
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Close IDOR/RBAC gaps, production secret fail-closed + simulated opt-in, atomic refund reservation (R1), capture-key recovery (R3), authorize exclusivity (R4), requires_action retrieve (R2), ops runbook |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6F |
+| **Scope** | Staff shell AND on Guardian/CRM payments + methods; remove `PAY_MANAGE_METHODS` IDOR routes; defer patient `/me` PM; `PAYMENTS_ALLOW_SIMULATED`; confirmed-failure refund `errorCode` allow-list; canonical capture keys; order `FOR UPDATE`; timing-safe worker/sim compares |
+| **Architecture changes** | No new statuses/ledger/PaymentAttempt; retrieve-before-FAILED refund release; CAPTURE_PENDING re-capture only with reconstructed canonical key; renewal batch stays retrieve-only |
+| **Documentation updates** | [26](26-implementation-tracker.md); [39](39-phase-6g-ops-runbook.md); [38](38-phase-6a-payments-architecture-audit.md) |
+| **Notes** | Patient PM self-service deferred (no superficial `/me`). Postgres concurrency evidence requires `RUN_POSTGRES_INTEGRATION=1`. No live Stripe / Guardian UI / SetupIntent in 6G. |
+| **Verification** | payments unit (incl. Phase 6G R1–R4/T1/T4); admin permissions; validateEnv S4; Stripe webhook HMAC 401; worker-secret timing-safe; concurrency int specs present |
+
 | Field | Value |
 | --- | --- |
 | **Objective** | Modernize the complete Guardian and CRM user experience after major functional modules are complete |
@@ -555,6 +674,12 @@ A phase is complete when all of the following hold.
 | 2.21 | 2026-09-21 | Platform Engineering | P10 Phase 5D on `feature/ui-modernization-5d-login`: login/unauthorized/forbidden presentation; CRM/Guardian destination selector (same session; unauthorized selection still `/forbidden`); BrandMark on login; no auth/API/RBAC changes |
 | 2.22 | 2026-09-21 | Platform Engineering | P10 Phase 5E on `feature/ui-modernization-5e-dashboards`: real-data CRM/Guardian dashboards plus Login-aligned shared sidebar/header visual modernization; existing shell behavior, APIs, RBAC, feature pages, and Login remain unchanged |
 | 2.23 | 2026-09-21 | Platform Engineering | P10 Phase 5F on `feature/ui-modernization-5f-core-modules`: CRM/Guardian Users, Orders, Subscriptions adopt Phase 5C patterns + StatusBadge; ConfirmDialog / controlled reason Dialog; no API/RBAC/Login/Dashboard Soft* redesign |
+| 2.24 | 2026-11-22 | Platform Engineering | Phase 6A audit + Phase 6B payments foundation on `feature/payments-architecture-audit`: money allow-list, Idempotency-Key retry, renewal attempt allocation, webhook leases, reconcile stubs (simulated only); see [38](38-phase-6a-payments-architecture-audit.md) |
+| 2.25 | 2026-11-22 | Platform Engineering | Phase 6C Stripe test-mode on same branch: StripeAdapter, PM ownership, HMAC webhooks, Search recovery, partial refunds, unsupported cancelRecurring; live keys rejected |
+| 2.26 | 2026-11-22 | Platform Engineering | Phase 6D one-time checkout on same branch: patient checkout/pay/reconcile, durable fingerprint, SCA clientSecret mapper, ACTION_REQUIRED-safe advance, clinical capture-retry, webhook retrieve-before-capture |
+| 2.27 | 2026-11-22 | Platform Engineering | Phase 6E renewal reliability on same branch: attempt lease, SCA hold, grace/backoff/max attempts, grace-end abandon, webhook auth-fail wire, conditional period advance; SetupIntent deferred |
+| 2.28 | 2026-11-23 | Platform Engineering | Phase 6F refunds/webhooks/reconcile on same branch: D1–D15 (ref persist, listRefunds, correlation, reservation, ACK rowcount, D12–D14, batch reconcile, PATIENT refund gate); no ledger |
+| 2.29 | 2026-11-23 | Platform Engineering | Phase 6G hardening on same branch: S1–S5, S4 simulated opt-in, R1–R4, R2 retrieve, T1–T4 evidence, O3 runbook [39](39-phase-6g-ops-runbook.md); patient `/me` PM deferred; no ledger/live Stripe |
 
 ---
 

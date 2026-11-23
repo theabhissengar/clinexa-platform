@@ -25,7 +25,6 @@ export const ROLE_PERMISSION_MATRIX: Readonly<
     Permissions.CHK_FINALIZE,
     Permissions.PAY_PAY,
     Permissions.PAY_MANAGE_METHODS,
-    Permissions.PAY_INITIATE_REFUND,
     Permissions.ORD_VIEW,
     Permissions.ORD_CANCEL,
     Permissions.SUB_MANAGE_OWN,

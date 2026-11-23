@@ -56,12 +56,14 @@ describe('SubscriptionsRenewalService', () => {
       },
       subscriptionRenewalAttempt: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(attemptRow),
         create: jest.fn().mockResolvedValue(attemptRow),
         update: jest
           .fn()
           .mockImplementation(({ data }: { data: object }) =>
             Promise.resolve({ ...attemptRow, ...data }),
           ),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       subscriptionActivity: { create: jest.fn().mockResolvedValue({}) },
       order: {
@@ -232,5 +234,84 @@ describe('SubscriptionsRenewalService', () => {
     expect(result.billingPeriodKey).toBe('sub-1:2026-03-01');
     expect(tx.subscriptionRenewalAttempt.update).toHaveBeenCalled();
     expect(tx.subscriptionRenewalAttempt.create).not.toHaveBeenCalled();
+  });
+
+  it('D1: markAttemptOutcome requires non-null matching claimToken', async () => {
+    const { service, tx, attemptRow } = build();
+    tx.subscriptionRenewalAttempt.findUnique.mockResolvedValue({
+      ...attemptRow,
+      claimToken: 'owner-claim',
+      paymentId: null,
+      paymentStatusSummary: null,
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+    tx.subscriptionRenewalAttempt.updateMany.mockResolvedValue({ count: 0 });
+
+    const mismatched = await service.markAttemptOutcome({
+      subscriptionId: 'sub-1',
+      billingPeriodKey: 'sub-1:2026-03-01',
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+      claimToken: 'stale-claim',
+      source: 'system',
+    });
+    expect(mismatched.applied).toBe(false);
+    expect(tx.subscriptionRenewalAttempt.updateMany).not.toHaveBeenCalled();
+
+    tx.subscriptionRenewalAttempt.findUnique.mockResolvedValue({
+      ...attemptRow,
+      claimToken: null,
+      paymentId: null,
+      paymentStatusSummary: null,
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+    const nullToken = await service.markAttemptOutcome({
+      subscriptionId: 'sub-1',
+      billingPeriodKey: 'sub-1:2026-03-01',
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+      claimToken: 'owner-claim',
+      source: 'system',
+    });
+    expect(nullToken.applied).toBe(false);
+
+    tx.subscriptionRenewalAttempt.findUnique.mockResolvedValue({
+      ...attemptRow,
+      claimToken: 'owner-claim',
+      paymentId: null,
+      paymentStatusSummary: null,
+      lastErrorCode: null,
+      lastErrorAt: null,
+    });
+    tx.subscriptionRenewalAttempt.updateMany.mockResolvedValue({ count: 1 });
+    tx.subscriptionRenewalAttempt.findUniqueOrThrow.mockResolvedValue({
+      ...attemptRow,
+      claimToken: 'owner-claim',
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+    });
+
+    const applied = await service.markAttemptOutcome({
+      subscriptionId: 'sub-1',
+      billingPeriodKey: 'sub-1:2026-03-01',
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+      claimToken: 'owner-claim',
+      source: 'system',
+    });
+    expect(applied.applied).toBe(true);
+    expect(tx.subscriptionRenewalAttempt.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: attemptRow.id, claimToken: 'owner-claim' },
+      }),
+    );
+  });
+
+  it('D1: allocateAuthorizeAttemptNumber rejects empty claimToken', async () => {
+    const { service, prisma } = build();
+    const queryRaw = jest.fn();
+    (prisma as { $queryRaw: typeof queryRaw }).$queryRaw = queryRaw;
+    await expect(
+      service.allocateAuthorizeAttemptNumber('att-1', ''),
+    ).resolves.toBeNull();
+    expect(queryRaw).not.toHaveBeenCalled();
   });
 });

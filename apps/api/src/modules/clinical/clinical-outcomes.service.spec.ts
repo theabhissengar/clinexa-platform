@@ -74,6 +74,7 @@ describe('ClinicalOutcomesService (P14g)', () => {
             status: input.toStatus,
           }),
         ),
+      retryUncapturedPaymentCapture: jest.fn().mockResolvedValue(undefined),
     };
 
     const service = new ClinicalOutcomesService(
@@ -133,7 +134,7 @@ describe('ClinicalOutcomesService (P14g)', () => {
     expect(result.status).toBe(OrderStatus.AWAITING_FULFILLMENT);
   });
 
-  it('duplicate approve on AWAITING_FULFILLMENT is idempotent', async () => {
+  it('duplicate approve on AWAITING_FULFILLMENT retries capture only', async () => {
     const { service, orders } = build({
       order: { status: OrderStatus.AWAITING_FULFILLMENT },
     });
@@ -142,6 +143,7 @@ describe('ClinicalOutcomesService (P14g)', () => {
       actorUserId: 'doc-1',
     });
     expect(orders.transitionOrder).not.toHaveBeenCalled();
+    expect(orders.retryUncapturedPaymentCapture).toHaveBeenCalledWith('ord-1');
     expect(result.status).toBe(OrderStatus.AWAITING_FULFILLMENT);
   });
 

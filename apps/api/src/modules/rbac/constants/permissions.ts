@@ -439,7 +439,8 @@ export const PERMISSION_DEFINITIONS: readonly PermissionDefinition[] = [
     code: Permissions.PAY_INITIATE_REFUND,
     module: 'PAY',
     name: 'Initiate refund',
-    description: 'Start a staff- or policy-allowed refund.',
+    description:
+      'Start a staff refund (Guardian/CRM). Not granted to PATIENT until a patient refund API exists.',
     resource: 'payment',
     action: 'initiate_refund',
   },

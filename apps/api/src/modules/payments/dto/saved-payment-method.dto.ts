@@ -11,6 +11,13 @@ import {
 } from 'class-validator';
 
 export class AddSavedPaymentMethodDto {
+  /** Stripe pm_… when PAYMENTS_PROVIDER=stripe — ownership verified server-side. */
+  @ApiPropertyOptional({ example: 'pm_card_visa' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  providerMethodRef?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

@@ -13,10 +13,12 @@ import {
   OrderAdjustmentKind,
   OrderStatus,
   OrderType,
+  PaymentInitiator,
   PaymentLifecycleState,
   PaymentPurpose,
   PaymentStatus,
   Prisma,
+  ProductLifecycleStatus,
   NoteVisibility,
   UserStatus,
 } from '../../../generated/prisma';
@@ -24,6 +26,7 @@ import {
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { isUuid } from '../../common/utils/search-query.util';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { assertSupportedCurrency } from '../payments/money';
 import { OrderEditPolicyService } from './order-edit-policy.service';
 import { OrderInventoryOrchestrator } from './order-inventory.orchestrator';
 import { OrderLifecycleService } from './order-lifecycle.service';
@@ -306,7 +309,105 @@ export class OrdersService {
       });
     }
 
+    const idempotencyKey = input.idempotencyKey?.trim() || null;
+    if (idempotencyKey) {
+      const existing = await this.prisma.order.findUnique({
+        where: { idempotencyKey },
+        include: {
+          items: true,
+          addresses: true,
+          statusHistory: true,
+          activities: true,
+        },
+      });
+      if (existing) {
+        this.assertCheckoutIdempotencyReplay(existing, input);
+        return existing;
+      }
+    }
+
+    try {
+      return await this.createOrderInTransaction(input, idempotencyKey);
+    } catch (error) {
+      if (
+        idempotencyKey &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const raced = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          include: {
+            items: true,
+            addresses: true,
+            statusHistory: true,
+            activities: true,
+          },
+        });
+        if (raced) {
+          this.assertCheckoutIdempotencyReplay(raced, input);
+          return raced;
+        }
+      }
+      throw error;
+    }
+  }
+
+  private assertCheckoutIdempotencyReplay(
+    existing: {
+      patientUserId: string;
+      idempotencyRequestHash: string | null;
+    },
+    input: CreateOrderInput,
+  ): void {
+    if (existing.patientUserId !== input.patientUserId) {
+      throw new ConflictException({
+        code: ErrorCodes.ORD_CONFLICT,
+        message: 'Order idempotency key replay with mismatched body',
+      });
+    }
+    const expectedHash = input.idempotencyRequestHash?.trim() || null;
+    if (
+      expectedHash &&
+      existing.idempotencyRequestHash &&
+      existing.idempotencyRequestHash !== expectedHash
+    ) {
+      throw new ConflictException({
+        code: ErrorCodes.ORD_CONFLICT,
+        message: 'Order idempotency key replay with mismatched body',
+      });
+    }
+    if (expectedHash && !existing.idempotencyRequestHash) {
+      // Legacy row without hash — treat as conflict if caller supplied a hash.
+      throw new ConflictException({
+        code: ErrorCodes.ORD_CONFLICT,
+        message: 'Order idempotency key replay with mismatched body',
+      });
+    }
+  }
+
+  private async createOrderInTransaction(
+    input: CreateOrderInput,
+    idempotencyKey: string | null,
+  ) {
+    const initialStatus = input.initialStatus ?? OrderStatus.DRAFT;
+
     return this.prisma.$transaction(async (tx) => {
+      if (idempotencyKey) {
+        const raced = await tx.order.findUnique({
+          where: { idempotencyKey },
+          include: {
+            items: true,
+            addresses: true,
+            statusHistory: true,
+            activities: true,
+          },
+        });
+        if (raced) {
+          this.assertCheckoutIdempotencyReplay(raced, input);
+          return raced;
+        }
+      }
+
       const user = await tx.user.findUnique({
         where: { id: input.patientUserId },
       });
@@ -323,6 +424,7 @@ export class OrdersService {
 
       const preparedLines = [];
       let isRxOrder = false;
+      const currencies = new Set<string>();
 
       for (const line of input.lines) {
         if (!Number.isInteger(line.quantity) || line.quantity < 1) {
@@ -346,6 +448,24 @@ export class OrdersService {
             code: ErrorCodes.ORD_INVALID_ITEM,
             message: `Invalid product variant: ${line.variantId}`,
           });
+        }
+
+        if (input.requireStoreCatalog) {
+          if (
+            variant.product.lifecycleStatus !== ProductLifecycleStatus.PUBLISHED
+          ) {
+            throw new BadRequestException({
+              code: ErrorCodes.ORD_INVALID_ITEM,
+              message: `Product is not published: ${line.variantId}`,
+            });
+          }
+          if (!variant.isFulfillable) {
+            throw new BadRequestException({
+              code: ErrorCodes.ORD_INVALID_ITEM,
+              message: `Variant is not fulfillable: ${line.variantId}`,
+            });
+          }
+          currencies.add(assertSupportedCurrency(variant.currency));
         }
 
         const catalog = this.snapshots.snapshotCatalogLine(
@@ -460,6 +580,22 @@ export class OrdersService {
       const orderType = input.orderType ?? OrderType.ONE_TIME;
       const source = input.source ?? 'system';
 
+      let currency: string;
+      if (input.requireStoreCatalog) {
+        if (currencies.size !== 1) {
+          throw new BadRequestException({
+            code: ErrorCodes.VAL_INVALID_FORMAT,
+            message:
+              currencies.size === 0
+                ? 'currency is required'
+                : 'All checkout lines must share one supported currency',
+          });
+        }
+        currency = [...currencies][0];
+      } else {
+        currency = input.currency ?? 'USD';
+      }
+
       const order = await tx.order.create({
         data: {
           orderNumber,
@@ -467,9 +603,10 @@ export class OrdersService {
           status: initialStatus,
           orderType,
           subscriptionId: input.subscriptionId ?? null,
-          idempotencyKey: input.idempotencyKey ?? null,
+          idempotencyKey: idempotencyKey,
+          idempotencyRequestHash: input.idempotencyRequestHash?.trim() || null,
           ...customer,
-          currency: input.currency ?? 'USD',
+          currency,
           ...orderTotals,
           appliedCouponId,
           pricingSnapshotJson,
@@ -833,7 +970,7 @@ export class OrdersService {
 
   /**
    * Re-authorize a PAYMENT_PENDING order with a new payment method.
-   * Uses a fresh idempotency key per attempt; advances order on success.
+   * Advances only on confirmed authorization (not ACTION_REQUIRED).
    */
   async retryOrderAuthorization(input: RetryOrderPaymentInput) {
     const order = await this.prisma.order.findUnique({
@@ -858,7 +995,6 @@ export class OrdersService {
       });
     }
 
-    const idempotencyKey = `retry:${input.orderId}:${randomBytes(8).toString('hex')}`;
     const purpose =
       order.orderType === OrderType.SUBSCRIPTION_RENEWAL
         ? PaymentPurpose.RENEWAL
@@ -871,47 +1007,172 @@ export class OrdersService {
       amountCents: order.totalCents,
       currency: order.currency,
       purpose,
-      idempotencyKey,
+      initiator: PaymentInitiator.STAFF_RETRY,
+      idempotencyKey: input.idempotencyKey,
     });
 
+    const advanced = await this.advanceAfterConfirmedAuthorization({
+      order,
+      auth,
+      actorUserId: input.actorUserId ?? null,
+      source: input.source,
+      reasonPrefix: 'payment_retry',
+      voidOnInventoryFailure: order.orderType === OrderType.ONE_TIME,
+    });
+    return advanced;
+  }
+
+  /**
+   * Advance order after confirmed auth success. Does not advance on
+   * ACTION_REQUIRED / pending / failed. On ONE_TIME inventory failure after
+   * auth, voids (or refunds if already captured) so the payment is not stuck.
+   */
+  async advanceAfterConfirmedAuthorization(input: {
+    order: {
+      id: string;
+      status: OrderStatus;
+      isRxOrder: boolean;
+      totalCents: number;
+      orderType: OrderType;
+      subscriptionId: string | null;
+    };
+    auth: {
+      paymentId: string | null;
+      status: PaymentStatus;
+      lifecycleState: PaymentLifecycleState;
+      requiresAction?: boolean;
+    };
+    actorUserId: string | null;
+    source: string;
+    reasonPrefix: string;
+    voidOnInventoryFailure: boolean;
+  }) {
+    const { order, auth } = input;
     if (
       auth.status === PaymentStatus.FAILED ||
-      auth.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED
+      auth.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED ||
+      auth.requiresAction === true ||
+      auth.lifecycleState === PaymentLifecycleState.PENDING_AUTHORIZATION
     ) {
       return { order, auth, transitioned: false as const };
     }
 
-    if (order.isRxOrder || order.totalCents === 0) {
-      const transitioned = await this.transitionOrder({
+    if (
+      auth.lifecycleState !== PaymentLifecycleState.AUTHORIZED &&
+      auth.lifecycleState !== PaymentLifecycleState.CAPTURED
+    ) {
+      return { order, auth, transitioned: false as const };
+    }
+
+    if (!this.payments) {
+      throw new BadRequestException({
+        code: ErrorCodes.SYS_UNEXPECTED,
+        message: 'Payments is not available',
+      });
+    }
+
+    const tryTransition = async (
+      toStatus: OrderStatus,
+      reason: string,
+    ): Promise<
+      | {
+          order: Awaited<ReturnType<OrdersService['transitionOrder']>>;
+          ok: true;
+        }
+      | { ok: false; error: unknown }
+    > => {
+      try {
+        const transitioned = await this.transitionOrder({
+          orderId: order.id,
+          toStatus,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          reason,
+          expectedStatus: OrderStatus.PAYMENT_PENDING,
+        });
+        return { order: transitioned, ok: true };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    };
+
+    const recoverMoneyAfterAdvanceFailure = async () => {
+      if (!input.voidOnInventoryFailure || !this.payments) {
+        return;
+      }
+      await this.payments.voidOrRefundForOrder({
         orderId: order.id,
-        toStatus: order.isRxOrder
+        reason: 'checkout_advance_inventory_or_transition_failed',
+        idempotencyKey: `void_refund_advance_fail:${order.id}:${auth.paymentId ?? 'zero'}`,
+      });
+    };
+
+    if (order.isRxOrder || order.totalCents === 0) {
+      if (order.status !== OrderStatus.PAYMENT_PENDING) {
+        return { order, auth, transitioned: false as const };
+      }
+      const result = await tryTransition(
+        order.isRxOrder
           ? OrderStatus.AWAITING_CLINICAL_REVIEW
           : OrderStatus.AWAITING_FULFILLMENT,
-        actorUserId: input.actorUserId ?? null,
-        source: input.source,
-        reason: 'payment_retry_authorized',
-        expectedStatus: OrderStatus.PAYMENT_PENDING,
+        `${input.reasonPrefix}_authorized`,
+      );
+      if (!result.ok) {
+        await recoverMoneyAfterAdvanceFailure();
+        throw result.error;
+      }
+      return { order: result.order, auth, transitioned: true as const };
+    }
+
+    if (auth.lifecycleState === PaymentLifecycleState.AUTHORIZED) {
+      if (!auth.paymentId) {
+        return { order, auth, transitioned: false as const };
+      }
+      const capture = await this.payments.capturePayment({
+        paymentId: auth.paymentId,
+        idempotencyKey: `capture:${order.id}:${auth.paymentId}`,
       });
-      return { order: transitioned, auth, transitioned: true as const };
+      if (capture.lifecycleState !== PaymentLifecycleState.CAPTURED) {
+        return { order, auth, capture, transitioned: false as const };
+      }
     }
 
-    const capture = await this.payments.capturePayment({
-      paymentId: auth.paymentId,
-      idempotencyKey: `capture:${order.id}:${auth.paymentId}`,
-    });
-    if (capture.lifecycleState !== PaymentLifecycleState.CAPTURED) {
-      return { order, auth, capture, transitioned: false as const };
+    if (order.status !== OrderStatus.PAYMENT_PENDING) {
+      return { order, auth, transitioned: false as const };
     }
 
-    const transitioned = await this.transitionOrder({
-      orderId: order.id,
-      toStatus: OrderStatus.AWAITING_FULFILLMENT,
-      actorUserId: input.actorUserId ?? null,
-      source: input.source,
-      reason: 'payment_retry_captured',
-      expectedStatus: OrderStatus.PAYMENT_PENDING,
+    const result = await tryTransition(
+      OrderStatus.AWAITING_FULFILLMENT,
+      `${input.reasonPrefix}_captured`,
+    );
+    if (!result.ok) {
+      await recoverMoneyAfterAdvanceFailure();
+      throw result.error;
+    }
+    return { order: result.order, auth, transitioned: true as const };
+  }
+
+  /**
+   * Retry capture for an uncaptured positive-total order (clinical AF resume).
+   * Does not re-run clinical approval. Throws if capture does not complete.
+   */
+  async retryUncapturedPaymentCapture(orderId: string): Promise<void> {
+    if (!this.payments) {
+      return;
+    }
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { totalCents: true },
     });
-    return { order: transitioned, auth, capture, transitioned: true as const };
+    if (!order || order.totalCents === 0) {
+      return;
+    }
+    const lifecycle =
+      await this.payments.getLatestPaymentLifecycleForOrder(orderId);
+    if (lifecycle === PaymentLifecycleState.CAPTURED) {
+      return;
+    }
+    await this.payments.handleOrderPaymentHook('capture_required', orderId);
   }
 
   /**
@@ -1069,19 +1330,16 @@ export class OrdersService {
 
         this.lifecycle.assertTransition(current, input.toStatus);
 
-        // Renewal-scoped: do not fulfill without captured payment (P14e C10).
-        if (
-          input.toStatus === OrderStatus.FULFILLED &&
-          order.orderType === OrderType.SUBSCRIPTION_RENEWAL
-        ) {
+        // Do not fulfill without captured payment (renewal P14e C10; ONE_TIME Phase 6D).
+        // Zero-total orders have no Payment row — exempt when totalCents === 0.
+        if (input.toStatus === OrderStatus.FULFILLED && order.totalCents > 0) {
           const lifecycle = this.payments
             ? await this.payments.getLatestPaymentLifecycleForOrder(order.id)
             : null;
           if (lifecycle !== PaymentLifecycleState.CAPTURED) {
             throw new BadRequestException({
               code: ErrorCodes.ORD_INVALID_TRANSITION,
-              message:
-                'Subscription renewal orders require captured payment before fulfillment',
+              message: 'Order requires captured payment before fulfillment',
             });
           }
         }

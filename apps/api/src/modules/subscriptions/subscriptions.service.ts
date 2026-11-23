@@ -74,6 +74,26 @@ export class SubscriptionsService {
     return this.renewal.openRenewalAttempt(input);
   }
 
+  allocateAuthorizeAttemptNumber(attemptId: string, claimToken: string) {
+    return this.renewal.allocateAuthorizeAttemptNumber(attemptId, claimToken);
+  }
+
+  claimRenewalAttemptLease(input: { attemptId: string; leaseSeconds: number }) {
+    return this.renewal.claimRenewalAttemptLease(input);
+  }
+
+  heartbeatRenewalAttemptLease(input: {
+    attemptId: string;
+    claimToken: string;
+    leaseSeconds: number;
+  }) {
+    return this.renewal.heartbeatRenewalAttemptLease(input);
+  }
+
+  releaseRenewalAttemptLease(input: { attemptId: string; claimToken: string }) {
+    return this.renewal.releaseRenewalAttemptLease(input);
+  }
+
   attachRenewalOrder(input: AttachRenewalOrderInput) {
     return this.renewal.attachRenewalOrder(input);
   }
@@ -766,14 +786,25 @@ export class SubscriptionsService {
   }
 
   async markPastDue(input: TransitionSubscriptionInput) {
+    let notified = false;
     const { updated: result } = await this.transitionWithSideEffects(
       async (tx) => {
         const sub = await this.requireActive(tx, input.subscriptionId);
+        // Idempotent: already PAST_DUE — no duplicate history/notifications.
+        if (sub.status === SubscriptionStatus.PAST_DUE) {
+          return { updated: sub };
+        }
+        // Only ACTIVE → PAST_DUE from renewal/payment paths (never paused/terminal).
+        if (sub.status !== SubscriptionStatus.ACTIVE) {
+          return { updated: sub };
+        }
+        const actionRequiredHold = input.actionRequiredHold === true;
         this.lifecycle.assertTransition(
           sub.status,
           SubscriptionStatus.PAST_DUE,
           {
-            failedRenewalAttempt: true,
+            failedRenewalAttempt: !actionRequiredHold,
+            actionRequiredHold,
           },
         );
         const updated = await this.applyLifecycle(
@@ -783,15 +814,26 @@ export class SubscriptionsService {
           {
             actorUserId: input.actorUserId,
             source: input.source,
-            reason: input.reason ?? 'renewal_payment_failed',
-            extraData: { paymentStatusSummary: 'failed' },
-            activityKind: 'subscription_past_due',
+            reason:
+              input.reason ??
+              (actionRequiredHold
+                ? 'renewal_action_required'
+                : 'renewal_payment_failed'),
+            extraData: {
+              paymentStatusSummary: actionRequiredHold ? 'pending' : 'failed',
+            },
+            activityKind: actionRequiredHold
+              ? 'subscription_past_due_action_required'
+              : 'subscription_past_due',
           },
         );
+        notified = true;
         return { updated };
       },
     );
-    await this.emitNotify('subscription.past_due', result.id);
+    if (notified) {
+      await this.emitNotify('subscription.past_due', result.id);
+    }
     return result;
   }
 

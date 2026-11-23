@@ -347,6 +347,36 @@ describe('SubscriptionsService', () => {
     });
   });
 
+  it('Phase 6C: cancel still runs onSubscriptionCancelled after unsupported PSP cancel', async () => {
+    const { prisma, tx } = buildPrismaMock();
+    const active = {
+      ...created,
+      status: SubscriptionStatus.ACTIVE,
+      nextRenewalAt: new Date('2026-02-01T00:00:00.000Z'),
+      statusBeforePause: null,
+      providerSubscriptionRef: 'stripe_sub_legacy',
+      plan,
+    };
+    tx.subscription.findUnique.mockResolvedValue(active);
+    const service = buildService(prisma);
+    const onPayment = jest.fn().mockResolvedValue(undefined);
+    const onSubscriptionCancelled = jest.fn().mockResolvedValue(undefined);
+    service.setSideEffectHooks({ onPayment, onSubscriptionCancelled });
+
+    await service.cancel({
+      subscriptionId: 'sub-1',
+      source: 'guardian',
+      actorUserId: 'staff-1',
+    });
+
+    expect(onPayment).toHaveBeenCalledWith(
+      'cancel_provider_recurring',
+      'sub-1',
+      'stripe_sub_legacy',
+    );
+    expect(onSubscriptionCancelled).toHaveBeenCalled();
+  });
+
   it('rejects CRM create, invalid user, unpublished plan, and bad variant', async () => {
     const { prisma, tx } = buildPrismaMock();
     const service = buildService(prisma);

@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
   Prisma,
   SubscriptionRenewalAttemptStatus,
@@ -175,6 +176,99 @@ export class SubscriptionsRenewalService {
       }
       return { attempt: raced, created: false };
     }
+  }
+
+  /**
+   * Claim a durable processing lease on a renewal attempt (short txn only).
+   * Never hold this across a gateway network call — heartbeat instead.
+   */
+  async claimRenewalAttemptLease(input: {
+    attemptId: string;
+    leaseSeconds: number;
+  }): Promise<{ claimToken: string } | null> {
+    const claimToken = randomUUID();
+    const leaseSeconds =
+      Number.isFinite(input.leaseSeconds) && input.leaseSeconds > 0
+        ? input.leaseSeconds
+        : 120;
+    const claimed = await this.prisma.$executeRaw`
+      UPDATE subscription_renewal_attempts
+      SET claim_token = ${claimToken},
+          lease_expires_at = now() + (${leaseSeconds}::double precision * interval '1 second'),
+          updated_at = NOW()
+      WHERE id = ${input.attemptId}::uuid
+        AND status <> 'SUCCEEDED'
+        AND (
+          claim_token IS NULL
+          OR lease_expires_at IS NULL
+          OR lease_expires_at < now()
+        )
+    `;
+    if (claimed === 0) {
+      return null;
+    }
+    return { claimToken };
+  }
+
+  /** Extend lease while a provider call is in flight (owner only). */
+  async heartbeatRenewalAttemptLease(input: {
+    attemptId: string;
+    claimToken: string;
+    leaseSeconds: number;
+  }): Promise<boolean> {
+    const leaseSeconds =
+      Number.isFinite(input.leaseSeconds) && input.leaseSeconds > 0
+        ? input.leaseSeconds
+        : 120;
+    const updated = await this.prisma.$executeRaw`
+      UPDATE subscription_renewal_attempts
+      SET lease_expires_at = now() + (${leaseSeconds}::double precision * interval '1 second'),
+          updated_at = NOW()
+      WHERE id = ${input.attemptId}::uuid
+        AND claim_token = ${input.claimToken}
+    `;
+    return updated > 0;
+  }
+
+  /** Release lease only if this worker still owns it. */
+  async releaseRenewalAttemptLease(input: {
+    attemptId: string;
+    claimToken: string;
+  }): Promise<boolean> {
+    const updated = await this.prisma.$executeRaw`
+      UPDATE subscription_renewal_attempts
+      SET claim_token = NULL,
+          lease_expires_at = NULL,
+          updated_at = NOW()
+      WHERE id = ${input.attemptId}::uuid
+        AND claim_token = ${input.claimToken}
+    `;
+    return updated > 0;
+  }
+
+  /**
+   * Atomically allocate the next authorize attempt number under the current
+   * claim owner. Used to mint `renewal:{sub}:{period}:authorize:a{n}` keys.
+   * `claimToken` is required — unscoped allocation is not allowed.
+   */
+  async allocateAuthorizeAttemptNumber(
+    attemptId: string,
+    claimToken: string,
+  ): Promise<number | null> {
+    if (!claimToken) {
+      return null;
+    }
+    const rows = await this.prisma.$queryRaw<
+      Array<{ authorize_attempt_number: number }>
+    >`
+      UPDATE subscription_renewal_attempts
+      SET authorize_attempt_number = authorize_attempt_number + 1,
+          updated_at = NOW()
+      WHERE id = ${attemptId}::uuid
+        AND claim_token = ${claimToken}
+      RETURNING authorize_attempt_number
+    `;
+    return rows[0]?.authorize_attempt_number ?? null;
   }
 
   async openRenewalAttempt(input: OpenRenewalAttemptInput) {
@@ -425,6 +519,12 @@ export class SubscriptionsRenewalService {
     });
   }
 
+  /**
+   * Persist attempt outcome. When `claimToken` is provided (worker money paths),
+   * the write applies only if `claim_token` is non-null and equals the token —
+   * a cleared (NULL) token after release never authorizes a stale write.
+   * Webhook paths omit `claimToken` (no worker lease).
+   */
   async markAttemptOutcome(input: {
     subscriptionId: string;
     billingPeriodKey: string;
@@ -434,7 +534,16 @@ export class SubscriptionsRenewalService {
     lastErrorCode?: string | null;
     actorUserId?: string | null;
     source?: string;
-  }) {
+    claimToken?: string | null;
+  }): Promise<{
+    attempt: {
+      id: string;
+      status: SubscriptionRenewalAttemptStatus;
+      paymentId: string | null;
+      claimToken: string | null;
+    };
+    applied: boolean;
+  }> {
     return this.prisma.$transaction(async (tx) => {
       const attempt = await tx.subscriptionRenewalAttempt.findUnique({
         where: {
@@ -450,6 +559,55 @@ export class SubscriptionsRenewalService {
           message: 'Renewal attempt not found',
         });
       }
+
+      if (input.claimToken != null && input.claimToken !== '') {
+        if (
+          attempt.claimToken == null ||
+          attempt.claimToken !== input.claimToken
+        ) {
+          return { attempt, applied: false };
+        }
+        const gated = await tx.subscriptionRenewalAttempt.updateMany({
+          where: {
+            id: attempt.id,
+            claimToken: input.claimToken,
+          },
+          data: {
+            status: input.status,
+            paymentId: input.paymentId ?? attempt.paymentId,
+            paymentStatusSummary:
+              input.paymentStatusSummary ?? attempt.paymentStatusSummary,
+            lastErrorCode:
+              input.lastErrorCode !== undefined
+                ? input.lastErrorCode
+                : attempt.lastErrorCode,
+            lastErrorAt: input.lastErrorCode ? new Date() : attempt.lastErrorAt,
+          },
+        });
+        if (gated.count === 0) {
+          return { attempt, applied: false };
+        }
+        const updated = await tx.subscriptionRenewalAttempt.findUniqueOrThrow({
+          where: { id: attempt.id },
+        });
+        await tx.subscriptionActivity.create({
+          data: {
+            subscriptionId: input.subscriptionId,
+            actorUserId: input.actorUserId ?? null,
+            kind: 'renewal_attempt_outcome',
+            summary: `Attempt ${input.status}`,
+            metadata: {
+              billingPeriodKey: input.billingPeriodKey,
+              status: input.status,
+              paymentId: input.paymentId ?? null,
+              lastErrorCode: input.lastErrorCode ?? null,
+              source: input.source ?? 'system',
+            },
+          },
+        });
+        return { attempt: updated, applied: true };
+      }
+
       const updated = await tx.subscriptionRenewalAttempt.update({
         where: { id: attempt.id },
         data: {
@@ -479,7 +637,7 @@ export class SubscriptionsRenewalService {
           },
         },
       });
-      return updated;
+      return { attempt: updated, applied: true };
     });
   }
 

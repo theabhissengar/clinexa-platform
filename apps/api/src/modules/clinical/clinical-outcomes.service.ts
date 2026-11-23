@@ -40,10 +40,13 @@ export class ClinicalOutcomesService {
   }) {
     const order = await this.resolveClinicalOrder(input.consultationId);
 
-    if (
-      order.status === OrderStatus.AWAITING_FULFILLMENT ||
-      order.status === OrderStatus.FULFILLED
-    ) {
+    if (order.status === OrderStatus.FULFILLED) {
+      return this.toDecisionResponse(order);
+    }
+
+    // Already AF: retry capture only if uncaptured (Phase 6D) — no re-clinical.
+    if (order.status === OrderStatus.AWAITING_FULFILLMENT) {
+      await this.orders.retryUncapturedPaymentCapture(order.id);
       return this.toDecisionResponse(order);
     }
 

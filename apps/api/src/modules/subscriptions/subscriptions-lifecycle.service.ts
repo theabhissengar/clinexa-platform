@@ -62,6 +62,11 @@ const PAUSABLE: ReadonlySet<SubscriptionStatus> = new Set([
 export type LifecycleAssertExtras = {
   /** ACTIVE → PAST_DUE must come from a failed renewal payment attempt. */
   failedRenewalAttempt?: boolean;
+  /**
+   * ACTIVE → PAST_DUE while off-session SCA is held (payment still
+   * PENDING_AUTHORIZATION / requires_action; attempt stays PROCESSING).
+   */
+  actionRequiredHold?: boolean;
   /** Resume must restore statusBeforePause. */
   statusBeforePause?: SubscriptionStatus | null;
   /** PENDING_SETUP → PAUSED is allowed only via parent INITIAL-order hook (Phase 4). */
@@ -100,11 +105,13 @@ export class SubscriptionsLifecycleService {
     if (
       from === SubscriptionStatus.ACTIVE &&
       to === SubscriptionStatus.PAST_DUE &&
-      extras?.failedRenewalAttempt !== true
+      extras?.failedRenewalAttempt !== true &&
+      extras?.actionRequiredHold !== true
     ) {
       throw new BadRequestException({
         code: ErrorCodes.SUB_INVALID_TRANSITION,
-        message: 'ACTIVE → PAST_DUE requires a failed renewal payment attempt',
+        message:
+          'ACTIVE → PAST_DUE requires a failed renewal payment attempt or action-required hold',
       });
     }
 

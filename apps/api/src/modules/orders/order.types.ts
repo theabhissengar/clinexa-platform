@@ -64,6 +64,16 @@ export type CreateOrderInput = {
   couponCode?: string | null;
   /** Optional idempotency key (unique). Replay returns the existing order. */
   idempotencyKey?: string | null;
+  /**
+   * Durable checkout fingerprint (Phase 6D). Compared on idempotent replay;
+   * never updated after create.
+   */
+  idempotencyRequestHash?: string | null;
+  /**
+   * Store checkout: require PUBLISHED + fulfillable variants; resolve currency
+   * from variants (no silent USD default).
+   */
+  requireStoreCatalog?: boolean;
 };
 
 /** Renewal / historical create — lines come from snapshots, not live catalog prices. */
@@ -185,6 +195,8 @@ export type ClassDOrderInput = {
 export type RetryOrderPaymentInput = {
   orderId: string;
   paymentMethodId: string;
+  /** Required client Idempotency-Key (Phase 6B) — persisted as Payment.idempotencyKey. */
+  idempotencyKey: string;
   actorUserId?: string | null;
   source: string;
 };

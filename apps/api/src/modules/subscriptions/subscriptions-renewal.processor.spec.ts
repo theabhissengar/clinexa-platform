@@ -18,6 +18,8 @@ describe('SubscriptionsRenewalProcessor', () => {
     status: SubscriptionRenewalAttemptStatus.PENDING,
     orderId: null as string | null,
     paymentId: null as string | null,
+    authorizeAttemptNumber: 0,
+    lastErrorCode: null as string | null,
   };
 
   const subscriptionBase = {
@@ -30,11 +32,13 @@ describe('SubscriptionsRenewalProcessor', () => {
     customerPhone: null,
     status: SubscriptionStatus.ACTIVE,
     currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+    nextRenewalAt: new Date('2026-03-01T00:00:00.000Z'),
     cycleNumber: 1,
     plan: {
       billingInterval: 'MONTH',
       intervalCount: 1,
       customIntervalDays: null,
+      gracePeriodDays: 7,
     },
   };
 
@@ -88,11 +92,23 @@ describe('SubscriptionsRenewalProcessor', () => {
         findUnique: jest.fn(() => Promise.resolve(attempt)),
         findFirst: jest.fn(() => Promise.resolve(attempt)),
       },
+      payment: {
+        findUnique: jest.fn(() =>
+          Promise.resolve({
+            id: 'pay-1',
+            providerStatusRaw: null,
+            lifecycleState: PaymentLifecycleState.AUTHORIZED,
+          }),
+        ),
+      },
       $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => {
         const tx = {
           subscription: { update: jest.fn() },
           subscriptionStatusHistory: { create: jest.fn() },
-          subscriptionRenewalAttempt: { update: jest.fn() },
+          subscriptionRenewalAttempt: {
+            update: jest.fn(),
+            updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
+          },
           subscriptionActivity: { create: jest.fn() },
         };
         return fn(tx);
@@ -132,7 +148,17 @@ describe('SubscriptionsRenewalProcessor', () => {
         }),
       ),
       attachRenewalOrder: jest.fn(),
-      markAttemptOutcome: jest.fn(),
+      markAttemptOutcome: jest.fn(() =>
+        Promise.resolve({
+          applied: true,
+          attempt: {
+            id: attempt.id,
+            status: attempt.status,
+            paymentId: attempt.paymentId,
+            claimToken: 'claim-1',
+          },
+        }),
+      ),
     };
 
     const schedule = {
@@ -203,7 +229,34 @@ describe('SubscriptionsRenewalProcessor', () => {
         return Promise.resolve(result);
       }),
       findLatestForOrder: jest.fn(() => Promise.resolve(latestPayment)),
+      findById: jest.fn((paymentId: string) =>
+        prisma.payment.findUnique({ where: { id: paymentId } }),
+      ),
+      findByIdempotencyKey: jest.fn(() => Promise.resolve(null)),
+      classifyPaymentLifecycleForAbandon: jest.fn(
+        (lifecycleState: PaymentLifecycleState | null | undefined) => {
+          if (lifecycleState == null) return 'not_found';
+          switch (lifecycleState) {
+            case PaymentLifecycleState.VOIDED:
+              return 'voided';
+            case PaymentLifecycleState.AUTHORIZATION_FAILED:
+              return 'authorization_failed';
+            case PaymentLifecycleState.CAPTURED:
+              return 'captured';
+            case PaymentLifecycleState.AUTHORIZED:
+            case PaymentLifecycleState.CAPTURE_PENDING:
+            case PaymentLifecycleState.CAPTURE_FAILED:
+              return 'authorized';
+            case PaymentLifecycleState.REFUNDED:
+            case PaymentLifecycleState.REFUND_PENDING:
+              return 'refunded';
+            default:
+              return 'unknown';
+          }
+        },
+      ),
       voidOrRefundForOrder: jest.fn(),
+      cancelPendingAuthorization: jest.fn(() => Promise.resolve('voided')),
     };
 
     const addresses = {
@@ -231,6 +284,21 @@ describe('SubscriptionsRenewalProcessor', () => {
       expire: jest.fn(() =>
         Promise.resolve({ id: 'sub-exp', status: SubscriptionStatus.EXPIRED }),
       ),
+      allocateAuthorizeAttemptNumber: jest.fn(() => Promise.resolve(1)),
+      claimRenewalAttemptLease: jest.fn(() =>
+        Promise.resolve({ claimToken: 'claim-1' }),
+      ),
+      heartbeatRenewalAttemptLease: jest.fn(() => Promise.resolve(true)),
+      releaseRenewalAttemptLease: jest.fn(() => Promise.resolve(true)),
+    };
+
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'payments.renewalLeaseSeconds') return 120;
+        if (key === 'payments.renewalMaxAuthorizeAttempts') return 5;
+        if (key === 'payments.renewalMinRetryDelaySeconds') return 0;
+        return undefined;
+      }),
     };
 
     const processor = new SubscriptionsRenewalProcessor(
@@ -241,6 +309,7 @@ describe('SubscriptionsRenewalProcessor', () => {
       orders as never,
       payments as never,
       addresses as never,
+      config as never,
     );
 
     return {
@@ -866,8 +935,14 @@ describe('SubscriptionsRenewalProcessor', () => {
           status: OrderStatus.PAYMENT_PENDING,
         },
       });
-      // First lookup in resumeExistingAttempt sees auth failure → fall through.
+      // resumeExistingAttempt + authorize-path lookup both see auth failure;
+      // subsequent lookups (post-capture complete) see CAPTURED.
       payments.findLatestForOrder
+        .mockResolvedValueOnce({
+          id: 'pay-1',
+          lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+          status: PaymentStatus.FAILED,
+        })
         .mockResolvedValueOnce({
           id: 'pay-1',
           lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
@@ -984,6 +1059,804 @@ describe('SubscriptionsRenewalProcessor', () => {
       expect(processSpy).not.toHaveBeenCalledWith(
         expect.objectContaining({ subscriptionId: 'sub-ended' }),
       );
+    });
+  });
+
+  describe('Phase 6E renewal reliability', () => {
+    it('zero-total succeeds without payment method', async () => {
+      const { processor, prisma, payments, subscriptions } = build({
+        order: { totalCents: 0 },
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        ...subscriptionBase,
+        paymentMethodId: null,
+        clinicalRequirement: 'NONE',
+        plan: subscriptionBase.plan,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('succeeded');
+      expect(payments.authorizeForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ amountCents: 0 }),
+      );
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+    });
+
+    it('skips when lease claim fails (in_flight)', async () => {
+      const { processor, subscriptions, payments } = build();
+      subscriptions.claimRenewalAttemptLease.mockResolvedValue(null);
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('in_flight');
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(subscriptions.releaseRenewalAttemptLease).not.toHaveBeenCalled();
+    });
+
+    it('SCA requires_action holds PROCESSING and PAST_DUE without new attempt fail', async () => {
+      const { processor, payments, prisma, subscriptions, renewal } = build({
+        auth: {
+          status: PaymentStatus.PENDING,
+          lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+          paymentStatusSummary: 'pending',
+        },
+      });
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        providerStatusRaw: 'requires_action',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('authorization_pending');
+      expect(result.attemptStatus).toBe(
+        SubscriptionRenewalAttemptStatus.PROCESSING,
+      );
+      expect(renewal.markAttemptOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+          paymentStatusSummary: 'pending',
+        }),
+      );
+      expect(subscriptions.markPastDue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actionRequiredHold: true,
+          reason: 'renewal_action_required',
+        }),
+      );
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+    });
+
+    it('PENDING payment reuses key and does not allocate a{n}', async () => {
+      const { processor, payments, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          authorizeAttemptNumber: 1,
+        },
+        auth: {
+          status: PaymentStatus.PENDING,
+          lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+          paymentStatusSummary: 'pending',
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        idempotencyKey: 'renewal:sub-1:sub-1:2026-03-01:authorize:a1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: null,
+      });
+
+      await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+
+      expect(
+        subscriptions.allocateAuthorizeAttemptNumber,
+      ).not.toHaveBeenCalled();
+      expect(payments.authorizeForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idempotencyKey: 'renewal:sub-1:sub-1:2026-03-01:authorize:a1',
+        }),
+      );
+    });
+
+    it('grace-end SCA abandon voids then marks FAILED', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, subscriptions, renewal, prisma } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+          authorizeAttemptNumber: 1,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        idempotencyKey: 'renewal:sub-1:k:authorize:a1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: 'requires_action',
+      });
+      payments.cancelPendingAuthorization.mockResolvedValue('voided');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.VOIDED,
+        providerStatusRaw: 'canceled',
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(payments.cancelPendingAuthorization).toHaveBeenCalled();
+      expect(result.outcome).toBe('authorization_failed');
+      expect(renewal.markAttemptOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          lastErrorCode: ErrorCodes.PAY_RENEWAL_ABANDONED,
+          claimToken: 'claim-1',
+        }),
+      );
+      expect(subscriptions.markPastDue).toHaveBeenCalled();
+    });
+
+    it('onRenewalAuthorizationFailed ignores stale payment id', async () => {
+      const { processor, prisma, renewal, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-new',
+        },
+      });
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-old',
+        lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+        status: PaymentStatus.FAILED,
+      });
+
+      await processor.onRenewalAuthorizationFailed({
+        orderId: 'ord-1',
+        subscriptionId: 'sub-1',
+        paymentId: 'pay-old',
+        errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
+      });
+
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalled();
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+    });
+
+    it('completeRenewalOnCapture advances only once via updateMany claim', async () => {
+      const { processor, prisma, schedule, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          status: OrderStatus.AWAITING_FULFILLMENT,
+          totalCents: 5000,
+        },
+      });
+      const payments = {
+        findLatestForOrder: jest.fn(() =>
+          Promise.resolve({
+            id: 'pay-1',
+            lifecycleState: PaymentLifecycleState.CAPTURED,
+          }),
+        ),
+      };
+      (processor as unknown as { payments: typeof payments }).payments =
+        payments;
+
+      let updateManyCount = 1;
+      prisma.$transaction.mockImplementation(
+        async (fn: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            subscription: { update: jest.fn() },
+            subscriptionStatusHistory: { create: jest.fn() },
+            subscriptionRenewalAttempt: {
+              updateMany: jest.fn(() =>
+                Promise.resolve({ count: updateManyCount }),
+              ),
+            },
+            subscriptionActivity: { create: jest.fn() },
+          };
+          return fn(tx);
+        },
+      );
+
+      await processor.completeRenewalOnCapture({
+        subscriptionId: 'sub-1',
+        billingPeriodKey,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+        source: 'payment',
+      });
+      expect(schedule.advancePeriod).toHaveBeenCalled();
+      expect(subscriptions.notify).toHaveBeenCalled();
+
+      updateManyCount = 0;
+      schedule.advancePeriod.mockClear();
+      subscriptions.notify.mockClear();
+      prisma.subscriptionRenewalAttempt.findUnique.mockResolvedValue({
+        ...attemptBase,
+        status: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+      });
+
+      await processor.completeRenewalOnCapture({
+        subscriptionId: 'sub-1',
+        billingPeriodKey,
+        orderId: 'ord-1',
+        paymentId: 'pay-1',
+        source: 'payment',
+      });
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+      expect(subscriptions.notify).not.toHaveBeenCalled();
+    });
+
+    it('D1: heartbeat DB failure aborts authorize side effects as in_flight', async () => {
+      const { processor, subscriptions, payments, renewal } = build();
+      subscriptions.heartbeatRenewalAttemptLease.mockResolvedValue(false);
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('in_flight');
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+        }),
+      );
+      expect(subscriptions.releaseRenewalAttemptLease).toHaveBeenCalledWith({
+        attemptId: 'att-1',
+        claimToken: 'claim-1',
+      });
+    });
+
+    it('D1: lease loss after authorize success skips FAILED mutations', async () => {
+      const { processor, subscriptions, payments, renewal } = build();
+      subscriptions.heartbeatRenewalAttemptLease
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+      renewal.markAttemptOutcome.mockResolvedValue({
+        applied: false,
+        attempt: {
+          id: 'att-1',
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          paymentId: null,
+          claimToken: 'other-claim',
+        },
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(payments.authorizeForOrder).toHaveBeenCalled();
+      expect(result.outcome).toBe('in_flight');
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+    });
+
+    it('D1: reclaim reuses exact a{n} idempotency key without allocate', async () => {
+      const reuseKey = `renewal:sub-1:${billingPeriodKey}:authorize:a2`;
+      const { processor, payments, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          orderId: 'ord-1',
+          paymentId: null,
+          authorizeAttemptNumber: 2,
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue(null);
+      payments.findByIdempotencyKey.mockResolvedValue({
+        id: 'pay-reuse',
+        idempotencyKey: reuseKey,
+        lifecycleState: PaymentLifecycleState.AUTHORIZED,
+        status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+      });
+
+      await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+
+      expect(
+        subscriptions.allocateAuthorizeAttemptNumber,
+      ).not.toHaveBeenCalled();
+      expect(payments.authorizeForOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ idempotencyKey: reuseKey }),
+      );
+    });
+
+    it('D1: lease loss during capture still preserves CAPTURED via complete path', async () => {
+      const { processor, subscriptions, payments, schedule, renewal } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        order: {
+          isRxOrder: false,
+          status: OrderStatus.PAYMENT_PENDING,
+        },
+      });
+      let lifecycle = PaymentLifecycleState.AUTHORIZED;
+      payments.findLatestForOrder.mockImplementation(() =>
+        Promise.resolve({
+          id: 'pay-1',
+          lifecycleState: lifecycle,
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+        }),
+      );
+      payments.capturePayment.mockImplementation(() => {
+        lifecycle = PaymentLifecycleState.CAPTURED;
+        return Promise.resolve({
+          paymentId: 'pay-1',
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          lifecycleState: PaymentLifecycleState.CAPTURED,
+          paymentStatusSummary: 'authorized_or_captured',
+        });
+      });
+      // Initial claim beat + post-capture beat fail ownership.
+      subscriptions.heartbeatRenewalAttemptLease
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+      });
+
+      expect(payments.capturePayment).toHaveBeenCalled();
+      expect(schedule.advancePeriod).toHaveBeenCalled();
+      expect(result.outcome).toBe('in_flight');
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+        }),
+      );
+    });
+
+    it('D1: stale worker markAttemptOutcome !applied skips PAST_DUE', async () => {
+      const { processor, subscriptions, renewal } = build({
+        auth: {
+          status: PaymentStatus.FAILED,
+          lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+          paymentStatusSummary: 'failed',
+        },
+      });
+      renewal.markAttemptOutcome.mockResolvedValue({
+        applied: false,
+        attempt: {
+          id: 'att-1',
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          paymentId: 'pay-other',
+          claimToken: 'newer-claim',
+        },
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'auto',
+        source: 'system',
+      });
+
+      expect(result.outcome).toBe('in_flight');
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+    });
+
+    it('D2: grace-end CAPTURED completes renewal without FAILED', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, schedule, renewal } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+          authorizeAttemptNumber: 1,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+        order: { status: OrderStatus.AWAITING_FULFILLMENT, totalCents: 5000 },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: 'requires_action',
+      });
+      payments.cancelPendingAuthorization.mockResolvedValue('captured');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.CAPTURED,
+      });
+      payments.findLatestForOrder
+        .mockResolvedValueOnce({
+          id: 'pay-1',
+          lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+          status: PaymentStatus.PENDING,
+          providerStatusRaw: 'requires_action',
+        })
+        .mockResolvedValue({
+          id: 'pay-1',
+          lifecycleState: PaymentLifecycleState.CAPTURED,
+        });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(result.outcome).toBe('succeeded');
+      expect(schedule.advancePeriod).toHaveBeenCalled();
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+        }),
+      );
+    });
+
+    it('D2: grace-end AUTHORIZED routes to capture-only recovery', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, schedule } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      let lifecycle = PaymentLifecycleState.PENDING_AUTHORIZATION;
+      payments.findLatestForOrder.mockImplementation(() =>
+        Promise.resolve({
+          id: 'pay-1',
+          lifecycleState: lifecycle,
+          status:
+            lifecycle === PaymentLifecycleState.PENDING_AUTHORIZATION
+              ? PaymentStatus.PENDING
+              : PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          providerStatusRaw:
+            lifecycle === PaymentLifecycleState.PENDING_AUTHORIZATION
+              ? 'requires_action'
+              : null,
+        }),
+      );
+      payments.cancelPendingAuthorization.mockResolvedValue('authorized');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.AUTHORIZED,
+      });
+      payments.capturePayment.mockImplementation(() => {
+        lifecycle = PaymentLifecycleState.CAPTURED;
+        return Promise.resolve({
+          paymentId: 'pay-1',
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          lifecycleState: PaymentLifecycleState.CAPTURED,
+          paymentStatusSummary: 'authorized_or_captured',
+        });
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(payments.capturePayment).toHaveBeenCalled();
+      expect(result.outcome).toBe('succeeded');
+      expect(schedule.advancePeriod).toHaveBeenCalled();
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+    });
+
+    it('D2: grace-end CAPTURE_FAILED recovers via capture-only path', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      let lifecycle = PaymentLifecycleState.PENDING_AUTHORIZATION;
+      payments.findLatestForOrder.mockImplementation(() =>
+        Promise.resolve({
+          id: 'pay-1',
+          lifecycleState: lifecycle,
+          status:
+            lifecycle === PaymentLifecycleState.PENDING_AUTHORIZATION
+              ? PaymentStatus.PENDING
+              : PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          providerStatusRaw:
+            lifecycle === PaymentLifecycleState.PENDING_AUTHORIZATION
+              ? 'requires_action'
+              : null,
+        }),
+      );
+      payments.cancelPendingAuthorization.mockResolvedValue('authorized');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.CAPTURE_FAILED,
+      });
+      payments.capturePayment.mockImplementation(() => {
+        lifecycle = PaymentLifecycleState.CAPTURED;
+        return Promise.resolve({
+          paymentId: 'pay-1',
+          status: PaymentStatus.AUTHORIZED_OR_CAPTURED,
+          lifecycleState: PaymentLifecycleState.CAPTURED,
+          paymentStatusSummary: 'authorized_or_captured',
+        });
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(payments.capturePayment).toHaveBeenCalled();
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(result.outcome).toBe('succeeded');
+    });
+
+    it('D2: grace-end REFUNDED does not advance period or authorize again', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, schedule, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: 'requires_action',
+      });
+      payments.cancelPendingAuthorization.mockResolvedValue('refunded');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.REFUNDED,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(result.outcome).toBe('authorization_failed');
+      expect(schedule.advancePeriod).not.toHaveBeenCalled();
+      expect(payments.authorizeForOrder).not.toHaveBeenCalled();
+      expect(payments.capturePayment).not.toHaveBeenCalled();
+      expect(subscriptions.markPastDue).toHaveBeenCalled();
+    });
+
+    it('D2: grace-end UNKNOWN retains pending without SCA mislabel', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, renewal, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: 'requires_action',
+      });
+      payments.cancelPendingAuthorization.mockResolvedValue('unknown');
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+      });
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(result.outcome).toBe('authorization_pending');
+      expect(renewal.markAttemptOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+        }),
+      );
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+    });
+
+    it('D2: grace-end NOT_FOUND retains recoverable unresolved state', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+      });
+      payments.findLatestForOrder.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.PENDING_AUTHORIZATION,
+        status: PaymentStatus.PENDING,
+        providerStatusRaw: 'requires_action',
+      });
+      payments.cancelPendingAuthorization.mockResolvedValue('not_found');
+      prisma.payment.findUnique.mockResolvedValue(null);
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(result.outcome).toBe('authorization_pending');
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
+    });
+
+    it('D2: concurrent capture during grace-end cancel does not mark FAILED', async () => {
+      const pastGrace = new Date('2026-04-15T00:00:00.000Z');
+      const { processor, payments, prisma, schedule, renewal } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+          lastErrorCode: ErrorCodes.PAY_ACTION_REQUIRED,
+        },
+        subscription: {
+          currentPeriodEnd: new Date('2026-03-01T00:00:00.000Z'),
+          plan: { ...subscriptionBase.plan, gracePeriodDays: 7 },
+        },
+        order: {
+          status: OrderStatus.AWAITING_FULFILLMENT,
+          totalCents: 5000,
+        },
+      });
+      let lifecycle = PaymentLifecycleState.PENDING_AUTHORIZATION;
+      payments.findLatestForOrder.mockImplementation(() =>
+        Promise.resolve({
+          id: 'pay-1',
+          lifecycleState: lifecycle,
+          status:
+            lifecycle === PaymentLifecycleState.CAPTURED
+              ? PaymentStatus.AUTHORIZED_OR_CAPTURED
+              : PaymentStatus.PENDING,
+          providerStatusRaw:
+            lifecycle === PaymentLifecycleState.PENDING_AUTHORIZATION
+              ? 'requires_action'
+              : null,
+        }),
+      );
+      payments.cancelPendingAuthorization.mockImplementation(() => {
+        lifecycle = PaymentLifecycleState.CAPTURED;
+        return Promise.resolve('unknown');
+      });
+      prisma.payment.findUnique.mockImplementation(() =>
+        Promise.resolve({
+          id: 'pay-1',
+          lifecycleState: lifecycle,
+        }),
+      );
+
+      const result = await processor.processSubscription({
+        subscriptionId: 'sub-1',
+        mode: 'retry',
+        source: 'system',
+        now: pastGrace,
+      });
+
+      expect(payments.cancelPendingAuthorization).toHaveBeenCalled();
+      expect(result.outcome).toBe('succeeded');
+      expect(schedule.advancePeriod).toHaveBeenCalled();
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+        }),
+      );
+    });
+
+    it('webhook auth-fail skips terminal CANCELLED subscription', async () => {
+      const { processor, prisma, renewal, subscriptions } = build({
+        attempt: {
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          orderId: 'ord-1',
+          paymentId: 'pay-1',
+        },
+        subscription: { status: SubscriptionStatus.CANCELLED },
+      });
+      prisma.payment.findUnique.mockResolvedValue({
+        id: 'pay-1',
+        lifecycleState: PaymentLifecycleState.AUTHORIZATION_FAILED,
+        status: PaymentStatus.FAILED,
+      });
+      prisma.subscription.findUnique.mockResolvedValue({
+        status: SubscriptionStatus.CANCELLED,
+      });
+
+      await processor.onRenewalAuthorizationFailed({
+        orderId: 'ord-1',
+        subscriptionId: 'sub-1',
+        paymentId: 'pay-1',
+        errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
+      });
+
+      expect(renewal.markAttemptOutcome).not.toHaveBeenCalled();
+      expect(subscriptions.markPastDue).not.toHaveBeenCalled();
     });
   });
 });

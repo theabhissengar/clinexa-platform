@@ -1,11 +1,13 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -17,60 +19,48 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { PaymentStatus } from '../../../generated/prisma';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { Permissions } from '../rbac/constants/permissions';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
-import { InitiateRefundDto } from './dto/payment.dto';
+import {
+  InitiateRefundDto,
+  ListPaymentsQueryDto,
+  RECONCILE_OUTCOMES,
+  type ReconcileOutcome,
+  type ReconcilePaymentResponseDto,
+} from './dto/payment.dto';
 import { assertIdempotencyKey } from './money';
 import { PaymentsService } from './payments.service';
 
-function parsePaymentStatus(raw?: string): PaymentStatus | 'ALL' | undefined {
-  if (!raw || raw === 'ALL') {
-    return 'ALL';
-  }
-  if ((Object.values(PaymentStatus) as string[]).includes(raw)) {
-    return raw as PaymentStatus;
-  }
-  return undefined;
-}
+const RECONCILE_OUTCOME_SET = new Set<string>(RECONCILE_OUTCOMES);
 
 @ApiTags('admin-payments')
 @ApiBearerAuth()
 @Controller({ path: 'admin/payments', version: '1' })
 export class AdminPaymentsController {
+  private readonly logger = new Logger(AdminPaymentsController.name);
+
   constructor(private readonly payments: PaymentsService) {}
 
   @Get()
   @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'Guardian payment list' })
-  list(
-    @Query('q') q?: string,
-    @Query('status') status?: string,
-    @Query('provider') provider?: string,
-    @Query('createdFrom') createdFrom?: string,
-    @Query('createdTo') createdTo?: string,
-    @Query('skip') skip?: string,
-    @Query('take') take?: string,
-  ) {
-    const statusFilter = parsePaymentStatus(status);
-    if (status && status !== 'ALL' && statusFilter === undefined) {
-      throw new BadRequestException({
-        code: ErrorCodes.VAL_INVALID_FORMAT,
-        message: 'Invalid status filter',
-      });
-    }
+  list(@Query() query: ListPaymentsQueryDto) {
     return this.payments.listPayments({
-      q,
-      status: statusFilter ?? 'ALL',
-      provider,
-      createdFrom,
-      createdTo,
-      skip: skip ? Number(skip) : 0,
-      take: take ? Number(take) : 50,
+      q: query.q,
+      status: query.status ?? 'ALL',
+      provider: query.provider,
+      orderId: query.orderId,
+      subscriptionId: query.subscriptionId,
+      lifecycleState: query.lifecycleState ?? 'ALL',
+      purpose: query.purpose ?? 'ALL',
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
+      skip: query.skip ?? 0,
+      take: query.take ?? 50,
     });
   }
 
@@ -109,5 +99,44 @@ export class AdminPaymentsController {
       actorUserId: user.id,
       idempotencyKey: assertIdempotencyKey(idempotencyKey),
     });
+  }
+
+  @Post(':id/reconcile')
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Staff payment reconcile (API-067d) — reuses PaymentsService.reconcilePaymentById',
+  })
+  async reconcile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ReconcilePaymentResponseDto> {
+    const result = await this.payments.reconcilePaymentById(id);
+    if (result.outcome === 'not_found') {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Payment not found',
+      });
+    }
+    if (
+      result.outcome === 'error' ||
+      !RECONCILE_OUTCOME_SET.has(result.outcome)
+    ) {
+      this.logger.warn(
+        `staff reconcile paymentId=${result.paymentId} actor=${user.id} outcome=${result.outcome}`,
+      );
+      throw new InternalServerErrorException({
+        code: ErrorCodes.SYS_UNEXPECTED,
+        message: 'Payment reconciliation failed',
+      });
+    }
+    this.logger.log(
+      `staff reconcile paymentId=${result.paymentId} actor=${user.id} outcome=${result.outcome}`,
+    );
+    return {
+      paymentId: result.paymentId,
+      outcome: result.outcome as ReconcileOutcome,
+    };
   }
 }

@@ -922,26 +922,59 @@ export class OrdersService {
     });
   }
 
+  /**
+   * Idempotent order refund total + activity ensure.
+   * Actor comes from Refund.actorUserId (async-safe); never from HTTP/worker identity.
+   */
   async recordRefundedTotal(input: {
     orderId: string;
     refundedTotalCents: number;
     paymentId: string;
     refundId: string;
   }) {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id: input.refundId },
+      select: { actorUserId: true },
+    });
+    const actorUserId = refund?.actorUserId ?? null;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.order.update({
         where: { id: input.orderId },
         data: { refundedTotalCents: input.refundedTotalCents },
       });
+
+      const existing = await tx.orderActivity.findMany({
+        where: {
+          orderId: input.orderId,
+          kind: 'payment_refunded',
+        },
+        select: { id: true, metadata: true },
+      });
+      const alreadyRecorded = existing.some((row) => {
+        const meta = row.metadata;
+        return (
+          meta !== null &&
+          typeof meta === 'object' &&
+          !Array.isArray(meta) &&
+          (meta as Record<string, unknown>).refundId === input.refundId
+        );
+      });
+      if (alreadyRecorded) {
+        return;
+      }
+
       await tx.orderActivity.create({
         data: {
           orderId: input.orderId,
+          actorUserId,
           kind: 'payment_refunded',
           summary: 'Payment refund recorded',
           metadata: {
             paymentId: input.paymentId,
             refundId: input.refundId,
             refundedTotalCents: input.refundedTotalCents,
+            actorUserId,
           },
         },
       });

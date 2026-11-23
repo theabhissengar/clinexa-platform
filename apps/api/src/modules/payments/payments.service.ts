@@ -182,6 +182,49 @@ export function isConfirmedRefundFailureCode(
   return !!code && CONFIRMED_REFUND_FAILURE_CODES.has(code);
 }
 
+export type RefundReservationRow = {
+  amountCents: number;
+  status: RefundStatus;
+  errorCode?: string | null;
+};
+
+/**
+ * Single source of truth for staff display and startRefund reservation.
+ * remaining = captured − Σ(SUCCEEDED) − Σ(PENDING) − Σ(UNCERTAIN_FAILED).
+ */
+export function computeRefundReservation(
+  refundBaseCents: number,
+  rows: RefundReservationRow[],
+): {
+  refundedCents: number;
+  reservedRefundCents: number;
+  refundableCents: number;
+} {
+  let refundedCents = 0;
+  let reservedRefundCents = 0;
+  for (const row of rows) {
+    if (row.status === RefundStatus.SUCCEEDED) {
+      refundedCents += row.amountCents;
+      continue;
+    }
+    if (row.status === RefundStatus.PENDING) {
+      reservedRefundCents += row.amountCents;
+      continue;
+    }
+    if (
+      row.status === RefundStatus.FAILED &&
+      !isConfirmedRefundFailureCode(row.errorCode)
+    ) {
+      reservedRefundCents += row.amountCents;
+    }
+  }
+  const refundableCents = Math.max(
+    0,
+    refundBaseCents - refundedCents - reservedRefundCents,
+  );
+  return { refundedCents, reservedRefundCents, refundableCents };
+}
+
 /** Canonical capture idempotency when orderId is known (Phase 6G R3). */
 export function canonicalCaptureIdempotencyKey(
   orderId: string,
@@ -2113,23 +2156,8 @@ export class PaymentsService {
       where: { paymentId: payment.id },
       select: { amountCents: true, status: true, errorCode: true },
     });
-    let reserved = 0;
-    for (const row of rows) {
-      if (
-        row.status === RefundStatus.SUCCEEDED ||
-        row.status === RefundStatus.PENDING
-      ) {
-        reserved += row.amountCents;
-        continue;
-      }
-      if (
-        row.status === RefundStatus.FAILED &&
-        !isConfirmedRefundFailureCode(row.errorCode)
-      ) {
-        reserved += row.amountCents;
-      }
-    }
-    return (payment.capturedAmountCents ?? payment.amountCents) - reserved;
+    const base = payment.capturedAmountCents ?? payment.amountCents;
+    return computeRefundReservation(base, rows).refundableCents;
   }
 
   /**
@@ -2218,6 +2246,10 @@ export class PaymentsService {
     q?: string;
     status?: PaymentStatus | 'ALL';
     provider?: string;
+    orderId?: string;
+    subscriptionId?: string;
+    lifecycleState?: PaymentLifecycleState | 'ALL';
+    purpose?: PaymentPurpose | 'ALL';
     createdFrom?: string;
     createdTo?: string;
     skip?: number;
@@ -2231,6 +2263,18 @@ export class PaymentsService {
     }
     if (params.provider?.trim()) {
       where.provider = params.provider.trim();
+    }
+    if (params.orderId) {
+      where.orderId = params.orderId;
+    }
+    if (params.subscriptionId) {
+      where.subscriptionId = params.subscriptionId;
+    }
+    if (params.lifecycleState && params.lifecycleState !== 'ALL') {
+      where.lifecycleState = params.lifecycleState;
+    }
+    if (params.purpose && params.purpose !== 'ALL') {
+      where.purpose = params.purpose;
     }
     if (params.createdFrom || params.createdTo) {
       where.createdAt = {};
@@ -2329,10 +2373,8 @@ export class PaymentsService {
       });
     }
 
-    const succeededRefunded = payment.refunds
-      .filter((r) => r.status === RefundStatus.SUCCEEDED)
-      .reduce((sum, r) => sum + r.amountCents, 0);
     const refundBase = payment.capturedAmountCents ?? payment.amountCents;
+    const reservation = computeRefundReservation(refundBase, payment.refunds);
 
     return {
       id: payment.id,
@@ -2357,8 +2399,9 @@ export class PaymentsService {
       authorizationExpiresAt: payment.authorizationExpiresAt,
       idempotencyKey: payment.idempotencyKey,
       lastErrorCode: this.publicLastErrorCode(payment.lastErrorCode),
-      refundedCents: succeededRefunded,
-      refundableCents: Math.max(0, refundBase - succeededRefunded),
+      refundedCents: reservation.refundedCents,
+      reservedRefundCents: reservation.reservedRefundCents,
+      refundableCents: reservation.refundableCents,
       order: payment.order
         ? {
             id: payment.order.id,
@@ -2823,8 +2866,8 @@ export class PaymentsService {
         refund.id,
         result.providerRefundRef ?? null,
       );
+      await this.notifyRefundSucceededIfNeeded(refund.id);
       if (finalized) {
-        await this.afterRefundSucceeded(finalized);
         return finalized;
       }
     } else if (
@@ -2952,6 +2995,21 @@ export class PaymentsService {
       providerRefundRef: listed.providerRefundRef,
       providerStatusRaw: listed.status,
     };
+  }
+
+  /**
+   * Notify order totals/activity when refund is SUCCEEDED.
+   * Safe to call after a null finalize (already SUCCEEDED) so missing
+   * OrderActivity can recover on webhook/reconcile retry.
+   */
+  private async notifyRefundSucceededIfNeeded(refundId: string): Promise<void> {
+    const refund = await this.prisma.refund.findUnique({
+      where: { id: refundId },
+    });
+    if (!refund || refund.status !== RefundStatus.SUCCEEDED) {
+      return;
+    }
+    await this.afterRefundSucceeded(refund);
   }
 
   private async afterRefundSucceeded(refund: Refund): Promise<void> {
@@ -3933,13 +3991,11 @@ export class PaymentsService {
 
     if (retrieveSucceeded) {
       if (fresh.status === RefundStatus.PENDING) {
-        const finalized = await this.finalizeRefundSuccess(
-          fresh.id,
-          providerRefundRef,
-        );
-        if (finalized) {
-          await this.afterRefundSucceeded(finalized);
-        }
+        await this.finalizeRefundSuccess(fresh.id, providerRefundRef);
+        await this.notifyRefundSucceededIfNeeded(fresh.id);
+      } else if (fresh.status === RefundStatus.SUCCEEDED) {
+        // Recovery: finalize already committed but OrderActivity may be missing.
+        await this.notifyRefundSucceededIfNeeded(fresh.id);
       } else if (fresh.status === RefundStatus.FAILED) {
         this.logger.error(
           `Provider refund ${providerRefundRef} succeeded but local refund ${fresh.id} is FAILED; manual review`,
@@ -3991,13 +4047,16 @@ export class PaymentsService {
       fresh.status === RefundStatus.PENDING &&
       fresh.providerRefundRef === providerRefundRef
     ) {
-      const finalized = await this.finalizeRefundSuccess(
-        fresh.id,
-        providerRefundRef,
-      );
-      if (finalized) {
-        await this.afterRefundSucceeded(finalized);
-      }
+      await this.finalizeRefundSuccess(fresh.id, providerRefundRef);
+      await this.notifyRefundSucceededIfNeeded(fresh.id);
+      return;
+    }
+    if (
+      outcome === 'succeeded' &&
+      fresh.status === RefundStatus.SUCCEEDED &&
+      fresh.providerRefundRef === providerRefundRef
+    ) {
+      await this.notifyRefundSucceededIfNeeded(fresh.id);
       return;
     }
 
@@ -4123,6 +4182,28 @@ export class PaymentsService {
       payment.lifecycleState === PaymentLifecycleState.PENDING_AUTHORIZATION ||
       payment.lifecycleState === PaymentLifecycleState.CAPTURE_PENDING ||
       payment.lifecycleState === PaymentLifecycleState.REFUND_PENDING;
+
+    // Recovery: SUCCEEDED refunds may lack OrderActivity if notify failed after
+    // finalize. Idempotent handlers make this safe to retry on every reconcile.
+    const succeededRefunds = await this.prisma.refund.findMany({
+      where: { paymentId: payment.id, status: RefundStatus.SUCCEEDED },
+      select: { id: true },
+    });
+    for (const row of succeededRefunds) {
+      try {
+        await this.notifyRefundSucceededIfNeeded(row.id);
+      } catch (error) {
+        this.logger.warn(
+          `refund activity notify failed for ${row.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        if (!stuckLifecycle && pendingRefunds.length === 0) {
+          await this.deferReconcile(payment);
+          return 'error';
+        }
+      }
+    }
 
     // Terminal (or otherwise not stuck): never reopened.
     if (!stuckLifecycle && pendingRefunds.length === 0) {

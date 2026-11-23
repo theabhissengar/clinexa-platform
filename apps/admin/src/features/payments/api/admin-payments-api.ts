@@ -4,6 +4,7 @@ import type {
   PaymentDetail,
   PaymentListResponse,
   ProviderConfig,
+  ReconcilePaymentResult,
 } from "../types";
 import type { SavedPaymentMethod } from "@/features/users/types";
 
@@ -16,6 +17,12 @@ export async function listAdminPayments(params?: {
   q?: string;
   status?: string;
   provider?: string;
+  orderId?: string;
+  subscriptionId?: string;
+  lifecycleState?: string;
+  purpose?: string;
+  createdFrom?: string;
+  createdTo?: string;
   skip?: number;
   take?: number;
 }): Promise<PaymentListResponse> {
@@ -42,6 +49,16 @@ export async function initiateAdminRefund(
     `/v1/admin/payments/${paymentId}/refunds`,
     payload,
     { headers: { "Idempotency-Key": idempotencyKey } },
+  );
+  return data.data;
+}
+
+export async function reconcileAdminPayment(
+  paymentId: string,
+): Promise<ReconcilePaymentResult> {
+  const { data } = await apiClient.post<ApiEnvelope<ReconcilePaymentResult>>(
+    `/v1/admin/payments/${paymentId}/reconcile`,
+    {},
   );
   return data.data;
 }

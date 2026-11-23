@@ -12,6 +12,7 @@ import { Permissions } from "@/features/auth/permissions";
 import {
   getAdminPayment,
   initiateAdminRefund,
+  reconcileAdminPayment,
 } from "@/features/payments/api/admin-payments-api";
 import type { PaymentDetail } from "@/features/payments/types";
 import {
@@ -66,6 +67,7 @@ export function GuardianPaymentDetailPage() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const canRefund = can(Permissions.PAY_INITIATE_REFUND);
+  const canReconcile = can(Permissions.ORD_EDIT);
 
   const load = useCallback(async () => {
     const detail = await getAdminPayment(params.id);
@@ -120,6 +122,22 @@ export function GuardianPaymentDetailPage() {
     }
   }
 
+  async function onReconcile() {
+    if (!payment || !canReconcile) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await reconcileAdminPayment(payment.id);
+      setMessage(`Reconcile outcome: ${result.outcome}`);
+      await load();
+    } catch (err) {
+      setError(getErrorMessage(err, "Unable to reconcile payment."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="px-6 py-10 text-sm text-muted-foreground">
@@ -160,15 +178,27 @@ export function GuardianPaymentDetailPage() {
             {payment.id}
           </p>
         </div>
-        {canRefund && payment.refundableCents > 0 ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setShowRefund((open) => !open)}
-          >
-            Refund
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canReconcile ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void onReconcile()}
+            >
+              Reconcile
+            </Button>
+          ) : null}
+          {canRefund && payment.refundableCents > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowRefund((open) => !open)}
+            >
+              Refund
+            </Button>
+          ) : null}
+        </div>
       </div>
       {message ? (
         <p className="text-sm text-emerald-700 dark:text-emerald-400">
@@ -197,6 +227,9 @@ export function GuardianPaymentDetailPage() {
               <p className="text-xs text-muted-foreground">
                 Remaining refundable{" "}
                 {formatMoneyCents(payment.refundableCents, payment.currency)}
+                {(payment.reservedRefundCents ?? 0) > 0
+                  ? ` · reserved ${formatMoneyCents(payment.reservedRefundCents ?? 0, payment.currency)}`
+                  : ""}
               </p>
             </div>
             <div className="grid gap-1">

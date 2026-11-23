@@ -550,9 +550,11 @@ Preserve existing Admin/CRM refund and list contracts where possible; extend res
 - **Acceptance:** S1–S4, R1/R3/R4 evidence for Phase 7 API readiness; R2/T/O3 for declaring 6G complete; no ledger/live Stripe/Guardian UI/SetupIntent.
 - **Risks:** Shipping live mode without Rx approval; claiming multi-worker correctness without Postgres int (`RUN_POSTGRES_INTEGRATION=1`).
 
-### Phase 7 — Guardian Payments UI
+### Phase 7 — Guardian Payments Staff API Integration
 
-- Modernize list/detail/providers/methods/webhooks/reconcile using canonical design system.
+- **Delivered (API-first):** validated admin list filters; shared `refundableCents`/`reservedRefundCents` reservation SoT; staff `POST /admin/payments/:id/reconcile` reusing `reconcilePaymentById`; providers shell AND + allow-listed response; refund OrderActivity actor from `Refund.actorUserId` with idempotent ensure/recover; thin admin client wiring.
+- **Residual risk (accepted, no migration):** concurrent refund-success notifications can race `recordRefundedTotal` find-then-create under Read Committed and create duplicate `payment_refunded` OrderActivity rows; there is no uniqueness constraint on `(orderId, kind, metadata.refundId)`.
+- **Deferred:** full Guardian Payments UI redesign / design-system modernization; webhook ops/replay UI; patient `/me` PM; SetupIntent/Elements; live Stripe.
 
 ### Phase 8 — Orders and Subscriptions UI
 

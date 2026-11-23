@@ -50,9 +50,26 @@ describe('Admin/CRM payment permissions', () => {
       Permissions.CRM_ACCESS_SHELL,
       Permissions.PAY_INITIATE_REFUND,
     ]);
+  });
+
+  it('Phase 7: providers require GRD_ACCESS_SHELL AND SET_OVERSELL_POLICIES', () => {
     expect(requiredPermissions(AdminPaymentProvidersController, 'get')).toEqual(
-      [Permissions.SET_OVERSELL_POLICIES],
+      [Permissions.GRD_ACCESS_SHELL, Permissions.SET_OVERSELL_POLICIES],
     );
+  });
+
+  it('Phase 7: staff reconcile requires GRD_ACCESS_SHELL AND ORD_EDIT', () => {
+    expect(requiredPermissions(AdminPaymentsController, 'reconcile')).toEqual([
+      Permissions.GRD_ACCESS_SHELL,
+      Permissions.ORD_EDIT,
+    ]);
+  });
+
+  it('Phase 7: PATIENT cannot satisfy reconcile AND (no shell / no ORD_EDIT alone enough)', () => {
+    const patient = ROLE_PERMISSION_MATRIX[Roles.PATIENT];
+    expect(patient).not.toContain(Permissions.GRD_ACCESS_SHELL);
+    expect(patient).not.toContain(Permissions.ORD_EDIT);
+    expect(patient).not.toContain(Permissions.SET_OVERSELL_POLICIES);
   });
 
   it('S2: admin/crm payments controllers no longer expose PAY_MANAGE method routes', () => {

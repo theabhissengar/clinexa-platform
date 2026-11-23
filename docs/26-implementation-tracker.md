@@ -110,6 +110,7 @@ Every phase record in §5 carries these fields.
 | **Phase 6E** | Subscription renewal reliability (attempt lease, SCA hold, grace/backoff, webhook fail wire) | **Complete** (`feature/payments-architecture-audit`) | Phase 6D |
 | **Phase 6F** | Refunds, webhook reliability & financial reconciliation (D1–D15) | **Complete** (`feature/payments-architecture-audit`) | Phase 6E |
 | **Phase 6G** | Security, reliability & E2E hardening (IDOR/RBAC, secrets, refund reservation, capture/authorize recovery) | **Complete** (`feature/payments-architecture-audit`) | Phase 6F |
+| **Phase 7** | Guardian Payments staff API integration (list filters, refundable SoT, staff reconcile, providers shell, audit recovery; thin admin client) | **Complete** (`feature/payments-architecture-audit`) | Phase 6G |
 | **P10** | Internal Platform UX/UI Modernization (Guardian + CRM) | In progress (5A complete; 5B in progress) | Major functional modules complete |
 | **PF** | Future work: Security area, Store and Portal clients, navigation conveniences, additional consumers | Deferred | P7 |
 
@@ -487,6 +488,22 @@ Every phase record in §5 carries these fields.
 | **Notes** | Patient PM self-service deferred (no superficial `/me`). Postgres concurrency evidence requires `RUN_POSTGRES_INTEGRATION=1`. No live Stripe / Guardian UI / SetupIntent in 6G. |
 | **Verification** | payments unit (incl. Phase 6G R1–R4/T1/T4); admin permissions; validateEnv S4; Stripe webhook HMAC 401; worker-secret timing-safe; concurrency int specs present |
 
+### Phase 7 — Guardian Payments Staff API Integration
+
+| Field | Value |
+| --- | --- |
+| **Objective** | Harden Guardian staff Payments APIs on Phase 6A–6G foundations: validated list filters, shared refundable reservation math, staff single-payment reconcile, provider response allow-list + shell, async refund OrderActivity attribution/recovery; thin admin client only (no full UI redesign) |
+| **Status** | Complete |
+| **Owner** | Platform Engineering |
+| **Branch** | `feature/payments-architecture-audit` |
+| **PR** | — |
+| **Dependencies** | Phase 6G |
+| **Scope** | `ListPaymentsQueryDto`; `computeRefundReservation` SoT; `POST /v1/admin/payments/:id/reconcile` (`API-067d`, shell AND `ORD_EDIT`); providers shell AND `SET_OVERSELL_POLICIES` + allow-listed DTO; `recordRefundedTotal` idempotent ensure from `Refund.actorUserId`; thin admin reconcile/refundable wiring |
+| **Architecture changes** | No new permissions, migration, ledger, Platform Audit, or reconcile lease; staff reconcile reuses `reconcilePaymentById`; renewal retrieve-only preserved |
+| **Documentation updates** | [11](11-api-design.md); [26](26-implementation-tracker.md); [38](38-phase-6a-payments-architecture-audit.md); [39](39-phase-6g-ops-runbook.md) |
+| **Notes** | Full Guardian Payments UI redesign / webhook ops deferred. Postgres concurrent reconcile evidence via `RUN_POSTGRES_INTEGRATION=1` + dedicated DB (e.g. `clinexa_payments_int`). Reconcile retries SUCCEEDED-refund OrderActivity notify before `noop_terminal`. **Residual risk (accepted, no migration):** `recordRefundedTotal` find-then-create under Read Committed can duplicate `payment_refunded` OrderActivity if concurrent notifies both pass the existence check; no DB uniqueness on `(orderId, kind, metadata.refundId)`. |
+| **Verification** | phase7-guardian unit; admin permissions; record-refunded-total; refund activity failure→recovery (reconcile + webhook); payments regression; Postgres concurrency int (capture×2, staff×worker, auth recovery, refund×webhook, renewal lease) |
+
 | Field | Value |
 | --- | --- |
 | **Objective** | Modernize the complete Guardian and CRM user experience after major functional modules are complete |
@@ -680,6 +697,7 @@ A phase is complete when all of the following hold.
 | 2.27 | 2026-11-22 | Platform Engineering | Phase 6E renewal reliability on same branch: attempt lease, SCA hold, grace/backoff/max attempts, grace-end abandon, webhook auth-fail wire, conditional period advance; SetupIntent deferred |
 | 2.28 | 2026-11-23 | Platform Engineering | Phase 6F refunds/webhooks/reconcile on same branch: D1–D15 (ref persist, listRefunds, correlation, reservation, ACK rowcount, D12–D14, batch reconcile, PATIENT refund gate); no ledger |
 | 2.29 | 2026-11-23 | Platform Engineering | Phase 6G hardening on same branch: S1–S5, S4 simulated opt-in, R1–R4, R2 retrieve, T1–T4 evidence, O3 runbook [39](39-phase-6g-ops-runbook.md); patient `/me` PM deferred; no ledger/live Stripe |
+| 2.30 | 2026-11-23 | Platform Engineering | Phase 7 Guardian Payments staff API on same branch: list filters, shared refundable SoT, `API-067d` reconcile, providers shell+allow-list, refund activity ensure/recover, thin admin client; UI redesign deferred |
 
 ---
 

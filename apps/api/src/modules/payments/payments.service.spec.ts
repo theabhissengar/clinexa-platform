@@ -2502,4 +2502,246 @@ describe('PaymentsService (simulated gateway)', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 7 — refund activity failure-injection recovery
+  // ---------------------------------------------------------------------------
+  describe('Phase 7 refund activity recovery', () => {
+    const SECRET = 'test-webhook-secret-16';
+
+    const paymentRow = (id: string | null | undefined): StoreRow => {
+      const row = prisma._store.payments.find((p) => p.id === id);
+      if (!row) {
+        throw new Error(`payment ${id} missing from store`);
+      }
+      return row;
+    };
+
+    async function capturedCheckout(
+      orderId: string,
+      amountCents = 1000,
+    ): Promise<StoreRow> {
+      const auth = await service.authorizeForOrder({
+        orderId,
+        paymentMethodId: 'spm-1',
+        currency: 'USD',
+        amountCents,
+        idempotencyKey: `${orderId}:auth`,
+      });
+      await service.capturePayment({
+        paymentId: auth.paymentId,
+        idempotencyKey: `${orderId}:cap`,
+      });
+      const row = paymentRow(auth.paymentId);
+      row.purpose = PaymentPurpose.CHECKOUT;
+      return row;
+    }
+
+    it('recovers missing payment_refunded activity via reconcile after notify failure', async () => {
+      const payment = await capturedCheckout('ord-p7-act');
+      const activities: Array<Record<string, unknown>> = [];
+      let failNotify = true;
+
+      service.setOutcomeHandlers({
+        onRefundSucceeded: (input) => {
+          if (failNotify) {
+            failNotify = false;
+            return Promise.reject(new Error('forced OrderActivity failure'));
+          }
+          const refund = prisma._store.refunds.find(
+            (r) => r.id === input.refundId,
+          );
+          const actorUserId = refund?.actorUserId ?? null;
+          const already = activities.some(
+            (a) =>
+              (a.metadata as { refundId?: string } | undefined)?.refundId ===
+              input.refundId,
+          );
+          if (already) {
+            return Promise.resolve();
+          }
+          activities.push({
+            kind: 'payment_refunded',
+            actorUserId,
+            metadata: {
+              paymentId: input.paymentId,
+              refundId: input.refundId,
+              actorUserId,
+            },
+          });
+          return Promise.resolve();
+        },
+      });
+
+      await expect(
+        service.initiateRefund({
+          paymentId: payment.id!,
+          amountCents: 400,
+          reason: 'staff refund',
+          actorUserId: 'staff-actor',
+          idempotencyKey: `${payment.id}:p7-act`,
+        }),
+      ).rejects.toThrow('forced OrderActivity failure');
+
+      const refund = prisma._store.refunds.find(
+        (r) => r.idempotencyKey === `${payment.id}:p7-act`,
+      );
+      expect(refund?.status).toBe('SUCCEEDED');
+      expect(refund?.actorUserId).toBe('staff-actor');
+      expect(activities).toHaveLength(0);
+
+      const first = await service.reconcilePaymentById(payment.id!);
+      expect(first.outcome).toBe('noop_terminal');
+      expect(activities).toHaveLength(1);
+      expect(activities[0]).toMatchObject({
+        kind: 'payment_refunded',
+        actorUserId: 'staff-actor',
+        metadata: {
+          refundId: refund?.id,
+          actorUserId: 'staff-actor',
+        },
+      });
+
+      const second = await service.reconcilePaymentById(payment.id!);
+      expect(second.outcome).toBe('noop_terminal');
+      expect(activities).toHaveLength(1);
+    });
+
+    it('preserves null actor on recovery for system-originated refunds', async () => {
+      const payment = await capturedCheckout('ord-p7-sys');
+      const activities: Array<Record<string, unknown>> = [];
+      let failNotify = true;
+
+      service.setOutcomeHandlers({
+        onRefundSucceeded: (input) => {
+          if (failNotify) {
+            failNotify = false;
+            return Promise.reject(new Error('forced OrderActivity failure'));
+          }
+          const refund = prisma._store.refunds.find(
+            (r) => r.id === input.refundId,
+          );
+          activities.push({
+            kind: 'payment_refunded',
+            actorUserId: refund?.actorUserId ?? null,
+            metadata: { refundId: input.refundId },
+          });
+          return Promise.resolve();
+        },
+      });
+
+      await expect(
+        service.initiateRefund({
+          paymentId: payment.id!,
+          amountCents: 200,
+          reason: 'system',
+          actorUserId: null,
+          idempotencyKey: `${payment.id}:p7-sys`,
+        }),
+      ).rejects.toThrow('forced OrderActivity failure');
+
+      await service.reconcilePaymentById(payment.id!);
+      expect(activities).toHaveLength(1);
+      expect(activities[0]?.actorUserId).toBeNull();
+    });
+
+    it('webhook path recovers activity for already-SUCCEEDED refund', async () => {
+      const payment = await capturedCheckout('ord-p7-wh');
+      const activities: Array<Record<string, unknown>> = [];
+      let failNotify = true;
+
+      service.setOutcomeHandlers({
+        onRefundSucceeded: (input) => {
+          if (failNotify) {
+            failNotify = false;
+            return Promise.reject(new Error('forced OrderActivity failure'));
+          }
+          const refund = prisma._store.refunds.find(
+            (r) => r.id === input.refundId,
+          );
+          if (
+            activities.some(
+              (a) =>
+                (a.metadata as { refundId?: string }).refundId ===
+                input.refundId,
+            )
+          ) {
+            return Promise.resolve();
+          }
+          activities.push({
+            kind: 'payment_refunded',
+            actorUserId: refund?.actorUserId ?? null,
+            metadata: { refundId: input.refundId },
+          });
+          return Promise.resolve();
+        },
+      });
+
+      await expect(
+        service.initiateRefund({
+          paymentId: payment.id!,
+          amountCents: 300,
+          reason: 'staff',
+          actorUserId: 'staff-wh',
+          idempotencyKey: `${payment.id}:p7-wh`,
+        }),
+      ).rejects.toThrow('forced OrderActivity failure');
+
+      const refund = prisma._store.refunds.find(
+        (r) => r.idempotencyKey === `${payment.id}:p7-wh`,
+      );
+      expect(refund?.status).toBe('SUCCEEDED');
+      expect(refund?.providerRefundRef).toBeTruthy();
+      expect(activities).toHaveLength(0);
+
+      const paymentRef = String(payment.providerPaymentRef);
+      await service.ingestWebhook({
+        secretHeader: SECRET,
+        envelope: {
+          provider: 'simulated',
+          providerEventId: 'evt-p7-wh-recover',
+          type: 'refund.provider_update',
+          paymentRef,
+          data: {
+            object: {
+              id: refund!.providerRefundRef,
+              object: 'refund',
+              amount: 300,
+              currency: 'usd',
+              status: 'succeeded',
+              payment_intent: payment.providerPaymentRef,
+            },
+          },
+        },
+      });
+
+      expect(activities).toHaveLength(1);
+      expect(activities[0]).toMatchObject({
+        kind: 'payment_refunded',
+        actorUserId: 'staff-wh',
+        metadata: { refundId: refund?.id },
+      });
+
+      await service.ingestWebhook({
+        secretHeader: SECRET,
+        envelope: {
+          provider: 'simulated',
+          providerEventId: 'evt-p7-wh-recover-dup',
+          type: 'refund.provider_update',
+          paymentRef,
+          data: {
+            object: {
+              id: refund!.providerRefundRef,
+              object: 'refund',
+              amount: 300,
+              currency: 'usd',
+              status: 'succeeded',
+              payment_intent: payment.providerPaymentRef,
+            },
+          },
+        },
+      });
+      expect(activities).toHaveLength(1);
+    });
+  });
 });

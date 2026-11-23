@@ -60,6 +60,10 @@ Add app-level RL only if ingress does not already cover these.
 | Postgres int (`RUN_POSTGRES_INTEGRATION=1`) | Refund overlap; R1 fail-vs-reserve; R4 order-lock exclusivity — **not** claimed from unit mutexes |
 | Stripe | Mocked SDK HMAC failure only — **not** live Stripe |
 
-## 8. Phase 7 blockers
+## 8. Phase 7 status
 
-Do not start Guardian Payments UI API integration until S1–S3, S4, R1, R3, and R4 are green in the branch evidence above.
+Phase 6G readiness gates (S1–S3, S4, R1, R3, R4) are satisfied on `feature/payments-architecture-audit`.
+
+**Phase 7 delivered (staff API):** list filters; shared refundable reservation display; `POST /v1/admin/payments/:id/reconcile` (shell AND `ORD_EDIT`) reusing `PaymentsService.reconcilePaymentById` — same engine as `POST /v1/internal/jobs/payment-reconcile` (worker secret). Staff reconcile does not bypass renewal retrieve-only / claimToken fencing. Internal reconcile `error` maps to 5xx; pending/renewal/terminal map to 200 with allow-listed `outcome`. Retry the same reconcile route; never invent a new financial Idempotency-Key.
+
+**Still deferred:** full Guardian Payments UI redesign; webhook ops/replay admin APIs; patient `/me` payment methods.

@@ -171,10 +171,12 @@ export async function listAdminOrderActivity(
 export async function retryAdminOrderPayment(
   id: string,
   paymentMethodId: string,
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<unknown> {
   const { data } = await apiClient.post<ApiEnvelope<unknown>>(
     `/v1/admin/orders/${id}/retry-payment`,
     { paymentMethodId },
+    { headers: { "Idempotency-Key": `${id}:${idempotencyKey}` } },
   );
   return data.data;
 }

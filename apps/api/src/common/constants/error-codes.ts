@@ -118,6 +118,16 @@ export const ErrorCodes = {
   PAY_METHOD_INVALID: 'ERR-PAY-005',
   /** PSP timeout / unavailable (fail-safe). */
   PAY_PROVIDER_UNAVAILABLE: 'ERR-PAY-006',
+  /** Gateway operation not supported by the active provider. */
+  PAY_UNSUPPORTED_OPERATION: 'ERR-PAY-007',
+  /** Off-session authorization requires customer action (SCA hold — not a terminal decline). */
+  PAY_ACTION_REQUIRED: 'ERR-PAY-008',
+  /** Pending authorization abandoned after renewal grace (void/cancel path). */
+  PAY_RENEWAL_ABANDONED: 'ERR-PAY-009',
+  /** Provider retrieve confirmed refund failed — releases reservation (Phase 6G R1). */
+  PAY_REFUND_PROVIDER_FAILED: 'ERR-PAY-REFUND-PROVIDER-FAILED',
+  /** Provider retrieve confirmed refund canceled — releases reservation (Phase 6G R1). */
+  PAY_REFUND_PROVIDER_CANCELED: 'ERR-PAY-REFUND-PROVIDER-CANCELED',
 
   /** Coupon missing, inactive, expired, or not applicable. */
   CPN_INVALID: 'ERR-CPN-001',

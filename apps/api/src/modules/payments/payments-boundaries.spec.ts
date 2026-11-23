@@ -17,11 +17,22 @@ describe('Payments domain boundaries', () => {
     }
   });
 
-  it('does not add a Stripe adapter or SDK', () => {
+  it('confines Stripe SDK imports to stripe-* files (Phase 6C)', () => {
+    const stripeImporters = sources.filter(
+      (file) =>
+        file.text.includes("from 'stripe'") ||
+        file.text.includes('from "stripe"'),
+    );
+    for (const file of stripeImporters) {
+      expect(file.name.startsWith('stripe-')).toBe(true);
+    }
+    expect(stripeImporters.length).toBeGreaterThan(0);
+  });
+
+  it('does not import Orders or Subscriptions domain modules', () => {
     for (const file of sources) {
-      expect(file.text.includes("from 'stripe'")).toBe(false);
-      expect(file.text.includes('from "stripe"')).toBe(false);
-      expect(file.text.includes('StripeAdapter')).toBe(false);
+      expect(file.text.includes('../orders/')).toBe(false);
+      expect(file.text.includes('../subscriptions/')).toBe(false);
     }
   });
 });

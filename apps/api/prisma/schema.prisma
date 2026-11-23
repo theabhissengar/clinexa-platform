@@ -838,8 +838,10 @@ model Order {
   latestPaymentId      String? @map("latest_payment_id") @db.Uuid
   paymentStatusSummary String? @map("payment_status_summary")
 
-  /// Client/system idempotency key (renewal:{subscriptionId}:{billingPeriodKey}; checkout later).
+  /// Client/system idempotency key (renewal:{subscriptionId}:{billingPeriodKey}; checkout:user:{userId}:{clientKey}).
   idempotencyKey String? @unique @map("idempotency_key")
+  /// Durable checkout request fingerprint (Phase 6D). Never updated after create.
+  idempotencyRequestHash String? @map("idempotency_request_hash")
 
   /// Opaque Inventory reservation ref (Inventory owns StockReservation; no FK).
   reservationId String? @map("reservation_id") @db.Uuid
@@ -1238,9 +1240,15 @@ model SubscriptionRenewalAttempt {
   paymentId            String? @map("payment_id")
   paymentStatusSummary String? @map("payment_status_summary")
 
-  retryCount    Int       @default(0) @map("retry_count")
-  lastErrorCode String?   @map("last_error_code")
-  lastErrorAt   DateTime? @map("last_error_at") @db.Timestamptz(3)
+  retryCount             Int       @default(0) @map("retry_count")
+  /// Atomically allocated authorize attempt number for payment idempotency keys.
+  authorizeAttemptNumber Int       @default(0) @map("authorize_attempt_number")
+  lastErrorCode          String?   @map("last_error_code")
+  lastErrorAt            DateTime? @map("last_error_at") @db.Timestamptz(3)
+
+  /// Durable worker lease (Phase 6E) — never hold a DB txn across gateway calls.
+  claimToken     String?   @map("claim_token")
+  leaseExpiresAt DateTime? @map("lease_expires_at") @db.Timestamptz(3)
 
   actorUserId String? @map("actor_user_id") @db.Uuid
   /// e.g. system | crm | guardian | portal
@@ -1256,6 +1264,7 @@ model SubscriptionRenewalAttempt {
   @@index([subscriptionId, status])
   @@index([status])
   @@index([orderId])
+  @@index([status, leaseExpiresAt])
   @@map("subscription_renewal_attempts")
 }
 
@@ -1358,9 +1367,25 @@ enum PaymentPurpose {
   CHECKOUT
 }
 
+/// Original payment origin — immutable after create (Phase 6B).
+enum PaymentInitiator {
+  CHECKOUT
+  STAFF_RETRY
+  RENEWAL
+  SYSTEM
+}
+
 enum RefundStatus {
   PENDING
   SUCCEEDED
+  FAILED
+}
+
+/// Webhook event processing with lease-based claim (Phase 6B).
+enum PaymentWebhookProcessingStatus {
+  RECEIVED
+  PROCESSING
+  APPLIED
   FAILED
 }
 
@@ -1389,20 +1414,35 @@ model SavedPaymentMethod {
 }
 
 /// Payment attempt/outcome for orders and subscription renewals (DB-028).
+/// `amountCents` / `*Cents` columns store integer **minor units** for `currency`
+/// (not universally 1/100 — see payments/money.ts ISO exponent map).
 model Payment {
   id                       String                @id @default(uuid()) @db.Uuid
   orderId                  String?               @map("order_id") @db.Uuid
   subscriptionId           String?               @map("subscription_id") @db.Uuid
   savedPaymentMethodId     String?               @map("saved_payment_method_id") @db.Uuid
+  /// Integer minor units for `currency` (legacy column name).
   amountCents              Int                   @map("amount_cents")
   currency                 String                @default("USD")
   status                   PaymentStatus         @default(PENDING)
   lifecycleState           PaymentLifecycleState @default(INITIATED) @map("lifecycle_state")
   purpose                  PaymentPurpose
+  /// Immutable origin of the payment create — never overwritten by webhooks.
+  initiator                PaymentInitiator      @default(SYSTEM)
   provider                 String
   providerPaymentRef       String?               @map("provider_payment_ref")
   providerAuthorizationRef String?               @map("provider_authorization_ref")
   providerCaptureRef       String?               @map("provider_capture_ref")
+  providerStatusRaw        String?               @map("provider_status_raw")
+  /// Minor units authorized (set on AUTHORIZED).
+  authorizedAmountCents    Int?                  @map("authorized_amount_cents")
+  /// Minor units captured (set on CAPTURED).
+  capturedAmountCents      Int?                  @map("captured_amount_cents")
+  /// Cache of sum(SUCCEEDED refunds); authoritative source remains Refund rows.
+  refundedAmountCents      Int                   @default(0) @map("refunded_amount_cents")
+  authorizedAt             DateTime?             @map("authorized_at") @db.Timestamptz(3)
+  capturedAt               DateTime?             @map("captured_at") @db.Timestamptz(3)
+  authorizationExpiresAt   DateTime?             @map("authorization_expires_at") @db.Timestamptz(3)
   idempotencyKey           String                @unique @map("idempotency_key")
   lastErrorCode            String?               @map("last_error_code")
   createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1421,10 +1461,12 @@ model Payment {
   @@index([createdAt])
   @@index([provider])
   @@index([status, createdAt])
+  @@index([authorizationExpiresAt])
   @@map("payments")
 }
 
 /// Full/partial refunds linked to a payment (DB-029).
+/// `amountCents` = integer minor units for the parent payment currency.
 model Refund {
   id                String       @id @default(uuid()) @db.Uuid
   paymentId         String       @map("payment_id") @db.Uuid
@@ -1433,6 +1475,7 @@ model Refund {
   status            RefundStatus @default(PENDING)
   providerRefundRef String?      @map("provider_refund_ref")
   reason            String?
+  errorCode         String?      @map("error_code")
   actorUserId       String?      @map("actor_user_id") @db.Uuid
   idempotencyKey    String       @unique @map("idempotency_key")
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -1441,26 +1484,34 @@ model Refund {
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   order   Order?  @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
+  @@unique([providerRefundRef])
   @@index([paymentId])
   @@index([orderId])
   @@map("refunds")
 }
 
-/// PSP webhook idempotency (DB-031) — insert before apply.
+/// PSP webhook idempotency (DB-031) — lease-based claim before apply (Phase 6B).
 model PaymentWebhookEvent {
-  id              String    @id @default(uuid()) @db.Uuid
-  provider        String
-  providerEventId String    @map("provider_event_id")
-  eventType       String    @map("event_type")
-  payloadHash     String?   @map("payload_hash")
-  paymentId       String?   @map("payment_id") @db.Uuid
-  appliedAt       DateTime? @map("applied_at") @db.Timestamptz(3)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  id               String                          @id @default(uuid()) @db.Uuid
+  provider         String
+  providerEventId  String                          @map("provider_event_id")
+  eventType        String                          @map("event_type")
+  payloadHash      String?                         @map("payload_hash")
+  paymentId        String?                         @map("payment_id") @db.Uuid
+  processingStatus PaymentWebhookProcessingStatus  @default(RECEIVED) @map("processing_status")
+  claimToken       String?                         @map("claim_token")
+  leaseExpiresAt   DateTime?                       @map("lease_expires_at") @db.Timestamptz(3)
+  attemptCount     Int                             @default(0) @map("attempt_count")
+  lastError        String?                         @map("last_error")
+  appliedAt        DateTime?                       @map("applied_at") @db.Timestamptz(3)
+  createdAt        DateTime                        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   payment Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
 
   @@unique([provider, providerEventId])
   @@index([paymentId])
+  @@index([processingStatus, leaseExpiresAt])
   @@map("payment_webhook_events")
 }
 

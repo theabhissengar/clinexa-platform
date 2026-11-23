@@ -60,14 +60,69 @@ const envSchema = z.object({
     .positive()
     .optional(),
 
-  /** P14e Payments — simulated only in this phase. */
-  PAYMENTS_PROVIDER: z.enum(['simulated']).default('simulated'),
+  /** Payments — simulated (CI default) or stripe test-mode (Phase 6C). */
+  PAYMENTS_PROVIDER: z.enum(['simulated', 'stripe']).default('simulated'),
+  /**
+   * When NODE_ENV=production and PAYMENTS_PROVIDER=simulated, must be true.
+   * Internal/non-customer deploys only — never imply real PSP confirmation.
+   */
+  PAYMENTS_ALLOW_SIMULATED: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform((val) => val === true || val === 'true' || val === '1'),
   PAYMENTS_WEBHOOK_SECRET: z
     .string()
     .min(16)
     .default('dev-payments-webhook-secret'),
   /** Optional simulated force-fail for tests: decline | timeout */
   PAYMENTS_SIMULATED_FORCE: z.enum(['decline', 'timeout']).optional(),
+  /** Simulated authorization hold window (hours) — test config only. */
+  PAYMENTS_SIMULATED_AUTH_HOLD_HOURS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(168),
+  /** Webhook claim lease TTL (seconds). */
+  PAYMENTS_WEBHOOK_LEASE_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(45),
+  /**
+   * Renewal attempt worker lease TTL (seconds). Must cover provider HTTP
+   * timeout + buffer; heartbeat extends while a gateway call is in flight.
+   */
+  PAYMENTS_RENEWAL_LEASE_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(120),
+  /** Max authorize a{n} allocations per billing period (product-tunable). */
+  PAYMENTS_RENEWAL_MAX_AUTHORIZE_ATTEMPTS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
+  /** Minimum seconds between confirmed failed authorize retries. */
+  PAYMENTS_RENEWAL_MIN_RETRY_DELAY_SECONDS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(3600),
+  PAYMENTS_MODE: z.enum(['sandbox', 'live']).default('sandbox'),
+  PAYMENTS_WEBHOOK_PUBLIC_BASE: z.string().url().optional(),
+  /** Stripe test-mode secret — required when PAYMENTS_PROVIDER=stripe. */
+  STRIPE_SECRET_KEY: z.string().optional(),
+  /** Stripe webhook signing secret (whsec_…) — required when provider=stripe. */
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  /** Safe window to retry same Stripe create idempotency key (hours). */
+  STRIPE_IDEMPOTENCY_WINDOW_HOURS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(24),
+  /** Max PaymentIntent/Customer Search attempts on unknown create. */
+  STRIPE_SEARCH_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
 
   /** AUTH-015 worker shared secret for Internal job routes. */
   WORKER_SHARED_SECRET: z.string().min(16).default('dev-worker-shared-secret'),
@@ -95,5 +150,74 @@ export function validateEnv(config: Record<string, unknown>): EnvConfig {
     );
   }
 
-  return result.data;
+  const data = result.data;
+  const errors: string[] = [];
+
+  if (data.NODE_ENV === 'production') {
+    const defaultWorker = 'dev-worker-shared-secret';
+    const defaultWebhook = 'dev-payments-webhook-secret';
+    if (
+      !data.WORKER_SHARED_SECRET ||
+      data.WORKER_SHARED_SECRET === defaultWorker
+    ) {
+      errors.push(
+        '  - WORKER_SHARED_SECRET: must be set to a non-default value in production',
+      );
+    }
+    if (
+      !data.PAYMENTS_WEBHOOK_SECRET ||
+      data.PAYMENTS_WEBHOOK_SECRET === defaultWebhook
+    ) {
+      errors.push(
+        '  - PAYMENTS_WEBHOOK_SECRET: must be set to a non-default value in production',
+      );
+    }
+    if (
+      data.PAYMENTS_PROVIDER === 'simulated' &&
+      !data.PAYMENTS_ALLOW_SIMULATED
+    ) {
+      errors.push(
+        '  - PAYMENTS_PROVIDER: simulated is forbidden in production unless PAYMENTS_ALLOW_SIMULATED=true (internal deploys only)',
+      );
+    }
+  }
+
+  if (data.PAYMENTS_PROVIDER === 'stripe') {
+    if (data.PAYMENTS_MODE !== 'sandbox') {
+      errors.push(
+        '  - PAYMENTS_MODE: stripe provider requires sandbox (live blocked in Phase 6C)',
+      );
+    }
+    const secret = data.STRIPE_SECRET_KEY?.trim() ?? '';
+    if (!secret) {
+      errors.push(
+        '  - STRIPE_SECRET_KEY: required when PAYMENTS_PROVIDER=stripe',
+      );
+    } else if (!secret.startsWith('sk_test_')) {
+      errors.push(
+        '  - STRIPE_SECRET_KEY: must be a test key (sk_test_…); live keys are rejected',
+      );
+    }
+    if (secret.startsWith('sk_live_')) {
+      errors.push('  - STRIPE_SECRET_KEY: live keys are forbidden in Phase 6C');
+    }
+    const whsec = data.STRIPE_WEBHOOK_SECRET?.trim() ?? '';
+    if (!whsec) {
+      errors.push(
+        '  - STRIPE_WEBHOOK_SECRET: required when PAYMENTS_PROVIDER=stripe',
+      );
+    } else if (!whsec.startsWith('whsec_')) {
+      errors.push(
+        '  - STRIPE_WEBHOOK_SECRET: must be a Stripe signing secret (whsec_…)',
+      );
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `Environment validation failed. Fix the following and restart:\n${errors.join('\n')}`,
+    );
+  }
+
+  return data;
 }

@@ -16,9 +16,17 @@ const SIMULATED_CAPABILITIES = [
   'webhooks',
 ] as const;
 
+const STRIPE_CAPABILITIES = [
+  'authorize',
+  'capture',
+  'void',
+  'refund',
+  'webhooks',
+  'retrieve',
+] as const;
+
 /**
  * Resolves the active PaymentGateway adapter and exposes non-secret metadata.
- * Phase 2: simulated provider only — no Stripe adapter.
  */
 @Injectable()
 export class PaymentProviderRegistry {
@@ -40,12 +48,17 @@ export class PaymentProviderRegistry {
     ).replace(/\/+$/, '');
     const prefix = this.config.get<string>('app.apiPrefix') ?? '';
     const prefixPart = prefix ? `/${prefix.replace(/^\/+|\/+$/g, '')}` : '';
+    const webhookPath =
+      provider === 'stripe'
+        ? `${prefixPart}/v1/webhooks/payments/stripe`
+        : `${prefixPart}/v1/webhooks/payments`;
 
     return {
       provider,
       mode,
-      capabilities: SIMULATED_CAPABILITIES,
-      webhookEndpointUrl: `${base}${prefixPart}/v1/webhooks/payments`,
+      capabilities:
+        provider === 'stripe' ? STRIPE_CAPABILITIES : SIMULATED_CAPABILITIES,
+      webhookEndpointUrl: `${base}${webhookPath}`,
     };
   }
 }

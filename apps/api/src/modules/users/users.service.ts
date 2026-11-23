@@ -410,10 +410,7 @@ export class UsersService {
     }
 
     let preferencesPatch: Prisma.InputJsonValue | undefined;
-    if (
-      dto.profileImageMediaAssetId !== undefined ||
-      dto.tags !== undefined
-    ) {
+    if (dto.profileImageMediaAssetId !== undefined || dto.tags !== undefined) {
       const currentPrefs =
         existing.preferences &&
         typeof existing.preferences === 'object' &&
@@ -537,7 +534,10 @@ export class UsersService {
       authors.map((author) => {
         const name =
           author.displayName?.trim() ||
-          [author.firstName, author.lastName].filter(Boolean).join(' ').trim() ||
+          [author.firstName, author.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim() ||
           author.email;
         return [author.id, name] as const;
       }),

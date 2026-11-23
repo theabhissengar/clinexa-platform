@@ -1,13 +1,17 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   OrderStatus,
   OrderType,
+  PaymentInitiator,
   PaymentLifecycleState,
+  PaymentPurpose,
   PaymentStatus,
   SubscriptionClinicalRequirement,
   SubscriptionRenewalAttemptStatus,
@@ -42,6 +46,7 @@ export type ProcessRenewalResult = {
     | 'succeeded'
     | 'authorized_awaiting_clinical'
     | 'authorization_failed'
+    | 'authorization_pending'
     | 'capture_failed'
     | 'address_missing'
     | 'order_create_failed'
@@ -91,7 +96,125 @@ export class SubscriptionsRenewalProcessor {
     private readonly orders: OrdersService,
     private readonly payments: PaymentsService,
     private readonly addresses: RenewalAddressResolver,
+    private readonly config: ConfigService,
   ) {}
+
+  private renewalLeaseSeconds(): number {
+    const raw = this.config.get<number>('payments.renewalLeaseSeconds');
+    return typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+      ? raw
+      : 120;
+  }
+
+  private renewalMaxAuthorizeAttempts(): number {
+    const raw = this.config.get<number>('payments.renewalMaxAuthorizeAttempts');
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 1
+      ? Math.floor(raw)
+      : 5;
+  }
+
+  private renewalMinRetryDelaySeconds(): number {
+    const raw = this.config.get<number>('payments.renewalMinRetryDelaySeconds');
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0
+      ? Math.floor(raw)
+      : 3600;
+  }
+
+  private isPermanentMethodError(error: unknown): boolean {
+    const code = extractErrorCode(error);
+    return code === ErrorCodes.PAY_METHOD_INVALID;
+  }
+
+  private isTransientProviderError(error: unknown): boolean {
+    if (error instanceof ConflictException) {
+      return true;
+    }
+    const code = extractErrorCode(error);
+    return code === ErrorCodes.PAY_PROVIDER_UNAVAILABLE;
+  }
+
+  /**
+   * Heartbeat during a provider call. No overlapping heartbeats; DB errors
+   * count as ownership loss. Never holds a DB transaction across the work fn.
+   */
+  private async withLeaseHeartbeat<T>(input: {
+    attemptId: string;
+    claimToken: string;
+    leaseSeconds: number;
+    work: () => Promise<T>;
+  }): Promise<{ ok: true; value: T } | { ok: false; value?: T }> {
+    const beat = async (): Promise<boolean> => {
+      try {
+        return await this.subscriptions.heartbeatRenewalAttemptLease({
+          attemptId: input.attemptId,
+          claimToken: input.claimToken,
+          leaseSeconds: input.leaseSeconds,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Renewal lease heartbeat failed for ${input.attemptId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return false;
+      }
+    };
+
+    if (!(await beat())) {
+      return { ok: false };
+    }
+
+    let inFlight = false;
+    let lost = false;
+    const intervalMs = Math.max(
+      1_000,
+      Math.floor((input.leaseSeconds * 1000) / 3),
+    );
+    const timer = setInterval(() => {
+      if (inFlight || lost) {
+        return;
+      }
+      inFlight = true;
+      void beat()
+        .then((ok) => {
+          if (!ok) {
+            lost = true;
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+        });
+    }, intervalMs);
+
+    try {
+      const value = await input.work();
+      if (lost || !(await beat())) {
+        return { ok: false, value };
+      }
+      return { ok: true, value };
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
+  private inFlightResult(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string | null;
+    paymentId: string | null;
+    attemptStatus: SubscriptionRenewalAttemptStatus;
+  }): ProcessRenewalResult {
+    return {
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      outcome: 'in_flight',
+      attemptStatus: input.attemptStatus,
+    };
+  }
 
   async processSubscription(
     input: ProcessRenewalInput,
@@ -161,154 +284,859 @@ export class SubscriptionsRenewalProcessor {
       };
     }
 
-    // Resume in-flight / FAILED attempts by Order + Payment state (P14f).
-    // Do not blindly re-authorize; classify before falling through to money path.
-    if (
-      opened.attempt.orderId &&
-      (opened.attempt.status === SubscriptionRenewalAttemptStatus.PROCESSING ||
-        opened.attempt.status === SubscriptionRenewalAttemptStatus.FAILED)
-    ) {
-      const resumed = await this.resumeExistingAttempt({
+    const leaseSeconds = this.renewalLeaseSeconds();
+    const claimed = await this.subscriptions.claimRenewalAttemptLease({
+      attemptId,
+      leaseSeconds,
+    });
+    if (!claimed) {
+      return {
         subscriptionId: input.subscriptionId,
         billingPeriodKey,
         attemptId,
         orderId: opened.attempt.orderId,
         paymentId: opened.attempt.paymentId,
-        actorUserId: input.actorUserId,
-        source: input.source,
-        forceOutcome: input.forceOutcome,
-      });
-      if (resumed) {
-        return resumed;
-      }
+        outcome: 'in_flight',
+        attemptStatus: opened.attempt.status,
+      };
     }
+    const claimToken = claimed.claimToken;
 
-    let orderId = opened.attempt.orderId;
-    if (!orderId) {
-      try {
-        const addrs = await this.addresses.resolve(
-          input.subscriptionId,
-          opened.subscription.patientUserId,
-        );
-        const order = await this.orders.createOrderFromSnapshots({
-          patientUserId: opened.subscription.patientUserId,
+    try {
+      // Resume in-flight / FAILED attempts by Order + Payment state (P14f).
+      if (
+        opened.attempt.orderId &&
+        (opened.attempt.status ===
+          SubscriptionRenewalAttemptStatus.PROCESSING ||
+          opened.attempt.status === SubscriptionRenewalAttemptStatus.FAILED)
+      ) {
+        const resumed = await this.resumeExistingAttempt({
           subscriptionId: input.subscriptionId,
-          orderType: OrderType.SUBSCRIPTION_RENEWAL,
-          lines: opened.orderRequest.lines,
-          shippingAddress: addrs.shipping,
-          billingAddress: addrs.billing,
-          customer: {
-            firstName: opened.subscription.customerFirstName,
-            lastName: opened.subscription.customerLastName,
-            email: opened.subscription.customerEmail,
-            phone: opened.subscription.customerPhone,
-          },
-          initialStatus: OrderStatus.PAYMENT_PENDING,
-          idempotencyKey: `renewal:${input.subscriptionId}:${billingPeriodKey}`,
+          billingPeriodKey,
+          attemptId,
+          orderId: opened.attempt.orderId,
+          paymentId: opened.attempt.paymentId,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          forceOutcome: input.forceOutcome,
+          claimToken,
+          leaseSeconds,
+        });
+        if (resumed) {
+          return resumed;
+        }
+      }
+
+      let orderId = opened.attempt.orderId;
+      if (!orderId) {
+        try {
+          const addrs = await this.addresses.resolve(
+            input.subscriptionId,
+            opened.subscription.patientUserId,
+          );
+          const order = await this.orders.createOrderFromSnapshots({
+            patientUserId: opened.subscription.patientUserId,
+            subscriptionId: input.subscriptionId,
+            orderType: OrderType.SUBSCRIPTION_RENEWAL,
+            lines: opened.orderRequest.lines,
+            shippingAddress: addrs.shipping,
+            billingAddress: addrs.billing,
+            customer: {
+              firstName: opened.subscription.customerFirstName,
+              lastName: opened.subscription.customerLastName,
+              email: opened.subscription.customerEmail,
+              phone: opened.subscription.customerPhone,
+            },
+            initialStatus: OrderStatus.PAYMENT_PENDING,
+            idempotencyKey: `renewal:${input.subscriptionId}:${billingPeriodKey}`,
+            actorUserId: input.actorUserId,
+            source: input.source,
+          });
+          orderId = order.id;
+          await this.renewal.attachRenewalOrder({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            orderId,
+            actorUserId: input.actorUserId,
+            source: input.source,
+          });
+        } catch (error) {
+          const code = extractErrorCode(error) ?? ErrorCodes.SYS_UNEXPECTED;
+          const isAddress = code === ErrorCodes.VAL_MISSING_FIELD;
+          const marked = await this.renewal.markAttemptOutcome({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            status: SubscriptionRenewalAttemptStatus.FAILED,
+            lastErrorCode: code,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            claimToken,
+          });
+          if (!marked.applied) {
+            return this.inFlightResult({
+              subscriptionId: input.subscriptionId,
+              billingPeriodKey,
+              attemptId,
+              orderId: null,
+              paymentId: null,
+              attemptStatus: opened.attempt.status,
+            });
+          }
+          return {
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId: null,
+            paymentId: null,
+            outcome: isAddress ? 'address_missing' : 'order_create_failed',
+            attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
+          };
+        }
+      }
+
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+      });
+      if (!order) {
+        throw new NotFoundException({
+          code: ErrorCodes.ORD_NOT_FOUND,
+          message: 'Renewal order not found after create/attach',
+        });
+      }
+
+      const subscription = await this.prisma.subscription.findUnique({
+        where: { id: input.subscriptionId },
+        include: { plan: true },
+      });
+      if (!subscription) {
+        throw new NotFoundException({
+          code: ErrorCodes.RES_NOT_FOUND,
+          message: 'Subscription not found',
+        });
+      }
+
+      // Zero-total: no payment method required; never write synthetic UUIDs.
+      if (order.totalCents === 0) {
+        const zeroAuth = await this.payments.authorizeForOrder({
+          orderId,
+          subscriptionId: input.subscriptionId,
+          paymentMethodId: subscription.paymentMethodId,
+          amountCents: 0,
+          currency: order.currency,
+          purpose: PaymentPurpose.RENEWAL,
+          initiator: PaymentInitiator.RENEWAL,
+          idempotencyKey: `renewal:${input.subscriptionId}:${billingPeriodKey}:authorize:zero`,
+          forceOutcome: input.forceOutcome,
+        });
+        await this.subscriptions.recordPaymentSnapshot({
+          subscriptionId: input.subscriptionId,
+          paymentStatusSummary: zeroAuth.paymentStatusSummary,
+          latestPaymentId: null,
           actorUserId: input.actorUserId,
           source: input.source,
         });
-        orderId = order.id;
-        await this.renewal.attachRenewalOrder({
+        const zeroMarked = await this.renewal.markAttemptOutcome({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          status: SubscriptionRenewalAttemptStatus.PROCESSING,
+          paymentId: null,
+          paymentStatusSummary: zeroAuth.paymentStatusSummary,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          claimToken,
+        });
+        if (!zeroMarked.applied) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            attemptStatus: opened.attempt.status,
+          });
+        }
+        if (order.isRxOrder) {
+          return this.transitionRxToClinical({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            reason: 'renewal_zero_total_authorized',
+          });
+        }
+        await this.orders.transitionOrder({
+          orderId,
+          toStatus: OrderStatus.AWAITING_FULFILLMENT,
+          actorUserId: input.actorUserId ?? null,
+          source: input.source,
+          reason: 'renewal_zero_total',
+          expectedStatus: OrderStatus.PAYMENT_PENDING,
+        });
+        await this.completeRenewalOnCapture({
           subscriptionId: input.subscriptionId,
           billingPeriodKey,
           orderId,
+          paymentId: null,
           actorUserId: input.actorUserId,
           source: input.source,
         });
-      } catch (error) {
-        const code = extractErrorCode(error) ?? ErrorCodes.SYS_UNEXPECTED;
-        const isAddress = code === ErrorCodes.VAL_MISSING_FIELD;
-        await this.renewal.markAttemptOutcome({
-          subscriptionId: input.subscriptionId,
-          billingPeriodKey,
-          status: SubscriptionRenewalAttemptStatus.FAILED,
-          lastErrorCode: code,
-          actorUserId: input.actorUserId,
-          source: input.source,
-        });
-        // Missing address / order create: do NOT PAST_DUE (payment did not fail).
         return {
           subscriptionId: input.subscriptionId,
           billingPeriodKey,
           attemptId,
-          orderId: null,
+          orderId,
           paymentId: null,
-          outcome: isAddress ? 'address_missing' : 'order_create_failed',
+          outcome: 'succeeded',
+          attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+        };
+      }
+
+      if (!subscription.paymentMethodId) {
+        const failed = await this.failAuthorization({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: null,
+          errorCode: ErrorCodes.PAY_METHOD_INVALID,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          claimToken,
+        });
+        if (!failed) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            attemptStatus: opened.attempt.status,
+          });
+        }
+        return {
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: null,
+          outcome: 'method_missing',
           attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
         };
       }
-    }
 
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
-    if (!order) {
-      throw new NotFoundException({
-        code: ErrorCodes.ORD_NOT_FOUND,
-        message: 'Renewal order not found after create/attach',
+      const latestPayment = await this.payments.findLatestForOrder(orderId);
+
+      if (
+        latestPayment?.lifecycleState ===
+        PaymentLifecycleState.PENDING_AUTHORIZATION
+      ) {
+        const graceEnded = this.isGracePeriodEnded(subscription, now);
+        if (
+          graceEnded &&
+          (latestPayment.providerStatusRaw === 'requires_action' ||
+            opened.attempt.lastErrorCode === ErrorCodes.PAY_ACTION_REQUIRED)
+        ) {
+          return this.abandonPendingAuthorizationAfterGrace({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: latestPayment.id,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            claimToken,
+            leaseSeconds,
+          });
+        }
+
+        const gated = await this.withLeaseHeartbeat({
+          attemptId,
+          claimToken,
+          leaseSeconds,
+          work: () =>
+            this.payments.authorizeForOrder({
+              orderId,
+              subscriptionId: input.subscriptionId,
+              paymentMethodId: subscription.paymentMethodId!,
+              amountCents: order.totalCents,
+              currency: order.currency,
+              purpose: PaymentPurpose.RENEWAL,
+              initiator: PaymentInitiator.RENEWAL,
+              idempotencyKey: latestPayment.idempotencyKey,
+              forceOutcome: input.forceOutcome,
+            }),
+        });
+        if (!gated.ok || !gated.value) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: latestPayment.id,
+            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+          });
+        }
+        return this.classifyAuthorizeOutcome({
+          input,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          order,
+          auth: gated.value,
+          claimToken,
+        });
+      }
+
+      const maxAttempts = this.renewalMaxAuthorizeAttempts();
+      const currentAttemptNumber = opened.attempt.authorizeAttemptNumber ?? 0;
+      if (currentAttemptNumber >= maxAttempts) {
+        const failed = await this.failAuthorization({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: latestPayment?.id ?? null,
+          errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          claimToken,
+        });
+        if (!failed) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: latestPayment?.id ?? null,
+            attemptStatus: opened.attempt.status,
+          });
+        }
+        return {
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: latestPayment?.id ?? null,
+          outcome: 'authorization_failed',
+          attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
+        };
+      }
+
+      // Provider already advanced past authorize — never mint a new a{n}.
+      if (latestPayment?.lifecycleState === PaymentLifecycleState.CAPTURED) {
+        await this.completeRenewalOnCapture({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          orderId,
+          paymentId: latestPayment.id,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+        return {
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: latestPayment.id,
+          outcome: 'succeeded',
+          attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+        };
+      }
+      if (
+        latestPayment &&
+        (latestPayment.lifecycleState === PaymentLifecycleState.AUTHORIZED ||
+          latestPayment.lifecycleState ===
+            PaymentLifecycleState.CAPTURE_PENDING ||
+          latestPayment.lifecycleState === PaymentLifecycleState.CAPTURE_FAILED)
+      ) {
+        return this.continueCapture({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: latestPayment.id,
+          isRx: order.isRxOrder,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          forceOutcome: input.forceOutcome,
+          claimToken,
+          leaseSeconds,
+          transitionFromPaymentPending:
+            order.status === OrderStatus.PAYMENT_PENDING,
+        });
+      }
+
+      // Reclaim window: reuse a{n} key if Payment exists or number already allocated.
+      let authorizeKey: string | null = null;
+      const priorTerminal =
+        latestPayment?.lifecycleState ===
+          PaymentLifecycleState.AUTHORIZATION_FAILED ||
+        latestPayment?.lifecycleState === PaymentLifecycleState.VOIDED;
+
+      // PENDING_AUTHORIZATION already handled above — any remaining payment is
+      // non-pending (or absent), so reuse a{n} when a number was already allocated.
+      if (!priorTerminal && currentAttemptNumber > 0) {
+        const reuseKey = `renewal:${input.subscriptionId}:${billingPeriodKey}:authorize:a${currentAttemptNumber}`;
+        const existing = await this.payments.findByIdempotencyKey(reuseKey);
+        if (existing) {
+          if (
+            existing.lifecycleState ===
+              PaymentLifecycleState.AUTHORIZATION_FAILED ||
+            existing.lifecycleState === PaymentLifecycleState.VOIDED
+          ) {
+            // Confirmed terminal for this a{n} — fall through to allocate next.
+          } else {
+            authorizeKey = reuseKey;
+          }
+        } else {
+          // Number bumped but Payment not visible yet — reuse same key (no new a{n}).
+          authorizeKey = reuseKey;
+        }
+      }
+
+      if (authorizeKey == null) {
+        const existingKey =
+          latestPayment &&
+          !priorTerminal &&
+          typeof latestPayment.idempotencyKey === 'string' &&
+          latestPayment.idempotencyKey.length > 0
+            ? latestPayment.idempotencyKey
+            : null;
+        if (existingKey) {
+          // Unexpected non-terminal latest — reconcile via its key; never allocate.
+          authorizeKey = existingKey;
+        } else {
+          const attemptNumber =
+            await this.subscriptions.allocateAuthorizeAttemptNumber(
+              attemptId,
+              claimToken,
+            );
+          if (attemptNumber == null) {
+            return this.inFlightResult({
+              subscriptionId: input.subscriptionId,
+              billingPeriodKey,
+              attemptId,
+              orderId,
+              paymentId: opened.attempt.paymentId,
+              attemptStatus: opened.attempt.status,
+            });
+          }
+          authorizeKey = `renewal:${input.subscriptionId}:${billingPeriodKey}:authorize:a${attemptNumber}`;
+        }
+      }
+
+      const paymentMethodId = subscription.paymentMethodId;
+      if (!paymentMethodId) {
+        return this.inFlightResult({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: opened.attempt.paymentId,
+          attemptStatus: opened.attempt.status,
+        });
+      }
+      const resolvedAuthorizeKey = authorizeKey;
+
+      const gated = await this.withLeaseHeartbeat({
+        attemptId,
+        claimToken,
+        leaseSeconds,
+        work: async () => {
+          try {
+            return {
+              kind: 'auth' as const,
+              auth: await this.payments.authorizeForOrder({
+                orderId,
+                subscriptionId: input.subscriptionId,
+                paymentMethodId,
+                amountCents: order.totalCents,
+                currency: order.currency,
+                purpose: PaymentPurpose.RENEWAL,
+                initiator: PaymentInitiator.RENEWAL,
+                idempotencyKey: resolvedAuthorizeKey,
+                forceOutcome: input.forceOutcome,
+              }),
+            };
+          } catch (error) {
+            return { kind: 'error' as const, error };
+          }
+        },
       });
-    }
 
-    const subscription = await this.prisma.subscription.findUnique({
-      where: { id: input.subscriptionId },
-    });
-    if (!subscription?.paymentMethodId) {
-      await this.failAuthorization({
-        subscriptionId: input.subscriptionId,
+      if (!gated.ok || !gated.value) {
+        return this.inFlightResult({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: opened.attempt.paymentId,
+          attemptStatus: opened.attempt.status,
+        });
+      }
+
+      if (gated.value.kind === 'error') {
+        const error = gated.value.error;
+        if (this.isPermanentMethodError(error)) {
+          const failed = await this.failAuthorization({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            errorCode: ErrorCodes.PAY_METHOD_INVALID,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            claimToken,
+          });
+          if (!failed) {
+            return this.inFlightResult({
+              subscriptionId: input.subscriptionId,
+              billingPeriodKey,
+              attemptId,
+              orderId,
+              paymentId: null,
+              attemptStatus: opened.attempt.status,
+            });
+          }
+          return {
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            outcome: 'method_missing',
+            attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
+          };
+        }
+        if (this.isTransientProviderError(error)) {
+          const marked = await this.renewal.markAttemptOutcome({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            status: SubscriptionRenewalAttemptStatus.PROCESSING,
+            paymentId: null,
+            paymentStatusSummary: 'pending',
+            lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+            actorUserId: input.actorUserId,
+            source: input.source,
+            claimToken,
+          });
+          if (!marked.applied) {
+            return this.inFlightResult({
+              subscriptionId: input.subscriptionId,
+              billingPeriodKey,
+              attemptId,
+              orderId,
+              paymentId: null,
+              attemptStatus: opened.attempt.status,
+            });
+          }
+          return {
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey,
+            attemptId,
+            orderId,
+            paymentId: null,
+            outcome: 'authorization_pending',
+            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+          };
+        }
+        throw gated.value.error;
+      }
+
+      return this.classifyAuthorizeOutcome({
+        input,
         billingPeriodKey,
         attemptId,
         orderId,
-        paymentId: null,
-        errorCode: ErrorCodes.PAY_METHOD_INVALID,
+        order,
+        auth: gated.value.auth,
+        claimToken,
+      });
+    } finally {
+      await this.subscriptions.releaseRenewalAttemptLease({
+        attemptId,
+        claimToken,
+      });
+    }
+  }
+
+  private isGracePeriodEnded(
+    subscription: {
+      currentPeriodEnd: Date | null;
+      nextRenewalAt: Date | null;
+      plan: { gracePeriodDays: number | null };
+    },
+    now: Date,
+  ): boolean {
+    const graceDays = subscription.plan.gracePeriodDays ?? 0;
+    if (graceDays <= 0) {
+      return true;
+    }
+    const anchor =
+      subscription.currentPeriodEnd ?? subscription.nextRenewalAt ?? null;
+    if (!anchor) {
+      return true;
+    }
+    const end = new Date(anchor.getTime());
+    end.setUTCDate(end.getUTCDate() + graceDays);
+    return now.getTime() > end.getTime();
+  }
+
+  private async abandonPendingAuthorizationAfterGrace(input: {
+    subscriptionId: string;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    paymentId: string;
+    actorUserId?: string | null;
+    source: string;
+    claimToken: string;
+    leaseSeconds: number;
+  }): Promise<ProcessRenewalResult> {
+    const gated = await this.withLeaseHeartbeat({
+      attemptId: input.attemptId,
+      claimToken: input.claimToken,
+      leaseSeconds: input.leaseSeconds,
+      work: () =>
+        this.payments.cancelPendingAuthorization({
+          paymentId: input.paymentId,
+          idempotencyKey: `renewal:${input.subscriptionId}:${input.billingPeriodKey}:abandon:${input.paymentId}`,
+          reason: ErrorCodes.PAY_RENEWAL_ABANDONED,
+        }),
+    });
+
+    // Always re-read payment after cancel — capture may have raced.
+    const payment = await this.payments.findById(input.paymentId);
+    const outcome =
+      payment != null
+        ? this.payments.classifyPaymentLifecycleForAbandon(
+            payment.lifecycleState,
+          )
+        : (gated.value ?? 'not_found');
+
+    if (!gated.ok) {
+      // Lease lost: preserve provider result; do not mutate as abandoned.
+      if (outcome === 'captured') {
+        await this.completeRenewalOnCapture({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+        return {
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          outcome: 'succeeded',
+          attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+        };
+      }
+      return this.inFlightResult({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      });
+    }
+
+    if (outcome === 'captured') {
+      await this.completeRenewalOnCapture({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
         actorUserId: input.actorUserId,
         source: input.source,
       });
       return {
         subscriptionId: input.subscriptionId,
-        billingPeriodKey,
-        attemptId,
-        orderId,
-        paymentId: null,
-        outcome: 'method_missing',
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        outcome: 'succeeded',
+        attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+      };
+    }
+
+    if (outcome === 'authorized') {
+      return this.continueCapture({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        isRx: false,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        claimToken: input.claimToken,
+        leaseSeconds: input.leaseSeconds,
+        transitionFromPaymentPending: true,
+      });
+    }
+
+    if (outcome === 'voided' || outcome === 'authorization_failed') {
+      const failed = await this.failAuthorization({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        errorCode: ErrorCodes.PAY_RENEWAL_ABANDONED,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        claimToken: input.claimToken,
+      });
+      if (!failed) {
+        return this.inFlightResult({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
+      return {
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        outcome: 'authorization_failed',
         attemptStatus: SubscriptionRenewalAttemptStatus.FAILED,
       };
     }
 
-    const auth = await this.payments.authorizeForOrder({
-      orderId,
-      subscriptionId: input.subscriptionId,
-      paymentMethodId: subscription.paymentMethodId,
-      amountCents: order.totalCents,
-      currency: order.currency,
-      idempotencyKey: `renewal:${input.subscriptionId}:${billingPeriodKey}:authorize`,
-      forceOutcome: input.forceOutcome,
-    });
+    if (outcome === 'refunded') {
+      const marked = await this.renewal.markAttemptOutcome({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        status: SubscriptionRenewalAttemptStatus.FAILED,
+        paymentId: input.paymentId,
+        paymentStatusSummary: 'refunded',
+        lastErrorCode: ErrorCodes.PAY_RENEWAL_ABANDONED,
+        actorUserId: input.actorUserId,
+        source: input.source,
+        claimToken: input.claimToken,
+      });
+      if (marked.applied) {
+        await this.subscriptions.markPastDue({
+          subscriptionId: input.subscriptionId,
+          toStatus: SubscriptionStatus.PAST_DUE,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          reason: 'renewal_refunded_during_grace',
+          failedRenewalAttempt: true,
+        });
+      }
+      return {
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        outcome: marked.applied ? 'authorization_failed' : 'in_flight',
+        attemptStatus: marked.applied
+          ? SubscriptionRenewalAttemptStatus.FAILED
+          : SubscriptionRenewalAttemptStatus.PROCESSING,
+      };
+    }
 
-    await this.subscriptions.recordPaymentSnapshot({
+    // unknown / not_found — retain recoverable pending; never SCA/action-required.
+    await this.renewal.markAttemptOutcome({
       subscriptionId: input.subscriptionId,
-      paymentStatusSummary: auth.paymentStatusSummary,
-      latestPaymentId: auth.paymentId,
+      billingPeriodKey: input.billingPeriodKey,
+      status: SubscriptionRenewalAttemptStatus.PROCESSING,
+      paymentId: input.paymentId,
+      paymentStatusSummary: 'pending',
+      lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
       actorUserId: input.actorUserId,
       source: input.source,
+      claimToken: input.claimToken,
+    });
+    return {
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: input.billingPeriodKey,
+      attemptId: input.attemptId,
+      orderId: input.orderId,
+      paymentId: input.paymentId,
+      outcome: 'authorization_pending',
+      attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+    };
+  }
+
+  private async classifyAuthorizeOutcome(args: {
+    input: ProcessRenewalInput;
+    billingPeriodKey: string;
+    attemptId: string;
+    orderId: string;
+    order: { isRxOrder: boolean };
+    auth: {
+      paymentId: string | null;
+      paymentStatusSummary:
+        'pending' | 'authorized_or_captured' | 'failed' | 'refunded';
+      status: PaymentStatus;
+      lifecycleState: PaymentLifecycleState;
+    };
+    claimToken: string;
+  }): Promise<ProcessRenewalResult> {
+    const {
+      input: proc,
+      billingPeriodKey,
+      attemptId,
+      orderId,
+      order,
+      auth,
+      claimToken,
+    } = args;
+
+    await this.subscriptions.recordPaymentSnapshot({
+      subscriptionId: proc.subscriptionId,
+      paymentStatusSummary: auth.paymentStatusSummary,
+      latestPaymentId: auth.paymentId,
+      actorUserId: proc.actorUserId,
+      source: proc.source,
     });
 
     if (
       auth.status === PaymentStatus.FAILED ||
-      auth.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED
+      auth.lifecycleState === PaymentLifecycleState.AUTHORIZATION_FAILED ||
+      auth.lifecycleState === PaymentLifecycleState.VOIDED
     ) {
-      await this.failAuthorization({
-        subscriptionId: input.subscriptionId,
+      const failed = await this.failAuthorization({
+        subscriptionId: proc.subscriptionId,
         billingPeriodKey,
         attemptId,
         orderId,
         paymentId: auth.paymentId,
         errorCode: ErrorCodes.PAY_AUTHORIZATION_FAILED,
-        actorUserId: input.actorUserId,
-        source: input.source,
+        actorUserId: proc.actorUserId,
+        source: proc.source,
+        claimToken,
       });
+      if (!failed) {
+        return this.inFlightResult({
+          subscriptionId: proc.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: auth.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
       return {
-        subscriptionId: input.subscriptionId,
+        subscriptionId: proc.subscriptionId,
         billingPeriodKey,
         attemptId,
         orderId,
@@ -318,40 +1146,135 @@ export class SubscriptionsRenewalProcessor {
       };
     }
 
-    await this.renewal.markAttemptOutcome({
-      subscriptionId: input.subscriptionId,
-      billingPeriodKey,
-      status: SubscriptionRenewalAttemptStatus.PROCESSING,
-      paymentId: auth.paymentId,
-      paymentStatusSummary: auth.paymentStatusSummary,
-      actorUserId: input.actorUserId,
-      source: input.source,
-    });
-
-    if (order.isRxOrder) {
-      return this.transitionRxToClinical({
-        subscriptionId: input.subscriptionId,
+    if (auth.lifecycleState === PaymentLifecycleState.PENDING_AUTHORIZATION) {
+      const paymentRow = auth.paymentId
+        ? await this.payments.findById(auth.paymentId)
+        : null;
+      const requiresAction =
+        paymentRow?.providerStatusRaw === 'requires_action';
+      const marked = await this.renewal.markAttemptOutcome({
+        subscriptionId: proc.subscriptionId,
+        billingPeriodKey,
+        status: SubscriptionRenewalAttemptStatus.PROCESSING,
+        paymentId: auth.paymentId,
+        paymentStatusSummary: 'pending',
+        lastErrorCode: requiresAction
+          ? ErrorCodes.PAY_ACTION_REQUIRED
+          : ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+        actorUserId: proc.actorUserId,
+        source: proc.source,
+        claimToken,
+      });
+      if (!marked.applied) {
+        return this.inFlightResult({
+          subscriptionId: proc.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: auth.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
+      if (requiresAction) {
+        await this.subscriptions.markPastDue({
+          subscriptionId: proc.subscriptionId,
+          toStatus: SubscriptionStatus.PAST_DUE,
+          actorUserId: proc.actorUserId,
+          source: proc.source,
+          reason: 'renewal_action_required',
+          actionRequiredHold: true,
+        });
+      }
+      return {
+        subscriptionId: proc.subscriptionId,
         billingPeriodKey,
         attemptId,
         orderId,
         paymentId: auth.paymentId,
-        actorUserId: input.actorUserId,
-        source: input.source,
+        outcome: 'authorization_pending',
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      };
+    }
+
+    if (auth.lifecycleState !== PaymentLifecycleState.AUTHORIZED) {
+      const marked = await this.renewal.markAttemptOutcome({
+        subscriptionId: proc.subscriptionId,
+        billingPeriodKey,
+        status: SubscriptionRenewalAttemptStatus.PROCESSING,
+        paymentId: auth.paymentId,
+        paymentStatusSummary: 'pending',
+        lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+        actorUserId: proc.actorUserId,
+        source: proc.source,
+        claimToken,
+      });
+      if (!marked.applied) {
+        return this.inFlightResult({
+          subscriptionId: proc.subscriptionId,
+          billingPeriodKey,
+          attemptId,
+          orderId,
+          paymentId: auth.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
+      return {
+        subscriptionId: proc.subscriptionId,
+        billingPeriodKey,
+        attemptId,
+        orderId,
+        paymentId: auth.paymentId,
+        outcome: 'authorization_pending',
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      };
+    }
+
+    const marked = await this.renewal.markAttemptOutcome({
+      subscriptionId: proc.subscriptionId,
+      billingPeriodKey,
+      status: SubscriptionRenewalAttemptStatus.PROCESSING,
+      paymentId: auth.paymentId,
+      paymentStatusSummary: auth.paymentStatusSummary,
+      actorUserId: proc.actorUserId,
+      source: proc.source,
+      claimToken,
+    });
+    if (!marked.applied) {
+      return this.inFlightResult({
+        subscriptionId: proc.subscriptionId,
+        billingPeriodKey,
+        attemptId,
+        orderId,
+        paymentId: auth.paymentId,
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      });
+    }
+
+    if (order.isRxOrder) {
+      return this.transitionRxToClinical({
+        subscriptionId: proc.subscriptionId,
+        billingPeriodKey,
+        attemptId,
+        orderId,
+        paymentId: auth.paymentId,
+        actorUserId: proc.actorUserId,
+        source: proc.source,
         reason: 'renewal_authorized',
       });
     }
 
-    // Non-Rx: capture then transition to AWAITING_FULFILLMENT (ordering unchanged).
     return this.continueCapture({
-      subscriptionId: input.subscriptionId,
+      subscriptionId: proc.subscriptionId,
       billingPeriodKey,
       attemptId,
       orderId,
-      paymentId: auth.paymentId,
+      paymentId: auth.paymentId!,
       isRx: false,
-      actorUserId: input.actorUserId,
-      source: input.source,
-      forceOutcome: input.forceOutcome,
+      actorUserId: proc.actorUserId,
+      source: proc.source,
+      forceOutcome: proc.forceOutcome,
+      claimToken,
+      leaseSeconds: this.renewalLeaseSeconds(),
       transitionFromPaymentPending: true,
     });
   }
@@ -364,7 +1287,7 @@ export class SubscriptionsRenewalProcessor {
   async completeRenewalOnCapture(input: {
     subscriptionId: string;
     billingPeriodKey: string;
-    paymentId: string;
+    paymentId: string | null;
     orderId?: string | null;
     actorUserId?: string | null;
     source: string;
@@ -406,9 +1329,15 @@ export class SubscriptionsRenewalProcessor {
       return;
     }
 
-    const payment = await this.payments.findLatestForOrder(order.id);
-    if (!payment || payment.lifecycleState !== PaymentLifecycleState.CAPTURED) {
-      return;
+    // Zero-total renewals have no Payment row; otherwise require CAPTURED.
+    if (order.totalCents > 0) {
+      const payment = await this.payments.findLatestForOrder(order.id);
+      if (
+        !payment ||
+        payment.lifecycleState !== PaymentLifecycleState.CAPTURED
+      ) {
+        return;
+      }
     }
 
     const period = this.schedule.advancePeriod(
@@ -421,7 +1350,33 @@ export class SubscriptionsRenewalProcessor {
       },
     );
 
-    await this.prisma.$transaction(async (tx) => {
+    const advanced = await this.prisma.$transaction(async (tx) => {
+      // Conditional claim: only one completion advances the period.
+      const claimed = await tx.subscriptionRenewalAttempt.updateMany({
+        where: {
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          status: {
+            in: [
+              SubscriptionRenewalAttemptStatus.PENDING,
+              SubscriptionRenewalAttemptStatus.PROCESSING,
+              SubscriptionRenewalAttemptStatus.FAILED,
+            ],
+          },
+        },
+        data: {
+          status: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+          paymentId: input.paymentId,
+          paymentStatusSummary: 'authorized_or_captured',
+          lastErrorCode: null,
+          claimToken: null,
+          leaseExpiresAt: null,
+        },
+      });
+      if (claimed.count === 0) {
+        return false;
+      }
+
       await tx.subscription.update({
         where: { id: sub.id },
         data: {
@@ -445,20 +1400,6 @@ export class SubscriptionsRenewalProcessor {
           },
         });
       }
-      await tx.subscriptionRenewalAttempt.update({
-        where: {
-          subscriptionId_billingPeriodKey: {
-            subscriptionId: input.subscriptionId,
-            billingPeriodKey: input.billingPeriodKey,
-          },
-        },
-        data: {
-          status: SubscriptionRenewalAttemptStatus.SUCCEEDED,
-          paymentId: input.paymentId,
-          paymentStatusSummary: 'authorized_or_captured',
-          lastErrorCode: null,
-        },
-      });
       await tx.subscriptionActivity.create({
         data: {
           subscriptionId: sub.id,
@@ -472,13 +1413,89 @@ export class SubscriptionsRenewalProcessor {
           },
         },
       });
+      return true;
     });
 
-    // Notify via side-effect hooks if wired.
+    if (!advanced) {
+      return;
+    }
+
     await this.subscriptions.notify(
       'subscription.renewed',
       input.subscriptionId,
     );
+  }
+
+  /**
+   * Webhook/payment-path auth failure → align attempt + PAST_DUE without
+   * regressing newer attempts or terminal subscriptions.
+   */
+  async onRenewalAuthorizationFailed(input: {
+    orderId: string;
+    subscriptionId: string | null;
+    paymentId: string;
+    errorCode: string;
+  }): Promise<void> {
+    if (!input.subscriptionId) {
+      return;
+    }
+    const payment = await this.payments.findById(input.paymentId);
+    if (
+      !payment ||
+      (payment.lifecycleState !== PaymentLifecycleState.AUTHORIZATION_FAILED &&
+        payment.lifecycleState !== PaymentLifecycleState.VOIDED &&
+        payment.status !== PaymentStatus.FAILED)
+    ) {
+      // Unknown / non-terminal — never mark confirmed failure from webhook.
+      return;
+    }
+
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: input.subscriptionId },
+      select: { status: true },
+    });
+    if (
+      !subscription ||
+      (subscription.status !== SubscriptionStatus.ACTIVE &&
+        subscription.status !== SubscriptionStatus.PAST_DUE)
+    ) {
+      // CANCELLED / EXPIRED / COMPLETED / MIGRATED / PAUSED — no FAILED attempt.
+      return;
+    }
+
+    const attempt = await this.prisma.subscriptionRenewalAttempt.findFirst({
+      where: {
+        subscriptionId: input.subscriptionId,
+        orderId: input.orderId,
+      },
+    });
+    if (!attempt) {
+      return;
+    }
+    if (attempt.status === SubscriptionRenewalAttemptStatus.SUCCEEDED) {
+      return;
+    }
+    // Stale a{n}: ignore if attempt already points at a different payment.
+    if (attempt.paymentId != null && attempt.paymentId !== input.paymentId) {
+      return;
+    }
+
+    await this.renewal.markAttemptOutcome({
+      subscriptionId: input.subscriptionId,
+      billingPeriodKey: attempt.billingPeriodKey,
+      status: SubscriptionRenewalAttemptStatus.FAILED,
+      paymentId: input.paymentId,
+      paymentStatusSummary: 'failed',
+      lastErrorCode: input.errorCode || ErrorCodes.PAY_AUTHORIZATION_FAILED,
+      source: 'payment',
+    });
+    await this.subscriptions.markPastDue({
+      subscriptionId: input.subscriptionId,
+      toStatus: SubscriptionStatus.PAST_DUE,
+      source: 'payment',
+      reason: 'renewal_payment_failed',
+      failedRenewalAttempt: true,
+    });
   }
 
   async onClinicalDecline(input: {
@@ -637,6 +1654,8 @@ export class SubscriptionsRenewalProcessor {
     actorUserId?: string | null;
     source: string;
     forceOutcome?: 'decline' | 'timeout' | null;
+    claimToken?: string;
+    leaseSeconds?: number;
   }): Promise<ProcessRenewalResult | null> {
     const order = await this.prisma.order.findUnique({
       where: { id: input.orderId },
@@ -681,6 +1700,8 @@ export class SubscriptionsRenewalProcessor {
         actorUserId: input.actorUserId,
         source: input.source,
         forceOutcome: input.forceOutcome,
+        claimToken: input.claimToken,
+        leaseSeconds: input.leaseSeconds,
       });
     }
 
@@ -721,6 +1742,8 @@ export class SubscriptionsRenewalProcessor {
         actorUserId: input.actorUserId,
         source: input.source,
         forceOutcome: input.forceOutcome,
+        claimToken: input.claimToken,
+        leaseSeconds: input.leaseSeconds,
       });
     }
 
@@ -803,6 +1826,8 @@ export class SubscriptionsRenewalProcessor {
         actorUserId: input.actorUserId,
         source: input.source,
         forceOutcome: input.forceOutcome,
+        claimToken: input.claimToken,
+        leaseSeconds: input.leaseSeconds,
         transitionFromPaymentPending: true,
       });
     }
@@ -815,7 +1840,7 @@ export class SubscriptionsRenewalProcessor {
     billingPeriodKey: string;
     attemptId: string;
     orderId: string;
-    paymentId: string;
+    paymentId: string | null;
     actorUserId?: string | null;
     source: string;
     reason: string;
@@ -876,6 +1901,8 @@ export class SubscriptionsRenewalProcessor {
     actorUserId?: string | null;
     source: string;
     forceOutcome?: 'decline' | 'timeout' | null;
+    claimToken?: string;
+    leaseSeconds?: number;
   }): Promise<ProcessRenewalResult> {
     const payment = await this.payments.findLatestForOrder(input.orderId);
     if (!payment) {
@@ -930,10 +1957,12 @@ export class SubscriptionsRenewalProcessor {
       actorUserId: input.actorUserId,
       source: input.source,
       forceOutcome: input.forceOutcome,
+      claimToken: input.claimToken,
+      leaseSeconds: input.leaseSeconds,
     });
   }
 
-  /** Capture-only retry — never authorize. */
+  /** Capture-only retry — never authorize. Preserves capture:{order}:{payment} key. */
   private async retryCaptureOnly(input: {
     subscriptionId: string;
     billingPeriodKey: string;
@@ -943,24 +1972,77 @@ export class SubscriptionsRenewalProcessor {
     actorUserId?: string | null;
     source: string;
     forceOutcome?: 'decline' | 'timeout' | null;
+    claimToken?: string;
+    leaseSeconds?: number;
   }): Promise<ProcessRenewalResult> {
-    const capture = await this.payments.capturePayment({
-      paymentId: input.paymentId,
-      idempotencyKey: `capture:${input.orderId}:${input.paymentId}`,
-      forceOutcome: input.forceOutcome,
-    });
+    const leaseSeconds = input.leaseSeconds ?? this.renewalLeaseSeconds();
+    const runCapture = () =>
+      this.payments.capturePayment({
+        paymentId: input.paymentId,
+        idempotencyKey: `capture:${input.orderId}:${input.paymentId}`,
+        forceOutcome: input.forceOutcome,
+      });
+
+    let capture;
+    let owned = true;
+    if (input.claimToken) {
+      const gated = await this.withLeaseHeartbeat({
+        attemptId: input.attemptId,
+        claimToken: input.claimToken,
+        leaseSeconds,
+        work: runCapture,
+      });
+      if (!gated.value) {
+        return this.inFlightResult({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
+      capture = gated.value;
+      owned = gated.ok;
+    } else {
+      capture = await runCapture();
+    }
 
     if (capture.lifecycleState !== PaymentLifecycleState.CAPTURED) {
-      await this.renewal.markAttemptOutcome({
-        subscriptionId: input.subscriptionId,
-        billingPeriodKey: input.billingPeriodKey,
-        status: SubscriptionRenewalAttemptStatus.FAILED,
-        paymentId: input.paymentId,
-        paymentStatusSummary: capture.paymentStatusSummary,
-        lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
-        actorUserId: input.actorUserId,
-        source: input.source,
-      });
+      if (input.claimToken) {
+        const marked = await this.renewal.markAttemptOutcome({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          paymentId: input.paymentId,
+          paymentStatusSummary: capture.paymentStatusSummary,
+          lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          claimToken: input.claimToken,
+        });
+        if (!marked.applied) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey: input.billingPeriodKey,
+            attemptId: input.attemptId,
+            orderId: input.orderId,
+            paymentId: input.paymentId,
+            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+          });
+        }
+      } else {
+        await this.renewal.markAttemptOutcome({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          paymentId: input.paymentId,
+          paymentStatusSummary: capture.paymentStatusSummary,
+          lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+      }
       return {
         subscriptionId: input.subscriptionId,
         billingPeriodKey: input.billingPeriodKey,
@@ -972,6 +2054,7 @@ export class SubscriptionsRenewalProcessor {
       };
     }
 
+    // CAPTURED — complete even if lease lost (one-shot / current owner reconciles).
     await this.completeRenewalOnCapture({
       subscriptionId: input.subscriptionId,
       billingPeriodKey: input.billingPeriodKey,
@@ -980,6 +2063,17 @@ export class SubscriptionsRenewalProcessor {
       actorUserId: input.actorUserId,
       source: input.source,
     });
+
+    if (!owned && input.claimToken) {
+      return this.inFlightResult({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+      });
+    }
 
     return {
       subscriptionId: input.subscriptionId,
@@ -1056,24 +2150,79 @@ export class SubscriptionsRenewalProcessor {
     source: string;
     forceOutcome?: 'decline' | 'timeout' | null;
     transitionFromPaymentPending?: boolean;
+    claimToken?: string;
+    leaseSeconds?: number;
   }): Promise<ProcessRenewalResult> {
-    const capture = await this.payments.capturePayment({
-      paymentId: input.paymentId,
-      idempotencyKey: `renewal:${input.subscriptionId}:${input.billingPeriodKey}:capture`,
-      forceOutcome: input.forceOutcome,
-    });
+    const leaseSeconds = input.leaseSeconds ?? this.renewalLeaseSeconds();
+    // Phase 6G R3: prefer order-scoped canonical key when orderId is present so
+    // CAPTURE_PENDING recovery can reconstruct the same provider idempotency key.
+    const runCapture = () =>
+      this.payments.capturePayment({
+        paymentId: input.paymentId,
+        idempotencyKey: `capture:${input.orderId}:${input.paymentId}`,
+        forceOutcome: input.forceOutcome,
+      });
+
+    let capture;
+    let owned = true;
+    if (input.claimToken) {
+      const gated = await this.withLeaseHeartbeat({
+        attemptId: input.attemptId,
+        claimToken: input.claimToken,
+        leaseSeconds,
+        work: runCapture,
+      });
+      if (!gated.value) {
+        return this.inFlightResult({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          attemptId: input.attemptId,
+          orderId: input.orderId,
+          paymentId: input.paymentId,
+          attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+        });
+      }
+      capture = gated.value;
+      owned = gated.ok;
+    } else {
+      capture = await runCapture();
+    }
 
     if (capture.lifecycleState !== PaymentLifecycleState.CAPTURED) {
-      await this.renewal.markAttemptOutcome({
-        subscriptionId: input.subscriptionId,
-        billingPeriodKey: input.billingPeriodKey,
-        status: SubscriptionRenewalAttemptStatus.FAILED,
-        paymentId: input.paymentId,
-        paymentStatusSummary: capture.paymentStatusSummary,
-        lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
-        actorUserId: input.actorUserId,
-        source: input.source,
-      });
+      if (input.claimToken) {
+        const marked = await this.renewal.markAttemptOutcome({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          paymentId: input.paymentId,
+          paymentStatusSummary: capture.paymentStatusSummary,
+          lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+          actorUserId: input.actorUserId,
+          source: input.source,
+          claimToken: input.claimToken,
+        });
+        if (!marked.applied) {
+          return this.inFlightResult({
+            subscriptionId: input.subscriptionId,
+            billingPeriodKey: input.billingPeriodKey,
+            attemptId: input.attemptId,
+            orderId: input.orderId,
+            paymentId: input.paymentId,
+            attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+          });
+        }
+      } else {
+        await this.renewal.markAttemptOutcome({
+          subscriptionId: input.subscriptionId,
+          billingPeriodKey: input.billingPeriodKey,
+          status: SubscriptionRenewalAttemptStatus.FAILED,
+          paymentId: input.paymentId,
+          paymentStatusSummary: capture.paymentStatusSummary,
+          lastErrorCode: ErrorCodes.PAY_PROVIDER_UNAVAILABLE,
+          actorUserId: input.actorUserId,
+          source: input.source,
+        });
+      }
       return {
         subscriptionId: input.subscriptionId,
         billingPeriodKey: input.billingPeriodKey,
@@ -1085,6 +2234,7 @@ export class SubscriptionsRenewalProcessor {
       };
     }
 
+    // CAPTURED at provider — always allow one-shot completion even if lease lost.
     if (input.transitionFromPaymentPending) {
       try {
         await this.orders.transitionOrder({
@@ -1105,6 +2255,7 @@ export class SubscriptionsRenewalProcessor {
             paymentId: input.paymentId,
             actorUserId: input.actorUserId,
             source: input.source,
+            claimToken: input.claimToken,
           });
         }
         throw error;
@@ -1119,6 +2270,17 @@ export class SubscriptionsRenewalProcessor {
       actorUserId: input.actorUserId,
       source: input.source,
     });
+
+    if (!owned && input.claimToken) {
+      return this.inFlightResult({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        attemptStatus: SubscriptionRenewalAttemptStatus.SUCCEEDED,
+      });
+    }
 
     return {
       subscriptionId: input.subscriptionId,
@@ -1136,11 +2298,12 @@ export class SubscriptionsRenewalProcessor {
     billingPeriodKey: string;
     attemptId: string;
     orderId: string;
-    paymentId: string;
+    paymentId: string | null;
     actorUserId?: string | null;
     source: string;
+    claimToken?: string;
   }): Promise<ProcessRenewalResult> {
-    await this.renewal.markAttemptOutcome({
+    const marked = await this.renewal.markAttemptOutcome({
       subscriptionId: input.subscriptionId,
       billingPeriodKey: input.billingPeriodKey,
       status: SubscriptionRenewalAttemptStatus.FAILED,
@@ -1148,7 +2311,18 @@ export class SubscriptionsRenewalProcessor {
       lastErrorCode: ErrorCodes.INV_INSUFFICIENT,
       actorUserId: input.actorUserId,
       source: input.source,
+      claimToken: input.claimToken,
     });
+    if (input.claimToken != null && !marked.applied) {
+      return this.inFlightResult({
+        subscriptionId: input.subscriptionId,
+        billingPeriodKey: input.billingPeriodKey,
+        attemptId: input.attemptId,
+        orderId: input.orderId,
+        paymentId: input.paymentId,
+        attemptStatus: SubscriptionRenewalAttemptStatus.PROCESSING,
+      });
+    }
     // Inventory-only: do NOT PAST_DUE, do NOT void/refund (OD-SUB-04 / P14f).
     return {
       subscriptionId: input.subscriptionId,
@@ -1161,6 +2335,7 @@ export class SubscriptionsRenewalProcessor {
     };
   }
 
+  /** Returns false when claim ownership was lost (no PAST_DUE applied). */
   private async failAuthorization(input: {
     subscriptionId: string;
     billingPeriodKey: string;
@@ -1170,8 +2345,9 @@ export class SubscriptionsRenewalProcessor {
     errorCode: string;
     actorUserId?: string | null;
     source: string;
-  }): Promise<void> {
-    await this.renewal.markAttemptOutcome({
+    claimToken?: string;
+  }): Promise<boolean> {
+    const marked = await this.renewal.markAttemptOutcome({
       subscriptionId: input.subscriptionId,
       billingPeriodKey: input.billingPeriodKey,
       status: SubscriptionRenewalAttemptStatus.FAILED,
@@ -1180,7 +2356,11 @@ export class SubscriptionsRenewalProcessor {
       lastErrorCode: input.errorCode,
       actorUserId: input.actorUserId,
       source: input.source,
+      claimToken: input.claimToken,
     });
+    if (input.claimToken != null && !marked.applied) {
+      return false;
+    }
     await this.subscriptions.markPastDue({
       subscriptionId: input.subscriptionId,
       toStatus: SubscriptionStatus.PAST_DUE,
@@ -1189,22 +2369,29 @@ export class SubscriptionsRenewalProcessor {
       reason: 'renewal_payment_failed',
       failedRenewalAttempt: true,
     });
+    return true;
   }
 
   /**
    * Lock due ACTIVE renewals and PAST_DUE grace retries (SKIP LOCKED).
+   * Grace is fixed from period end; grace 0/NULL = no PAST_DUE failed retries.
+   * PROCESSING attempts are never treated as failed-retry (SCA hold safe).
+   * PAST_DUE+PROCESSING outside grace is selected for abandon/reconcile only.
    */
   private async lockDueSubscriptionIds(
     now: Date,
     limit: number,
   ): Promise<string[]> {
+    const maxAttempts = this.renewalMaxAuthorizeAttempts();
+    const minDelaySeconds = this.renewalMinRetryDelaySeconds();
     type Row = { id: string };
     const rows = await this.prisma.$queryRaw<Row[]>`
       SELECT s.id
       FROM subscriptions s
       LEFT JOIN subscription_plans p ON p.id = s.plan_id
       LEFT JOIN LATERAL (
-        SELECT a.status, a.last_error_at, a.updated_at, a.retry_count
+        SELECT a.status, a.last_error_at, a.updated_at, a.retry_count,
+               a.authorize_attempt_number, a.last_error_code
         FROM subscription_renewal_attempts a
         WHERE a.subscription_id = s.id
         ORDER BY a.created_at DESC
@@ -1221,11 +2408,20 @@ export class SubscriptionsRenewalProcessor {
           OR (
             s.status = 'PAST_DUE'
             AND latest.status = 'FAILED'
+            AND COALESCE(p.grace_period_days, 0) > 0
+            AND latest.authorize_attempt_number < ${maxAttempts}
+            AND COALESCE(latest.last_error_at, latest.updated_at) +
+                (${minDelaySeconds}::double precision * interval '1 second') <= ${now}
+            AND COALESCE(s.current_period_end, s.next_renewal_at) +
+                (p.grace_period_days || ' days')::interval >= ${now}
+          )
+          OR (
+            s.status = 'PAST_DUE'
+            AND latest.status = 'PROCESSING'
             AND (
-              p.grace_period_days IS NULL
-              OR p.grace_period_days = 0
-              OR COALESCE(latest.last_error_at, latest.updated_at) +
-                 (p.grace_period_days || ' days')::interval >= ${now}
+              COALESCE(p.grace_period_days, 0) = 0
+              OR COALESCE(s.current_period_end, s.next_renewal_at) +
+                 (COALESCE(p.grace_period_days, 0) || ' days')::interval < ${now}
             )
           )
         )

@@ -97,6 +97,16 @@ describe('SubscriptionsLifecycleService', () => {
     }
   });
 
+  it('allows ACTIVE → PAST_DUE for action-required hold', () => {
+    expect(() =>
+      service.assertTransition(
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.PAST_DUE,
+        { actionRequiredHold: true },
+      ),
+    ).not.toThrow();
+  });
+
   it('resume must restore statusBeforePause', () => {
     try {
       service.assertTransition(

@@ -27,14 +27,14 @@ export class AdminPaymentMethodsController {
   constructor(private readonly payments: PaymentsService) {}
 
   @Get()
-  @RequirePermissions(Permissions.ORD_VIEW)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'List saved payment methods for a user (Guardian)' })
   list(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.payments.listSavedMethodsForUser(userId);
   }
 
   @Post()
-  @RequirePermissions(Permissions.ORD_EDIT)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
   @ApiOperation({ summary: 'Add simulated saved payment method (Guardian)' })
   add(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -42,6 +42,7 @@ export class AdminPaymentMethodsController {
   ) {
     return this.payments.addSavedMethodForUser({
       userId,
+      providerMethodRef: dto.providerMethodRef,
       brand: dto.brand,
       last4: dto.last4,
       expMonth: dto.expMonth,
@@ -51,7 +52,7 @@ export class AdminPaymentMethodsController {
   }
 
   @Patch(':methodId')
-  @RequirePermissions(Permissions.ORD_EDIT)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
   @ApiOperation({ summary: 'Update saved payment method metadata (Guardian)' })
   update(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -62,7 +63,7 @@ export class AdminPaymentMethodsController {
   }
 
   @Post(':methodId/default')
-  @RequirePermissions(Permissions.ORD_EDIT)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Make saved payment method default (Guardian)' })
   makeDefault(
@@ -73,7 +74,7 @@ export class AdminPaymentMethodsController {
   }
 
   @Delete(':methodId')
-  @RequirePermissions(Permissions.ORD_EDIT)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
   @ApiOperation({ summary: 'Soft-delete saved payment method (Guardian)' })
   remove(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -90,14 +91,20 @@ export class CrmPaymentMethodsController {
   constructor(private readonly payments: PaymentsService) {}
 
   @Get()
-  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @RequirePermissions(
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+  )
   @ApiOperation({ summary: 'List saved payment methods for a patient (CRM)' })
   list(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.payments.listSavedMethodsForUser(userId);
   }
 
   @Post()
-  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @RequirePermissions(
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+  )
   @ApiOperation({ summary: 'Add simulated saved payment method (CRM)' })
   add(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -105,6 +112,7 @@ export class CrmPaymentMethodsController {
   ) {
     return this.payments.addSavedMethodForUser({
       userId,
+      providerMethodRef: dto.providerMethodRef,
       brand: dto.brand,
       last4: dto.last4,
       expMonth: dto.expMonth,
@@ -114,7 +122,10 @@ export class CrmPaymentMethodsController {
   }
 
   @Patch(':methodId')
-  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @RequirePermissions(
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+  )
   @ApiOperation({ summary: 'Update saved payment method metadata (CRM)' })
   update(
     @Param('userId', ParseUUIDPipe) userId: string,
@@ -125,7 +136,10 @@ export class CrmPaymentMethodsController {
   }
 
   @Post(':methodId/default')
-  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @RequirePermissions(
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+  )
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Make saved payment method default (CRM)' })
   makeDefault(
@@ -136,7 +150,10 @@ export class CrmPaymentMethodsController {
   }
 
   @Delete(':methodId')
-  @RequirePermissions(Permissions.CRM_PATIENT_RECORDS)
+  @RequirePermissions(
+    Permissions.CRM_ACCESS_SHELL,
+    Permissions.CRM_PATIENT_RECORDS,
+  )
   @ApiOperation({ summary: 'Soft-delete saved payment method (CRM)' })
   remove(
     @Param('userId', ParseUUIDPipe) userId: string,

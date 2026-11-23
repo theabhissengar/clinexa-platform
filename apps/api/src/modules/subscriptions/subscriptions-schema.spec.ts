@@ -105,6 +105,9 @@ describe('Subscriptions Prisma foundation (P14a)', () => {
     expect(attemptBlock).toContain(
       '@@unique([subscriptionId, billingPeriodKey])',
     );
+    expect(attemptBlock).toContain('claimToken');
+    expect(attemptBlock).toContain('leaseExpiresAt');
+    expect(attemptBlock).toContain('authorizeAttemptNumber');
 
     const migration = readFileSync(
       join(

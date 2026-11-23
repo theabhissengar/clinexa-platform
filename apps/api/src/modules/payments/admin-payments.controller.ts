@@ -1,15 +1,15 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   Headers,
   HttpCode,
   HttpStatus,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -19,131 +19,63 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { PaymentStatus } from '../../../generated/prisma';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ErrorCodes } from '../../common/constants/error-codes';
 import { Permissions } from '../rbac/constants/permissions';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
-import { InitiateRefundDto } from './dto/payment.dto';
 import {
-  AddSavedPaymentMethodDto,
-  UpdateSavedPaymentMethodDto,
-} from './dto/saved-payment-method.dto';
+  InitiateRefundDto,
+  ListPaymentsQueryDto,
+  RECONCILE_OUTCOMES,
+  type ReconcileOutcome,
+  type ReconcilePaymentResponseDto,
+} from './dto/payment.dto';
+import { assertIdempotencyKey } from './money';
 import { PaymentsService } from './payments.service';
 
-function parsePaymentStatus(raw?: string): PaymentStatus | 'ALL' | undefined {
-  if (!raw || raw === 'ALL') {
-    return 'ALL';
-  }
-  if ((Object.values(PaymentStatus) as string[]).includes(raw)) {
-    return raw as PaymentStatus;
-  }
-  return undefined;
-}
+const RECONCILE_OUTCOME_SET = new Set<string>(RECONCILE_OUTCOMES);
 
 @ApiTags('admin-payments')
 @ApiBearerAuth()
 @Controller({ path: 'admin/payments', version: '1' })
 export class AdminPaymentsController {
+  private readonly logger = new Logger(AdminPaymentsController.name);
+
   constructor(private readonly payments: PaymentsService) {}
 
   @Get()
-  @RequirePermissions(Permissions.ORD_VIEW)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'Guardian payment list' })
-  list(
-    @Query('q') q?: string,
-    @Query('status') status?: string,
-    @Query('provider') provider?: string,
-    @Query('createdFrom') createdFrom?: string,
-    @Query('createdTo') createdTo?: string,
-    @Query('skip') skip?: string,
-    @Query('take') take?: string,
-  ) {
-    const statusFilter = parsePaymentStatus(status);
-    if (status && status !== 'ALL' && statusFilter === undefined) {
-      throw new BadRequestException({
-        code: ErrorCodes.VAL_INVALID_FORMAT,
-        message: 'Invalid status filter',
-      });
-    }
+  list(@Query() query: ListPaymentsQueryDto) {
     return this.payments.listPayments({
-      q,
-      status: statusFilter ?? 'ALL',
-      provider,
-      createdFrom,
-      createdTo,
-      skip: skip ? Number(skip) : 0,
-      take: take ? Number(take) : 50,
+      q: query.q,
+      status: query.status ?? 'ALL',
+      provider: query.provider,
+      orderId: query.orderId,
+      subscriptionId: query.subscriptionId,
+      lifecycleState: query.lifecycleState ?? 'ALL',
+      purpose: query.purpose ?? 'ALL',
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
+      skip: query.skip ?? 0,
+      take: query.take ?? 50,
     });
-  }
-
-  @Get('users/:userId/payment-methods')
-  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
-  @ApiOperation({ summary: 'List saved payment methods for a user' })
-  listUserPaymentMethods(@Param('userId', ParseUUIDPipe) userId: string) {
-    return this.payments.listSavedMethodsForUser(userId);
-  }
-
-  @Post('users/:userId/payment-methods')
-  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
-  @ApiOperation({ summary: 'Add simulated saved payment method' })
-  addUserPaymentMethod(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Body() dto: AddSavedPaymentMethodDto,
-  ) {
-    return this.payments.addSavedMethodForUser({
-      userId,
-      brand: dto.brand,
-      last4: dto.last4,
-      expMonth: dto.expMonth,
-      expYear: dto.expYear,
-      isDefault: dto.isDefault,
-    });
-  }
-
-  @Patch('users/:userId/payment-methods/:methodId')
-  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
-  @ApiOperation({ summary: 'Update saved payment method metadata' })
-  updateUserPaymentMethod(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('methodId', ParseUUIDPipe) methodId: string,
-    @Body() dto: UpdateSavedPaymentMethodDto,
-  ) {
-    return this.payments.updateSavedMethodMetadata(userId, methodId, dto);
-  }
-
-  @Post('users/:userId/payment-methods/:methodId/make-default')
-  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Set default saved payment method' })
-  makeDefaultUserPaymentMethod(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('methodId', ParseUUIDPipe) methodId: string,
-  ) {
-    return this.payments.setDefaultSavedMethod(userId, methodId);
-  }
-
-  @Delete('users/:userId/payment-methods/:methodId')
-  @RequirePermissions(Permissions.PAY_MANAGE_METHODS)
-  @ApiOperation({ summary: 'Delete saved payment method (not if default)' })
-  deleteUserPaymentMethod(
-    @Param('userId', ParseUUIDPipe) userId: string,
-    @Param('methodId', ParseUUIDPipe) methodId: string,
-  ) {
-    return this.payments.deleteSavedMethod(userId, methodId);
   }
 
   @Get(':id')
-  @RequirePermissions(Permissions.ORD_VIEW)
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_VIEW)
   @ApiOperation({ summary: 'Guardian operational payment detail' })
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.payments.getPaymentDetail(id);
   }
 
   @Post(':id/refunds')
-  @RequirePermissions(Permissions.PAY_INITIATE_REFUND)
+  @RequirePermissions(
+    Permissions.GRD_ACCESS_SHELL,
+    Permissions.PAY_INITIATE_REFUND,
+  )
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Staff refund (API-067) — Idempotency-Key required',
@@ -160,18 +92,51 @@ export class AdminPaymentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    if (!idempotencyKey?.trim()) {
-      throw new BadRequestException({
-        code: ErrorCodes.VAL_MISSING_FIELD,
-        message: 'Idempotency-Key header is required',
-      });
-    }
     return this.payments.initiateRefund({
       paymentId: id,
       amountCents: dto.amountCents,
       reason: dto.reason,
       actorUserId: user.id,
-      idempotencyKey: idempotencyKey.trim(),
+      idempotencyKey: assertIdempotencyKey(idempotencyKey),
     });
+  }
+
+  @Post(':id/reconcile')
+  @RequirePermissions(Permissions.GRD_ACCESS_SHELL, Permissions.ORD_EDIT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Staff payment reconcile (API-067d) — reuses PaymentsService.reconcilePaymentById',
+  })
+  async reconcile(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ReconcilePaymentResponseDto> {
+    const result = await this.payments.reconcilePaymentById(id);
+    if (result.outcome === 'not_found') {
+      throw new NotFoundException({
+        code: ErrorCodes.RES_NOT_FOUND,
+        message: 'Payment not found',
+      });
+    }
+    if (
+      result.outcome === 'error' ||
+      !RECONCILE_OUTCOME_SET.has(result.outcome)
+    ) {
+      this.logger.warn(
+        `staff reconcile paymentId=${result.paymentId} actor=${user.id} outcome=${result.outcome}`,
+      );
+      throw new InternalServerErrorException({
+        code: ErrorCodes.SYS_UNEXPECTED,
+        message: 'Payment reconciliation failed',
+      });
+    }
+    this.logger.log(
+      `staff reconcile paymentId=${result.paymentId} actor=${user.id} outcome=${result.outcome}`,
+    );
+    return {
+      paymentId: result.paymentId,
+      outcome: result.outcome as ReconcileOutcome,
+    };
   }
 }

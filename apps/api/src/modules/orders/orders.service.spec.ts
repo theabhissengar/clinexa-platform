@@ -866,6 +866,7 @@ describe('OrdersService', () => {
     const { prisma, tx, createdOrder } = buildPrismaMock();
     createdOrder.status = OrderStatus.AWAITING_FULFILLMENT;
     createdOrder.orderType = OrderType.SUBSCRIPTION_RENEWAL;
+    (createdOrder as { totalCents: number }).totalCents = 5000;
     tx.order.findUnique = jest.fn().mockResolvedValue(createdOrder);
     tx.order.updateMany = jest.fn().mockResolvedValue({ count: 1 });
 

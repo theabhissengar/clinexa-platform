@@ -810,10 +810,11 @@ Reusable business assets only. Business modules store opaque `assetId` values an
 | API-064 | GET | `/payment-methods` | List own saved methods | Yes | P | FR-PAY-004, FR-PRT-004 | Tokens only |
 | API-065 | POST | `/payment-methods` | Attach saved method | Yes | P | FR-PAY-001/004 | PSP token reference |
 | API-066 | DELETE | `/payment-methods/{id}` | Remove saved method | Yes | P | FR-PRT-004 | Soft-deactivate |
-| API-067 | POST | `/admin/payments/{id}/refunds` and `/crm/payments/{id}/refunds` | Initiate refund | Yes | Su, Op, Ad◐ | FR-PAY-003, FR-ORD-006, FR-SUP-005 | **P15 mounted.** `PERM-PAY-003`; **`Idempotency-Key` required** and maps to `Refund.idempotencyKey` (globally unique; clients prefix `{paymentId}:{uuid}`); cumulative `sum(SUCCEEDED)+requested ≤ captured`; Guardian and CRM share `PaymentsService.initiateRefund()` |
-| API-067a | GET | `/admin/payments` | Guardian payment list | Yes | Su, Op, Ad | FR-PAY-005, FR-ORD-005 | `PERM-ORD-001` (do **not** add `PERM-PAY-004`) |
-| API-067b | GET | `/admin/payments/{id}` | Guardian operational payment detail | Yes | Su, Op, Ad | FR-PAY-005 | `PERM-ORD-001`; refunds + webhooks + linked order |
-| API-067c | GET | `/admin/payment-providers` | Read-only provider metadata | Yes | Ad | FR-SET-001 | `PERM-SET-002`; **no secrets** |
+| API-067 | POST | `/admin/payments/{id}/refunds` and `/crm/payments/{id}/refunds` | Initiate refund | Yes | Su, Op, Ad◐ | FR-PAY-003, FR-ORD-006, FR-SUP-005 | **P15 mounted.** Guardian: `PERM-GRD-001` AND `PERM-PAY-003`; CRM: `PERM-CRM-020` AND `PERM-PAY-003`; **`Idempotency-Key` required** and maps to `Refund.idempotencyKey` (globally unique; clients prefix `{paymentId}:{uuid}`); reservation = SUCCEEDED+PENDING+uncertain FAILED ≤ captured; Guardian and CRM share `PaymentsService.initiateRefund()` |
+| API-067a | GET | `/admin/payments` | Guardian payment list | Yes | Op, Ad | FR-PAY-005, FR-ORD-005 | `PERM-GRD-001` AND `PERM-ORD-001` (do **not** add `PERM-PAY-004`); optional filters: `q`, `status`, `provider`, `orderId`, `subscriptionId`, `lifecycleState`, `purpose`, `createdFrom`/`createdTo`, `skip`/`take` |
+| API-067b | GET | `/admin/payments/{id}` | Guardian operational payment detail | Yes | Op, Ad | FR-PAY-005 | `PERM-GRD-001` AND `PERM-ORD-001`; refunds + webhooks + linked order/subscription; `refundableCents` / `reservedRefundCents` use shared reservation helper |
+| API-067c | GET | `/admin/payment-providers` | Read-only provider metadata | Yes | Ad | FR-SET-001 | `PERM-GRD-001` AND `PERM-SET-002`; allow-listed fields only (`provider`, `mode`, `capabilities`, `webhookEndpointUrl`); **no secrets** |
+| API-067d | POST | `/admin/payments/{id}/reconcile` | Staff single-payment reconcile | Yes | Op, Ad | FR-PAY-005 | **Phase 7.** `PERM-GRD-001` AND `PERM-ORD-005`; reuses `PaymentsService.reconcilePaymentById` (same path as worker); allow-listed `{ paymentId, outcome }`; `not_found`→404; internal `error`→5xx; pending/renewal/terminal→200; never creates a new financial Idempotency-Key |
 | API-068 | POST | `/webhooks/payments` | PSP webhook ingest | No† | Sys (PSP) | FR-PAY-002/004/005, FR-SUB-002/003 | Verify signature (`X-Payments-Webhook-Secret`); idempotent by `(provider, providerEventId)` insert-before-apply; drive order/sub state; **P14e mounted** |
 
 †Not user JWT; provider verification required.
@@ -1854,6 +1855,7 @@ Centralized HTTP status usage for Clinexa `/v1`. Machine error codes and envelop
 | 1.10 | 2026-08-24 | Platform Engineering | TBD | P14d: Guardian `API-225`–`240` and `API-084`–`087` mounted; additive activate/renewal POST and plan unpublish/archive/restore; patient APIs still unmounted | Draft for review |
 | 1.11 | 2026-08-24 | Platform Engineering | TBD | P14e: `API-068` webhook + Internal renewal job mounted; renew `Idempotency-Key`; retry AuthZ 003\|008; `API-062`–`067` still unmounted | Draft for review |
 | 1.12 | 2026-08-26 | Platform Engineering | TBD | P15: mounted staff `API-067` (Guardian+CRM), admin payment list/detail/providers, `API-142`–`147`; `Idempotency-Key` on refunds; Stripe still deferred | Draft for review |
+| 1.13 | 2026-11-23 | Platform Engineering | TBD | Phase 7: `API-067d` staff reconcile; list filters; shared refundable reservation fields; providers shell AND + allow-listed response; refund OrderActivity actor from `Refund.actorUserId` | Draft for review |
 
 ---
 

@@ -132,10 +132,12 @@ export async function listCrmOrderActivity(
 export async function retryCrmOrderPayment(
   id: string,
   paymentMethodId: string,
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<unknown> {
   const { data } = await apiClient.post<ApiEnvelope<unknown>>(
     `/v1/crm/orders/${id}/retry-payment`,
     { paymentMethodId },
+    { headers: { "Idempotency-Key": `${id}:${idempotencyKey}` } },
   );
   return data.data;
 }

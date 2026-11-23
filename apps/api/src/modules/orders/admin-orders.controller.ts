@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -11,11 +12,17 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ErrorCodes } from '../../common/constants/error-codes';
+import { assertIdempotencyKey } from '../payments/money';
 import { RequirePermissions } from '../rbac/decorators/require-permissions.decorator';
 import { Permissions } from '../rbac/constants/permissions';
 import {
@@ -276,16 +283,25 @@ export class AdminOrdersController {
   @RequirePermissions(Permissions.ORD_EDIT)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Retry payment authorization for a PAYMENT_PENDING order',
+    summary:
+      'Retry payment authorization for a PAYMENT_PENDING order (Idempotency-Key required)',
+  })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description:
+      'Globally unique key (1–128 of A–Z a–z 0–9 . _ : -). Maps to Payment.idempotencyKey. Prefer {orderId}:{uuid}.',
   })
   retryPayment(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: RetryOrderPaymentDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.orders.retryOrderAuthorization({
       orderId: id,
       paymentMethodId: dto.paymentMethodId,
+      idempotencyKey: assertIdempotencyKey(idempotencyKey),
       actorUserId: user.id,
       source: 'guardian',
     });

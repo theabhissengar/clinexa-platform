@@ -61,6 +61,8 @@ export type PaymentDetail = {
   idempotencyKey: string;
   lastErrorCode: string | null;
   refundedCents: number;
+  /** PENDING + uncertain FAILED reservations (Phase 7). */
+  reservedRefundCents?: number;
   refundableCents: number;
   order: {
     id: string;
@@ -107,6 +109,11 @@ export type ProviderConfig = {
   mode: "sandbox" | "live";
   capabilities: string[];
   webhookEndpointUrl: string;
+};
+
+export type ReconcilePaymentResult = {
+  paymentId: string;
+  outcome: string;
 };
 
 export type SavedPaymentMethod = {
